@@ -31,7 +31,13 @@ class SupabaseDataManager: ObservableObject {
             .sink { [weak self] isAuthenticated in
                 if isAuthenticated {
                     Task { @MainActor in
-                        await self?.fetchUserData()
+                        print("ℹ️ Authentication state changed to authenticated, attempting to fetch data...")
+                        // Only fetch if context is available
+                        if self?.managedObjectContext != nil {
+                            await self?.fetchUserData()
+                        } else {
+                            print("ℹ️ CoreData context not yet available, deferring fetch...")
+                        }
                     }
                 } else {
                     Task { @MainActor in
@@ -43,7 +49,15 @@ class SupabaseDataManager: ObservableObject {
     }
 
     func setManagedObjectContext(_ context: NSManagedObjectContext) {
+        print("ℹ️ Setting CoreData context, now fetching user data...")
         self.managedObjectContext = context
+
+        // Fetch data once context is available (if already authenticated)
+        if authManager.isAuthenticated {
+            Task { @MainActor in
+                await self.fetchUserData()
+            }
+        }
     }
 
     // MARK: - Data Fetching
@@ -52,31 +66,42 @@ class SupabaseDataManager: ObservableObject {
     func fetchUserData() async {
         guard let userId = authManager.userId else {
             errorMessage = "User ID not available"
+            print("❌ Cannot fetch data: User ID is nil")
             return
         }
 
+        print("ℹ️ Starting data fetch for user: \(userId)")
         isLoading = true
         errorMessage = nil
 
         do {
+            print("ℹ️ Fetching family members from Supabase...")
             async let familyMembers = supabaseManager.getFamilyMembers(userId: userId)
             async let familyMemberCalendars = fetchAllFamilyMemberCalendars()
             async let sharedCalendars = supabaseManager.getSharedCalendars(userId: userId)
 
             self.familyMembers = try await familyMembers
+            print("✅ Fetched \(self.familyMembers.count) family members from Supabase")
+
             let calendarDTOs = try await familyMemberCalendars
+            print("✅ Fetched \(calendarDTOs.count) family member calendars from Supabase")
+
             self.sharedCalendars = try await sharedCalendars
+            print("✅ Fetched \(self.sharedCalendars.count) shared calendars from Supabase")
 
             // Sync to CoreData for backward compatibility with existing views
             if let context = managedObjectContext {
+                print("ℹ️ Syncing data to CoreData...")
                 SupabaseDataSync.shared.syncFamilyMembersFromSupabase(
                     supabaseMembers: self.familyMembers,
                     supabaseCalendars: calendarDTOs,
                     to: context
                 )
+            } else {
+                print("⚠️ CoreData context not available - skipping sync")
             }
 
-            print("✅ Fetched \(self.familyMembers.count) family members and \(self.sharedCalendars.count) shared calendars")
+            print("✅ Data fetch complete: \(self.familyMembers.count) family members and \(self.sharedCalendars.count) shared calendars")
         } catch {
             errorMessage = "Failed to fetch data: \(error.localizedDescription)"
             print("❌ Error fetching user data: \(error)")
