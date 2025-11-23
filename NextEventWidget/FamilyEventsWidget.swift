@@ -9,24 +9,24 @@ import WidgetKit
 import SwiftUI
 
 @main
-struct FamliCalWidgetsWrapper {
+struct FamCalWidgetsWrapper {
     static func main() {
         if #available(iOS 17.0, *) {
-            FamliCalWidgetsModern.main()
+            FamCalWidgetsModern.main()
         } else {
-            FamliCalWidgetsLegacy.main()
+            FamCalWidgetsLegacy.main()
         }
     }
 }
 
-struct FamliCalWidgetsModern: WidgetBundle {
+struct FamCalWidgetsModern: WidgetBundle {
     var body: some Widget {
         NextEventWidget()
         FamilyEventsWidget()
     }
 }
 
-struct FamliCalWidgetsLegacy: WidgetBundle {
+struct FamCalWidgetsLegacy: WidgetBundle {
     var body: some Widget {
         FamilyEventsWidgetLegacy()
     }

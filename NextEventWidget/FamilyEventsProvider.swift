@@ -54,7 +54,7 @@ struct FamilyEventsProvider: TimelineProvider {
             }
 
             // Construct the database URL
-            let storeURL = appGroupURL.appendingPathComponent("FamliCal.sqlite")
+            let storeURL = appGroupURL.appendingPathComponent("FamCal.sqlite")
 
             // Check if database file exists
             let fileManager = FileManager.default
@@ -63,16 +63,16 @@ struct FamilyEventsProvider: TimelineProvider {
             }
 
             // Load data model
-            var modelURL = Bundle.main.url(forResource: "FamliCal", withExtension: "momd")
+            var modelURL = Bundle.main.url(forResource: "FamCal", withExtension: "momd")
 
             if modelURL == nil {
                 if let widgetBundlePath = Bundle.main.bundlePath as NSString? {
                     let pluginsPath = widgetBundlePath.deletingLastPathComponent
                     let appPath = (pluginsPath as NSString).deletingLastPathComponent
-                    modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("FamliCal.momd")
+                    modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("FamCal.momd")
 
                     if !fileManager.fileExists(atPath: modelURL!.path) {
-                        modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Resources/FamliCal.momd")
+                        modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Resources/FamCal.momd")
                     }
                 }
             }

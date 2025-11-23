@@ -1,7 +1,7 @@
-# FamliCal Development Notes
+# FamCal Development Notes
 
 ## Overview
-FamliCal is an iOS calendar application built with SwiftUI and CoreData. It uses a multi-screen onboarding flow to introduce users to the app and request necessary permissions.
+FamCal is an iOS calendar application built with SwiftUI and CoreData. It uses a multi-screen onboarding flow to introduce users to the app and request necessary permissions.
 
 ## Instructions 
 Ask Questions if unsure. 
@@ -15,14 +15,14 @@ Using Settings Layout.png as a design guide for settings
   - Displays current permission status with green checkmark when granted
   - Triggers iOS system permission dialog on tap
   - "Next" button only appears after permission is granted
-- **ReadyScreen.swift**: Final launch screen with success message and "Start Using FamliCal" button
+- **ReadyScreen.swift**: Final launch screen with success message and "Start Using FamCal" button
 - **OnboardingView.swift**: Manages navigation between the three onboarding screens
   - Uses enum-based state (`OnboardingStep`) for clean state management
   - Tracks completion in UserDefaults with key "hasCompletedOnboarding"
   - Shows FamilyView via fullScreenCover upon completion
 
 ### Support Changes
-- **FamliCalApp.swift**: Updated to check onboarding completion and route to appropriate view
+- **FamCalApp.swift**: Updated to check onboarding completion and route to appropriate view
 - **Info.plist**: Added NSCalendarsUsageDescription for iOS calendar access
 - **FamilyView.swift**: Created as main home screen (currently shows "Family" title, ready for content expansion)
 
@@ -50,7 +50,7 @@ Using Settings Layout.png as a design guide for settings
 
 ## Key Files
 ### Onboarding
-- `FamliCalApp.swift` - App entry point with onboarding routing logic
+- `FamCalApp.swift` - App entry point with onboarding routing logic
 - `OnboardingView.swift` - Onboarding orchestrator and state management
 - `IntroScreen.swift` - Initial welcome screen
 - `PermissionScreen.swift` - Calendar permission request with EventKit
@@ -71,7 +71,7 @@ Using Settings Layout.png as a design guide for settings
 
 ### Configuration
 - `Info.plist` - Contains NSCalendarsUsageDescription
-- `FamliCal.xcdatamodeld` - CoreData model with FamilyMember and SharedCalendar entities
+- `FamCal.xcdatamodeld` - CoreData model with FamilyMember and SharedCalendar entities
 
 ### Family Settings Implementation (Nov 17, 2025)
 - **FamilyMember** CoreData entity with properties:

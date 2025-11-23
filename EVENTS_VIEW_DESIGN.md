@@ -1,4 +1,4 @@
-# FamliCal Events View Design
+# FamCal Events View Design
 
 ## Overview
 The Events View displays upcoming calendar events for family members in two distinct sections:

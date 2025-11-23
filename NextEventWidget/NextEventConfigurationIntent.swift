@@ -35,17 +35,17 @@ struct MemberOptionsProvider: DynamicOptionsProvider {
                 return []
             }
 
-            let storeURL = appGroupURL.appendingPathComponent("FamliCal.sqlite")
-            var modelURL = Bundle.main.url(forResource: "FamliCal", withExtension: "momd")
+            let storeURL = appGroupURL.appendingPathComponent("FamCal.sqlite")
+            var modelURL = Bundle.main.url(forResource: "FamCal", withExtension: "momd")
 
             if modelURL == nil {
                 if let widgetBundlePath = Bundle.main.bundlePath as NSString? {
                     let pluginsPath = widgetBundlePath.deletingLastPathComponent
                     let appPath = (pluginsPath as NSString).deletingLastPathComponent
-                    modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("FamliCal.momd")
+                    modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("FamCal.momd")
 
                     if !FileManager.default.fileExists(atPath: modelURL!.path) {
-                        modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Resources/FamliCal.momd")
+                        modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Resources/FamCal.momd")
                     }
                 }
             }

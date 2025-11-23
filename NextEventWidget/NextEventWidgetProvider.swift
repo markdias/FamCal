@@ -99,7 +99,7 @@ struct NextEventProvider: AppIntentTimelineProvider {
             print("✅ Widget: App group URL: \(appGroupURL.path)")
 
             // Construct the database URL
-            let storeURL = appGroupURL.appendingPathComponent("FamliCal.sqlite")
+            let storeURL = appGroupURL.appendingPathComponent("FamCal.sqlite")
 
             // Check if database file exists
             let fileManager = FileManager.default
@@ -115,29 +115,29 @@ struct NextEventProvider: AppIntentTimelineProvider {
 
             // Create a NSPersistentStoreCoordinator directly
             // Try to load from main bundle or widget bundle
-            var modelURL = Bundle.main.url(forResource: "FamliCal", withExtension: "momd")
+            var modelURL = Bundle.main.url(forResource: "FamCal", withExtension: "momd")
 
             if modelURL == nil {
                 // If not found in widget bundle, try to find in app bundle
-                // Widget bundle path: FamliCal.app/PlugIns/mdias.FamliCal.NextEventWidget.appex/
-                // We need to go to: FamliCal.app/FamliCal.momd
+                // Widget bundle path: FamCal.app/PlugIns/mdias.FamCal.NextEventWidget.appex/
+                // We need to go to: FamCal.app/FamCal.momd
                 if let widgetBundlePath = Bundle.main.bundlePath as NSString? {
                     // Go up to PlugIns directory
                     let pluginsPath = widgetBundlePath.deletingLastPathComponent
-                    // Go up to FamliCal.app directory
+                    // Go up to FamCal.app directory
                     let appPath = (pluginsPath as NSString).deletingLastPathComponent
-                    // Check for FamliCal.momd in the app bundle
-                    modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("FamliCal.momd")
+                    // Check for FamCal.momd in the app bundle
+                    modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("FamCal.momd")
 
                     if !FileManager.default.fileExists(atPath: modelURL!.path) {
                         // Also try looking in Contents/Resources for sandboxed environments
-                        modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Resources/FamliCal.momd")
+                        modelURL = URL(fileURLWithPath: appPath).appendingPathComponent("Contents/Resources/FamCal.momd")
                     }
                 }
             }
 
             guard let modelURL = modelURL, FileManager.default.fileExists(atPath: modelURL.path) else {
-                let attemptedPath = Bundle.main.url(forResource: "FamliCal", withExtension: "momd")?.path ?? "none"
+                let attemptedPath = Bundle.main.url(forResource: "FamCal", withExtension: "momd")?.path ?? "none"
                 let widgetBundlePath = Bundle.main.bundlePath
                 print("⚠️ Widget: Data model not found.")
                 print("   Attempted bundle resource: \(attemptedPath)")
