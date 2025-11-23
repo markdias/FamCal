@@ -61,7 +61,6 @@ struct NextEventWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .widgetURL(deepLinkURL)
         .widgetBackground()
     }
@@ -70,7 +69,7 @@ struct NextEventWidgetView: View {
     private func eventCardContent(event: WidgetEventData, member: FamilyMemberData) -> some View {
         let resolvedUIColor = UIColor(hex: event.colorHex, fallback: UIColor(hex: member.colorHex))
         let barColor = Color(resolvedUIColor)
-        let barWidth: CGFloat = 5
+        let barWidth: CGFloat = 10
         let (statusText, statusColor) = getEventStatus(event)
         let dayOfWeek = Self.dayOfWeekFormatter.string(from: event.startDate)
         let dateStr = Self.dateFormatter.string(from: event.startDate)

@@ -20,6 +20,7 @@ struct NextEventWidget: Widget {
         .configurationDisplayName("Next Family Event")
         .description("Shows the next upcoming event for your family or a specific member")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 

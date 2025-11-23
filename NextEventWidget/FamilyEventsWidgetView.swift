@@ -30,28 +30,15 @@ struct FamilyEventsWidgetView: View {
     }
 
     private func standardContent() -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(cardBackground)
-                .shadow(color: shadowColor, radius: 10, x: 0, y: 6)
-
-            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .stroke(cardStroke, lineWidth: 0.5)
-
-            Group {
-                if !entry.events.isEmpty {
-                    groupedEventList()
-                } else if let error = entry.errorMessage {
-                    errorContent(error)
-                } else {
-                    loadingContent()
-                }
+        Group {
+            if !entry.events.isEmpty {
+                groupedEventList()
+            } else if let error = entry.errorMessage {
+                errorContent(error)
+            } else {
+                loadingContent()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
     }
 
     @available(iOS 17.0, *)
@@ -115,7 +102,8 @@ struct FamilyEventsWidgetView: View {
                     Text(Self.monthFormatter.string(from: month.monthStart))
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.primary)
-                        .padding(.horizontal, 8)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.horizontal, 16)
 
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(month.days, id: \.date) { day in
@@ -125,11 +113,12 @@ struct FamilyEventsWidgetView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 16) // Increased from 8
                 }
             }
             .padding(.bottom, 8)
         }
+        .padding(.top, 16) // Added top padding
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -196,7 +185,7 @@ struct FamilyEventsWidgetView: View {
         .contentShape(Rectangle())
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(baseBackground)
+        // Removed background(baseBackground) to be transparent/clean
     }
 
     private var isMedium: Bool {
@@ -206,9 +195,9 @@ struct FamilyEventsWidgetView: View {
     private var maxVisibleEvents: Int {
         switch family {
         case .systemMedium:
-            return 5
+            return 2 // Restricted to 2 as requested
         default:
-            return 7
+            return 5 // Restricted to 5 as requested
         }
     }
 
