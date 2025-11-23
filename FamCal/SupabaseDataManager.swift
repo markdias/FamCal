@@ -54,9 +54,12 @@ class SupabaseDataManager: ObservableObject {
 
         // Fetch data once context is available (if already authenticated)
         if authManager.isAuthenticated {
+            print("ℹ️ User is authenticated, fetching user data now...")
             Task { @MainActor in
                 await self.fetchUserData()
             }
+        } else {
+            print("ℹ️ User not authenticated yet, skipping fetch")
         }
     }
 
