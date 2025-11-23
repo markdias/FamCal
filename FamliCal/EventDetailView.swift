@@ -67,6 +67,12 @@ struct EventDetailView: View {
     )
     private var sharedCalendars: FetchedResults<SharedCalendar>
 
+    @FetchRequest(
+        entity: SavedAddress.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
+    )
+    private var savedAddresses: FetchedResults<SavedAddress>
+
     private var driverFamilyMembers: [FamilyMember] {
         familyMembers.filter { $0.isDriver }
     }
@@ -551,6 +557,16 @@ struct EventDetailView: View {
     }
 
     // MARK: - Helper Methods
+    
+    private func getSavedAddress(for location: String) -> SavedAddress? {
+        // Try to find a saved address that matches this location
+        return savedAddresses.first { savedAddr in
+            guard let address = savedAddr.address else { return false }
+            // Match if the event location contains the saved address or vice versa
+            return location.lowercased().contains(address.lowercased()) ||
+                   address.lowercased().contains(location.lowercased())
+        }
+    }
 
     private func fetchDriver() {
         let fetchRequest = FamilyEvent.fetchRequest()

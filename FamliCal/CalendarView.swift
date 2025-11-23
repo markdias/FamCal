@@ -33,6 +33,12 @@ struct CalendarView: View {
     )
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
 
+    @FetchRequest(
+        entity: SavedAddress.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
+    )
+    private var savedAddresses: FetchedResults<SavedAddress>
+
     @State private var currentMonth: Date = Date()
     @State private var dayEvents: [String: [DayEventItem]] = [:]
     @State private var isLoadingEvents = false
@@ -444,12 +450,16 @@ struct CalendarView: View {
                         // Location (first line only) - tappable to open maps
                         if let location = groupedEvent.location {
                             let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
-                            Button(action: { MapsUtility.openLocation(firstLine, in: defaultMapsApp) }) {
+                            let savedAddress = getSavedAddress(for: firstLine)
+                            let displayText = savedAddress?.name ?? firstLine
+                            let mapAddress = savedAddress?.address ?? firstLine
+                            
+                            Button(action: { MapsUtility.openLocation(mapAddress, in: defaultMapsApp) }) {
                                 HStack(spacing: 6) {
                                     Image(systemName: "location.fill")
                                         .font(.system(size: 12))
                                         .foregroundColor(secondaryTextColor)
-                                    Text(firstLine)
+                                    Text(displayText)
                                         .font(.system(size: 11.5))
                                         .foregroundColor(secondaryTextColor)
                                         .lineLimit(1)
@@ -632,6 +642,16 @@ struct CalendarView: View {
     }
 
     // MARK: - Helper Functions
+    
+    private func getSavedAddress(for location: String) -> SavedAddress? {
+        // Try to find a saved address that matches this location
+        return savedAddresses.first { savedAddr in
+            guard let address = savedAddr.address else { return false }
+            // Match if the event location contains the saved address or vice versa
+            return location.lowercased().contains(address.lowercased()) ||
+                   address.lowercased().contains(location.lowercased())
+        }
+    }
 
     private func calendarDayCell(for date: Date) -> some View {
         let isCurrentMonth = calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)

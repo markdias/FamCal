@@ -15,6 +15,7 @@ struct SpotlightView: View {
     @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
     @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
     @AppStorage("spotlightShowGapsBetweenEvents") private var spotlightShowGapsBetweenEvents: Bool = true
+    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
 
     let member: FamilyMember
 
@@ -23,6 +24,12 @@ struct SpotlightView: View {
         sortDescriptors: []
     )
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
+
+    @FetchRequest(
+        entity: SavedAddress.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
+    )
+    private var savedAddresses: FetchedResults<SavedAddress>
 
     @State private var isLoadingEvents = false
     @State private var events: [GroupedEvent] = []
@@ -240,27 +247,34 @@ struct SpotlightView: View {
 
                     if let location = event.location {
                         let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
-                        HStack(spacing: 6) {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
-                            Text(firstLine)
-                                .font(.system(size: 11.5))
-                                .foregroundColor(.gray)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 0)
-
-                            if !event.isAllDay, let timeRange = event.timeRange {
-                                let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-                                Text(endTime)
-                                    .font(.custom("Fira Mono", size: 14))
-                                    .fontWeight(.semibold)
+                        let savedAddress = getSavedAddress(for: firstLine)
+                        let displayText = savedAddress?.name ?? firstLine
+                        let mapAddress = savedAddress?.address ?? firstLine
+                        
+                        Button(action: { MapsUtility.openLocation(mapAddress, in: defaultMapsApp) }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "location.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                                Text(displayText)
+                                    .font(.system(size: 11.5))
                                     .foregroundColor(.gray)
                                     .lineLimit(1)
-                                    .frame(width: 36, alignment: .trailing)
+
+                                Spacer(minLength: 0)
+
+                                if !event.isAllDay, let timeRange = event.timeRange {
+                                    let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+                                    Text(endTime)
+                                        .font(.custom("Fira Mono", size: 14))
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.gray)
+                                        .lineLimit(1)
+                                        .frame(width: 36, alignment: .trailing)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                     } else if !event.isAllDay, let timeRange = event.timeRange {
                         let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                         HStack(spacing: 0) {
@@ -319,6 +333,16 @@ struct SpotlightView: View {
     }
 
     // MARK: - Private Methods
+    
+    private func getSavedAddress(for location: String) -> SavedAddress? {
+        // Try to find a saved address that matches this location
+        return savedAddresses.first { savedAddr in
+            guard let address = savedAddr.address else { return false }
+            // Match if the event location contains the saved address or vice versa
+            return location.lowercased().contains(address.lowercased()) ||
+                   address.lowercased().contains(location.lowercased())
+        }
+    }
 
     private func fetchDriverForEvent(_ eventIdentifier: String) -> String? {
         let fetchRequest = FamilyEvent.fetchRequest()

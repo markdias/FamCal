@@ -21,6 +21,7 @@ struct FamilyView: View {
     @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
     @AppStorage("nextEventColumns") private var nextEventColumns: Int = 2
     @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
+    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -36,6 +37,12 @@ struct FamilyView: View {
         sortDescriptors: []
     )
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
+
+    @FetchRequest(
+        entity: SavedAddress.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
+    )
+    private var savedAddresses: FetchedResults<SavedAddress>
 
     private enum DeleteScope {
         case single
@@ -603,6 +610,23 @@ struct FamilyView: View {
                         .font(.system(size: detailSize, weight: .semibold))
                         .foregroundColor(secondaryTextColor)
                 }
+                
+                // Location (only in 2-column view)
+                if nextEventColumns <= 2, let location = event.location {
+                    let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
+                    let savedAddress = getSavedAddress(for: firstLine)
+                    let displayText = savedAddress?.name ?? firstLine
+                    
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: detailSize - 1, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                        Text(displayText)
+                            .font(.system(size: detailSize, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                            .lineLimit(1)
+                    }
+                }
 
                 // Status on separate line with color
                 Text(statusText)
@@ -728,27 +752,34 @@ struct FamilyView: View {
                     // Location with end time
                     if let location = groupedEvent.location {
                         let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
-                        HStack(spacing: 6) {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(secondaryTextColor)
-                        Text(firstLine)
-                            .font(.system(size: 11.5))
-                            .foregroundColor(secondaryTextColor)
-                            .lineLimit(1)
-
-                            Spacer(minLength: 0)
-
-                            if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
-                                let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-                                Text(endTime)
-                                    .font(.custom("Fira Mono", size: 14))
-                                    .fontWeight(.semibold)
+                        let savedAddress = getSavedAddress(for: firstLine)
+                        let displayText = savedAddress?.name ?? firstLine
+                        let mapAddress = savedAddress?.address ?? firstLine
+                        
+                        Button(action: { MapsUtility.openLocation(mapAddress, in: defaultMapsApp) }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "location.fill")
+                                    .font(.system(size: 12))
                                     .foregroundColor(secondaryTextColor)
-                                    .lineLimit(1)
-                                    .frame(width: 36, alignment: .trailing)
+                            Text(displayText)
+                                .font(.system(size: 11.5))
+                                .foregroundColor(secondaryTextColor)
+                                .lineLimit(1)
+
+                                Spacer(minLength: 0)
+
+                                if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
+                                    let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+                                    Text(endTime)
+                                        .font(.custom("Fira Mono", size: 14))
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(secondaryTextColor)
+                                        .lineLimit(1)
+                                        .frame(width: 36, alignment: .trailing)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                     } else if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
                         // Show time if no location
                         let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
@@ -1184,6 +1215,16 @@ struct FamilyView: View {
         return "\(startTime) – \(endTime)"
     }
 
+    private func getSavedAddress(for location: String) -> SavedAddress? {
+        // Try to find a saved address that matches this location
+        return savedAddresses.first { savedAddr in
+            guard let address = savedAddr.address else { return false }
+            // Match if the event location contains the saved address or vice versa
+            return location.lowercased().contains(address.lowercased()) ||
+                   address.lowercased().contains(location.lowercased())
+        }
+    }
+    
     private func reloadEvents() async {
         loadNextEvents()
         // Wait for the task to complete with a brief delay to show refresh indicator
