@@ -79,6 +79,11 @@ class SupabaseAuthManager: ObservableObject {
 
             // Accept both 200 and 201 status codes for signup
             if httpResponse.statusCode == 200 || httpResponse.statusCode == 201 {
+                // Log raw response for debugging
+                if let rawResponse = String(data: data, encoding: .utf8) {
+                    print("ℹ️ Signup raw response: \(rawResponse)")
+                }
+
                 do {
                     let response = try JSONDecoder().decode(AuthResponse.self, from: data)
                     self.userId = response.user.id
@@ -88,9 +93,51 @@ class SupabaseAuthManager: ObservableObject {
                     }
                     self.isAuthenticated = true
                     print("✅ User signed up successfully: \(email)")
+                    print("ℹ️ User ID (from parsing): \(response.user.id)")
                 } catch {
                     // If response is empty or different format, still consider signup successful if status is 200/201
-                    print("⚠️ Signup successful but could not parse full response: \(error)")
+                    print("⚠️ Signup successful but could not parse AuthResponse: \(error)")
+                    print("ℹ️ Attempting manual userId extraction from response...")
+
+                    // Manually parse the JSON response
+                    guard let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        print("❌ Could not parse signup response as JSON")
+                        self.userEmail = email
+                        self.isAuthenticated = true
+                        print("✅ User signed up successfully: \(email)")
+                        return
+                    }
+
+                    print("ℹ️ Signup response JSON keys: \(jsonObject.keys)")
+
+                    // Try to find userId in various places
+                    var foundUserId: String? = nil
+
+                    if let userId = jsonObject["id"] as? String {
+                        foundUserId = userId
+                        print("ℹ️ Found id at root level: \(userId)")
+                    } else if let userDict = jsonObject["user"] as? [String: Any],
+                              let userId = userDict["id"] as? String {
+                        foundUserId = userId
+                        print("ℹ️ Found userId in user object: \(userId)")
+                    }
+
+                    if let userId = foundUserId {
+                        self.userId = userId
+                        print("✅ Successfully extracted User ID from signup: \(userId)")
+                    } else {
+                        // Generate from email as last resort
+                        let generatedId = email.lowercased().replacingOccurrences(of: "@", with: "-").replacingOccurrences(of: ".", with: "-")
+                        self.userId = generatedId
+                        print("⚠️ Using generated User ID: \(generatedId)")
+                    }
+
+                    // Try to get access token
+                    if let accessToken = jsonObject["access_token"] as? String {
+                        self.accessToken = accessToken
+                        print("ℹ️ Found access_token in signup response")
+                    }
+
                     self.userEmail = email
                     self.isAuthenticated = true
                     print("✅ User signed up successfully: \(email)")
@@ -160,6 +207,11 @@ class SupabaseAuthManager: ObservableObject {
 
             print("ℹ️ Response status: \(httpResponse.statusCode)")
 
+            // Always log the raw response for debugging
+            if let rawResponse = String(data: data, encoding: .utf8) {
+                print("ℹ️ Raw response: \(rawResponse)")
+            }
+
             if httpResponse.statusCode == 200 {
                 do {
                     let response = try JSONDecoder().decode(TokenResponse.self, from: data)
@@ -168,31 +220,56 @@ class SupabaseAuthManager: ObservableObject {
                     self.accessToken = response.access_token
                     self.isAuthenticated = true
                     print("✅ User signed in successfully: \(email)")
-                    print("ℹ️ User ID: \(response.user.id)")
+                    print("ℹ️ User ID (from parsing): \(response.user.id)")
                 } catch let decodingError {
-                    // Fallback: try to extract userId from JWT token
-                    print("⚠️ Could not parse standard response: \(decodingError)")
-                    print("ℹ️ Attempting to extract userId from response data")
+                    // Fallback: try to extract userId from raw JSON
+                    print("⚠️ Could not parse TokenResponse: \(decodingError)")
+                    print("ℹ️ Attempting manual JSON extraction...")
 
-                    // Try to decode as generic JSON to see what we got
-                    if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let userId = jsonObject["user_id"] as? String ?? jsonObject["id"] as? String {
+                    // Manually parse the JSON response
+                    guard let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        print("❌ Could not parse response as JSON at all")
+                        throw NSError(domain: "NoUserID", code: -1)
+                    }
+
+                    print("ℹ️ Response JSON keys: \(jsonObject.keys)")
+
+                    // Try to find userId in various places
+                    var foundUserId: String? = nil
+
+                    if let userId = jsonObject["user_id"] as? String {
+                        foundUserId = userId
+                        print("ℹ️ Found userId at root level: \(userId)")
+                    } else if let userId = jsonObject["id"] as? String {
+                        foundUserId = userId
+                        print("ℹ️ Found id at root level: \(userId)")
+                    } else if let userDict = jsonObject["user"] as? [String: Any] {
+                        print("ℹ️ Found 'user' object with keys: \(userDict.keys)")
+                        if let userId = userDict["id"] as? String {
+                            foundUserId = userId
+                            print("ℹ️ Found userId in user object: \(userId)")
+                        }
+                    }
+
+                    // If we found a userId, use it
+                    if let userId = foundUserId {
                         self.userId = userId
-                        print("ℹ️ Extracted User ID from response: \(userId)")
-                    } else if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let userDict = jsonObject["user"] as? [String: Any],
-                              let userId = userDict["id"] as? String {
-                        self.userId = userId
-                        print("ℹ️ Extracted User ID from user object: \(userId)")
+                        print("✅ Successfully extracted User ID: \(userId)")
                     } else {
                         // Last resort: generate from email
                         let generatedId = email.lowercased().replacingOccurrences(of: "@", with: "-").replacingOccurrences(of: ".", with: "-")
                         self.userId = generatedId
-                        print("⚠️ Using generated User ID from email: \(generatedId)")
+                        print("⚠️ Could not find userId in response, using generated ID: \(generatedId)")
+                        print("⚠️ WARNING: This may cause issues. Please check Supabase response format.")
+                    }
+
+                    // Try to get access token from response
+                    if let accessToken = jsonObject["access_token"] as? String {
+                        self.accessToken = accessToken
+                        print("ℹ️ Found access_token")
                     }
 
                     self.userEmail = email
-                    self.accessToken = (try? JSONDecoder().decode(TokenResponse.self, from: data).access_token) ?? ""
                     self.isAuthenticated = true
                     print("✅ User signed in successfully: \(email)")
                 }
