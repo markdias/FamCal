@@ -169,26 +169,30 @@ class SupabaseAuthManager: ObservableObject {
                     self.isAuthenticated = true
                     print("✅ User signed in successfully: \(email)")
                     print("ℹ️ User ID: \(response.user.id)")
-                } catch {
-                    // Fallback: if response format is different, still mark as authenticated with email
-                    // But we NEED the userId from the JWT token
-                    print("⚠️ Sign in successful but could not parse full response: \(error)")
+                } catch let decodingError {
+                    // Fallback: try to extract userId from JWT token
+                    print("⚠️ Could not parse standard response: \(decodingError)")
+                    print("ℹ️ Attempting to extract userId from response data")
 
-                    // Extract userId from the access token (JWT format: header.payload.signature)
-                    if let accessTokenStr = try? JSONDecoder().decode(TokenResponse.self, from: data).access_token,
-                       let payload = accessTokenStr.split(separator: ".").dropFirst().first,
-                       let decodedData = Data(base64Encoded: String(payload) + String(repeating: "=", count: (4 - String(payload).count % 4) % 4)),
-                       let jsonObject = try? JSONSerialization.jsonObject(with: decodedData) as? [String: Any],
-                       let userId = jsonObject["sub"] as? String {
+                    // Try to decode as generic JSON to see what we got
+                    if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let userId = jsonObject["user_id"] as? String ?? jsonObject["id"] as? String {
                         self.userId = userId
-                        print("ℹ️ Extracted User ID from JWT: \(userId)")
+                        print("ℹ️ Extracted User ID from response: \(userId)")
+                    } else if let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                              let userDict = jsonObject["user"] as? [String: Any],
+                              let userId = userDict["id"] as? String {
+                        self.userId = userId
+                        print("ℹ️ Extracted User ID from user object: \(userId)")
                     } else {
-                        // Last resort: try to generate a user ID from email
-                        print("⚠️ Could not extract userId from JWT, using email hash")
-                        self.userId = email.lowercased().replacingOccurrences(of: "@", with: "-").replacingOccurrences(of: ".", with: "-")
+                        // Last resort: generate from email
+                        let generatedId = email.lowercased().replacingOccurrences(of: "@", with: "-").replacingOccurrences(of: ".", with: "-")
+                        self.userId = generatedId
+                        print("⚠️ Using generated User ID from email: \(generatedId)")
                     }
 
                     self.userEmail = email
+                    self.accessToken = (try? JSONDecoder().decode(TokenResponse.self, from: data).access_token) ?? ""
                     self.isAuthenticated = true
                     print("✅ User signed in successfully: \(email)")
                 }
