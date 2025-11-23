@@ -168,9 +168,26 @@ class SupabaseAuthManager: ObservableObject {
                     self.accessToken = response.access_token
                     self.isAuthenticated = true
                     print("✅ User signed in successfully: \(email)")
+                    print("ℹ️ User ID: \(response.user.id)")
                 } catch {
                     // Fallback: if response format is different, still mark as authenticated with email
+                    // But we NEED the userId from the JWT token
                     print("⚠️ Sign in successful but could not parse full response: \(error)")
+
+                    // Extract userId from the access token (JWT format: header.payload.signature)
+                    if let accessTokenStr = try? JSONDecoder().decode(TokenResponse.self, from: data).access_token,
+                       let payload = accessTokenStr.split(separator: ".").dropFirst().first,
+                       let decodedData = Data(base64Encoded: String(payload) + String(repeating: "=", count: (4 - String(payload).count % 4) % 4)),
+                       let jsonObject = try? JSONSerialization.jsonObject(with: decodedData) as? [String: Any],
+                       let userId = jsonObject["sub"] as? String {
+                        self.userId = userId
+                        print("ℹ️ Extracted User ID from JWT: \(userId)")
+                    } else {
+                        // Last resort: try to generate a user ID from email
+                        print("⚠️ Could not extract userId from JWT, using email hash")
+                        self.userId = email.lowercased().replacingOccurrences(of: "@", with: "-").replacingOccurrences(of: ".", with: "-")
+                    }
+
                     self.userEmail = email
                     self.isAuthenticated = true
                     print("✅ User signed in successfully: \(email)")
