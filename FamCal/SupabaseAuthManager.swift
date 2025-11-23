@@ -26,6 +26,12 @@ class SupabaseAuthManager: ObservableObject {
     // Access token for authenticated API calls
     private(set) var accessToken: String?
 
+    // UserDefaults keys for session persistence
+    private let userDefaultsKeyUserId = "com.famcal.auth.userId"
+    private let userDefaultsKeyEmail = "com.famcal.auth.userEmail"
+    private let userDefaultsKeyAccessToken = "com.famcal.auth.accessToken"
+    private let userDefaultsKeyIsAuthenticated = "com.famcal.auth.isAuthenticated"
+
     init() {
         // Validate configuration
         do {
@@ -49,7 +55,54 @@ class SupabaseAuthManager: ObservableObject {
     // MARK: - Session Management
 
     private func checkSession() async {
-        print("ℹ️ Session check initialized")
+        print("ℹ️ Checking for existing session...")
+
+        let defaults = UserDefaults.standard
+
+        // Try to restore session from UserDefaults
+        if let savedUserId = defaults.string(forKey: userDefaultsKeyUserId),
+           let savedEmail = defaults.string(forKey: userDefaultsKeyEmail),
+           let savedAccessToken = defaults.string(forKey: userDefaultsKeyAccessToken),
+           defaults.bool(forKey: userDefaultsKeyIsAuthenticated) {
+
+            print("✅ Found existing session for: \(savedEmail)")
+
+            // Restore the session
+            await MainActor.run {
+                self.userId = savedUserId
+                self.userEmail = savedEmail
+                self.accessToken = savedAccessToken
+                self.isAuthenticated = true
+
+                print("✅ Session restored successfully")
+            }
+        } else {
+            print("ℹ️ No existing session found - user will need to log in")
+        }
+    }
+
+    /// Save session to persistent storage
+    private func saveSession() {
+        let defaults = UserDefaults.standard
+
+        if isAuthenticated, let userId = userId, let email = userEmail, let token = accessToken {
+            defaults.set(userId, forKey: userDefaultsKeyUserId)
+            defaults.set(email, forKey: userDefaultsKeyEmail)
+            defaults.set(token, forKey: userDefaultsKeyAccessToken)
+            defaults.set(true, forKey: userDefaultsKeyIsAuthenticated)
+            print("ℹ️ Session saved to persistent storage")
+        }
+    }
+
+    /// Clear session from persistent storage
+    private func clearSession() {
+        let defaults = UserDefaults.standard
+
+        defaults.removeObject(forKey: userDefaultsKeyUserId)
+        defaults.removeObject(forKey: userDefaultsKeyEmail)
+        defaults.removeObject(forKey: userDefaultsKeyAccessToken)
+        defaults.removeObject(forKey: userDefaultsKeyIsAuthenticated)
+        print("ℹ️ Session cleared from persistent storage")
     }
 
     // MARK: - Authentication Methods
@@ -92,6 +145,7 @@ class SupabaseAuthManager: ObservableObject {
                         self.accessToken = accessToken
                     }
                     self.isAuthenticated = true
+                    self.saveSession()  // Persist session
                     print("✅ User signed up successfully: \(email)")
                     print("ℹ️ User ID (from parsing): \(response.user.id)")
                 } catch {
@@ -140,6 +194,7 @@ class SupabaseAuthManager: ObservableObject {
 
                     self.userEmail = email
                     self.isAuthenticated = true
+                    self.saveSession()  // Persist session
                     print("✅ User signed up successfully: \(email)")
                 }
             } else {
@@ -219,6 +274,7 @@ class SupabaseAuthManager: ObservableObject {
                     self.userEmail = response.user.email
                     self.accessToken = response.access_token
                     self.isAuthenticated = true
+                    self.saveSession()  // Persist session
                     print("✅ User signed in successfully: \(email)")
                     print("ℹ️ User ID (from parsing): \(response.user.id)")
                 } catch let decodingError {
@@ -271,6 +327,7 @@ class SupabaseAuthManager: ObservableObject {
 
                     self.userEmail = email
                     self.isAuthenticated = true
+                    self.saveSession()  // Persist session
                     print("✅ User signed in successfully: \(email)")
                 }
             } else {
@@ -313,6 +370,7 @@ class SupabaseAuthManager: ObservableObject {
         self.userEmail = nil
         self.accessToken = nil
         self.isAuthenticated = false
+        self.clearSession()  // Clear persisted session
 
         print("✅ User signed out successfully")
     }
