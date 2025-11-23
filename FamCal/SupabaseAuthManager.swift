@@ -24,7 +24,7 @@ class SupabaseAuthManager: ObservableObject {
     private let anonKey: String
 
     // Access token for authenticated API calls
-    private(set) var accessToken: String?
+    var accessToken: String?
 
     // UserDefaults keys for session persistence
     private let userDefaultsKeyUserId = "com.famcal.auth.userId"
@@ -82,7 +82,7 @@ class SupabaseAuthManager: ObservableObject {
     }
 
     /// Save session to persistent storage
-    private func saveSession() {
+    func saveSession() {
         let defaults = UserDefaults.standard
 
         if isAuthenticated, let userId = userId, let email = userEmail, let token = accessToken {
