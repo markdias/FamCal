@@ -56,10 +56,20 @@ struct FamilyView: View {
     @State private var showingLinkedDeleteDialog = false
     @State private var pendingDeleteEvent: UpcomingCalendarEvent? = nil
     @State private var pendingDeleteSpan: EKSpan = .thisEvent
+    @State private var draggedMemberName: String? = nil
+    @State private var draggedMemberID: NSManagedObjectID? = nil
+    @State private var targetMemberName: String? = nil
+    @State private var reorderedEvents: [MemberEventGroup] = []
+    @State private var resetDragTimer: Timer? = nil
 
     private let calendar = Calendar.current
     private var theme: AppTheme { themeManager.selectedTheme }
     private var secondaryTextColor: Color { theme.mutedTagColor }
+
+    // Use reorderedEvents during drag, otherwise use memberEvents
+    private var displayedEvents: [MemberEventGroup] {
+        draggedMemberName != nil && !reorderedEvents.isEmpty ? reorderedEvents : memberEvents
+    }
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -319,12 +329,12 @@ struct FamilyView: View {
         return VStack(alignment: .leading, spacing: 24) {
             // MARK: Next Events Section
             VStack(alignment: .leading, spacing: 16) {
-                let columns = isLandscape 
+                let columns = isLandscape
                     ? Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
                     : [GridItem(.flexible()), GridItem(.flexible())]
 
                 LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach($memberEvents) { $memberGroup in
+                    ForEach(displayedEvents) { memberGroup in
                         if let nextEvent = memberGroup.nextEvent,
                            !nextEvent.isAllDay,
                            nextEvent.timeRange != nil,
@@ -335,6 +345,43 @@ struct FamilyView: View {
                                 nextEventCard(for: memberGroup, event: nextEvent)
                             }
                             .buttonStyle(.plain)
+                            .opacity(draggedMemberName == memberGroup.memberName ? 0.5 : 1.0)
+                            .scaleEffect(draggedMemberName == memberGroup.memberName ? 0.95 : 1.0)
+                            .background(
+                                targetMemberName == memberGroup.memberName ?
+                                Color.blue.opacity(0.1) : Color.clear
+                            )
+                            .cornerRadius(12)
+                            .onDrag {
+                                resetDragState()
+                                draggedMemberName = memberGroup.memberName
+                                draggedMemberID = memberGroup.id
+                                reorderedEvents = memberEvents
+                                scheduleDragResetFallback()
+                                return NSItemProvider(object: memberGroup.id.uriRepresentation().absoluteString as NSString)
+                            }
+                            .dropDestination(for: String.self) { droppedItems, _ in
+                                if let sourceIDString = droppedItems.first,
+                                   let sourceID = objectID(from: sourceIDString) {
+                                    performDragDrop(from: sourceID, to: memberGroup.id)
+                                    if !reorderedEvents.isEmpty {
+                                        memberEvents = reorderedEvents
+                                    }
+                                    loadNextEvents()
+                                }
+                                resetDragState()
+                                return true
+                            } isTargeted: { isTargeted in
+                                if isTargeted {
+                                    targetMemberName = memberGroup.memberName
+                                    // Reorder while dragging over
+                                    if let draggedID = draggedMemberID {
+                                        reorderWhileDragging(from: draggedID, to: memberGroup.id)
+                                    }
+                                } else {
+                                    targetMemberName = nil
+                                }
+                            }
                         }
                     }
                 }
@@ -383,7 +430,7 @@ struct FamilyView: View {
 
                 if isLandscape {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 20, alignment: .top), GridItem(.flexible(), spacing: 20, alignment: .top)], spacing: 20) {
-                        ForEach(memberEvents) { memberGroup in
+                        ForEach(displayedEvents) { memberGroup in
                             if !memberGroup.upcomingEvents.isEmpty {
                                 memberUpcomingEventsColumn(memberGroup: memberGroup)
                             }
@@ -392,7 +439,7 @@ struct FamilyView: View {
                     .padding(.horizontal, 16)
                 } else {
                     VStack(alignment: .leading, spacing: 20) {
-                        ForEach(memberEvents) { memberGroup in
+                        ForEach(displayedEvents) { memberGroup in
                             if !memberGroup.upcomingEvents.isEmpty {
                                 memberUpcomingEventsColumn(memberGroup: memberGroup)
                             }
@@ -797,6 +844,7 @@ struct FamilyView: View {
         eventsTask = Task { @MainActor in
             isLoadingEvents = true
             defer { isLoadingEvents = false }
+            resetDragState()
 
             guard !familyMembers.isEmpty else {
                 memberEvents = []
@@ -929,6 +977,7 @@ struct FamilyView: View {
                 let memberGroup = MemberEventGroup(
                     id: member.objectID,
                     memberName: member.name ?? "Unknown",
+                    sortOrder: member.sortOrder,
                     memberColor: memberColor,
                     nextEvent: nextNonAllDayEvent,
                     upcomingEvents: limitedEvents
@@ -937,9 +986,12 @@ struct FamilyView: View {
                 memberEventGroups.append(memberGroup)
             }
 
-            // Sort member groups alphabetically so Next Events stays organized per person
+            // Keep member order consistent with stored sortOrder (fallback to name to break ties)
             memberEventGroups.sort {
-                $0.memberName.localizedCaseInsensitiveCompare($1.memberName) == .orderedAscending
+                if $0.sortOrder == $1.sortOrder {
+                    return $0.memberName.localizedCaseInsensitiveCompare($1.memberName) == .orderedAscending
+                }
+                return $0.sortOrder < $1.sortOrder
             }
 
             memberEvents = memberEventGroups
@@ -1386,6 +1438,91 @@ struct FamilyView: View {
         }
     }
 
+    // MARK: - Drag and Drop
+
+    private func reorderWhileDragging(from sourceID: NSManagedObjectID, to destID: NSManagedObjectID) {
+        guard sourceID != destID else { return }
+        guard let sourceIndex = reorderedEvents.firstIndex(where: { $0.id == sourceID }),
+              let destIndex = reorderedEvents.firstIndex(where: { $0.id == destID }) else {
+            return
+        }
+
+        // Only reorder if needed
+        guard sourceIndex != destIndex else { return }
+
+        var newEvents = reorderedEvents
+        let sourceEvent = newEvents[sourceIndex]
+        newEvents.remove(at: sourceIndex)
+        newEvents.insert(sourceEvent, at: destIndex)
+
+        reorderedEvents = newEvents
+    }
+
+    private func performDragDrop(from sourceID: NSManagedObjectID, to destID: NSManagedObjectID) {
+        // Work with the latest drag order (fall back to the current display order)
+        var finalOrder = reorderedEvents
+        if finalOrder.isEmpty {
+            finalOrder = memberEvents
+            if let sourceIndex = finalOrder.firstIndex(where: { $0.id == sourceID }),
+               let destIndex = finalOrder.firstIndex(where: { $0.id == destID }) {
+                let moved = finalOrder.remove(at: sourceIndex)
+                finalOrder.insert(moved, at: destIndex)
+            } else {
+                return
+            }
+        }
+
+        // Persist the new order by assigning sequential sortOrder values
+        for (index, group) in finalOrder.enumerated() {
+            if let member = familyMembers.first(where: { $0.objectID == group.id }) {
+                member.sortOrder = Int16(index)
+            }
+        }
+
+        do {
+            try viewContext.save()
+            memberEvents = finalOrder
+            if let sourceName = memberEvents.first(where: { $0.id == sourceID })?.memberName,
+               let destName = memberEvents.first(where: { $0.id == destID })?.memberName {
+                print("✅ Reordered: \(sourceName) moved to position of \(destName)")
+            } else {
+                print("✅ Reordered members and saved new order")
+            }
+            draggedMemberName = nil
+            draggedMemberID = nil
+            targetMemberName = nil
+            reorderedEvents = []
+        } catch {
+            draggedMemberName = nil
+            draggedMemberID = nil
+            targetMemberName = nil
+            reorderedEvents = []
+            print("❌ Failed to save member order: \(error.localizedDescription)")
+        }
+    }
+
+    private func objectID(from uriString: String) -> NSManagedObjectID? {
+        guard let url = URL(string: uriString) else { return nil }
+        return viewContext.persistentStoreCoordinator?.managedObjectID(forURIRepresentation: url)
+    }
+
+    private func resetDragState() {
+        draggedMemberName = nil
+        draggedMemberID = nil
+        targetMemberName = nil
+        reorderedEvents = []
+        resetDragTimer?.invalidate()
+        resetDragTimer = nil
+    }
+
+    // Fallback reset to avoid stale drag UI if the system fails to end the drag properly.
+    private func scheduleDragResetFallback() {
+        resetDragTimer?.invalidate()
+        resetDragTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+            resetDragState()
+        }
+    }
+
 }
 
 // MARK: - Data Models
@@ -1430,12 +1567,17 @@ private struct GroupedEvent: Identifiable {
     let isImportant: Bool
 }
 
-private struct MemberEventGroup: Identifiable {
+private struct MemberEventGroup: Identifiable, Equatable {
     let id: NSManagedObjectID
     let memberName: String
+    let sortOrder: Int16
     let memberColor: Color
     let nextEvent: GroupedEvent?
     let upcomingEvents: [GroupedEvent]
+
+    static func == (lhs: MemberEventGroup, rhs: MemberEventGroup) -> Bool {
+        lhs.memberName == rhs.memberName && lhs.id == rhs.id
+    }
 }
 
 // MARK: - Extensions

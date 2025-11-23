@@ -8,7 +8,7 @@
 import Foundation
 
 /// Wrapper to handle both regular Driver objects and FamilyMember objects as drivers
-enum DriverWrapper: Identifiable {
+enum DriverWrapper: Identifiable, Equatable {
     case regular(Driver)
     case familyMember(FamilyMember)
 

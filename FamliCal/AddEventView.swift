@@ -559,28 +559,28 @@ struct AddEventView: View {
                 print("   FamilyEvent will have driver: \(familyEvent.driver != nil)")
 
                 // Add attendees for non-shared events
+                var addedAttendeeIds = Set<UUID>()
+
                 if !selectEveryone {
                     for memberID in selectedMembers {
                         if let member = familyMembers.first(where: { $0.objectID == memberID }) {
-                            // Skip adding the driver if they're a family member (they shouldn't be in attendees list)
-                            if let driverWrapper = selectedDriver, case .familyMember(let driverMember) = driverWrapper {
-                                if driverMember.id == member.id {
-                                    continue
-                                }
-                            }
                             familyEvent.addToAttendees(member)
+                            addedAttendeeIds.insert(member.id ?? UUID())
                         }
                     }
                 } else {
-                    // If "Everyone" selected, add all family members except the driver if they're a family member
+                    // If "Everyone" selected, add all family members
                     for member in familyMembers {
-                        // Skip adding the driver if they're a family member (they shouldn't be in attendees list)
-                        if let driverWrapper = selectedDriver, case .familyMember(let driverMember) = driverWrapper {
-                            if driverMember.id == member.id {
-                                continue
-                            }
-                        }
                         familyEvent.addToAttendees(member)
+                        addedAttendeeIds.insert(member.id ?? UUID())
+                    }
+                }
+
+                // If driver is a family member and not already in attendees, add them
+                if let driverWrapper = selectedDriver, case .familyMember(let driverMember) = driverWrapper {
+                    if let driverId = driverMember.id, !addedAttendeeIds.contains(driverId) {
+                        familyEvent.addToAttendees(driverMember)
+                        print("✅ Added family member driver \(driverMember.name ?? "Unknown") to attendees")
                     }
                 }
 

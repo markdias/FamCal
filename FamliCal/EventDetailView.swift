@@ -295,69 +295,7 @@ struct EventDetailView: View {
                         .padding(.horizontal, 20)
                     }
 
-                    // Driver section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Driver")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 20)
-
-                        HStack(spacing: 12) {
-                            Menu {
-                                Button(action: { selectedDriver = nil }) {
-                                    HStack {
-                                        Text("None")
-                                        if selectedDriver == nil {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-
-                                if !allAvailableDrivers.isEmpty {
-                                    Divider()
-
-                                    ForEach(allAvailableDrivers, id: \.id) { driverWrapper in
-                                        Button(action: {
-                                            selectedDriver = driverWrapper
-                                            // Only show alert if selecting a family member driver
-                                            if case .familyMember(_) = driverWrapper {
-                                                driverToCreateEventFor = driverWrapper
-                                                showingCreateEventForDriverAlert = true
-                                            }
-                                        }) {
-                                            HStack {
-                                                Text(driverWrapper.name)
-                                                if selectedDriver?.id == driverWrapper.id {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "car.fill")
-                                        .font(.system(size: 14, weight: .regular))
-                                        .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-
-                                    Text(selectedDriver?.name ?? "None")
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(.primary)
-
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(10)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                    }
+                    driverSection
 
                     // Alert section
                     VStack(alignment: .leading, spacing: 8) {
@@ -542,6 +480,76 @@ struct EventDetailView: View {
         }
     }
 
+    // MARK: - View Components
+
+    private var driverSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Driver")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.gray)
+                .padding(.horizontal, 20)
+
+            HStack(spacing: 12) {
+                Menu {
+                    Button(action: { selectedDriver = nil }) {
+                        HStack {
+                            Text("None")
+                            if selectedDriver == nil {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+
+                    if !allAvailableDrivers.isEmpty {
+                        Divider()
+
+                        ForEach(allAvailableDrivers, id: \.id) { driverWrapper in
+                            Button(action: {
+                                selectedDriver = driverWrapper
+                                // Only show alert if selecting a family member driver
+                                if case .familyMember(_) = driverWrapper {
+                                    driverToCreateEventFor = driverWrapper
+                                    showingCreateEventForDriverAlert = true
+                                }
+                            }) {
+                                HStack {
+                                    Text(driverWrapper.name)
+                                    if selectedDriver?.id == driverWrapper.id {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "car.fill")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+
+                        Text(selectedDriver?.name ?? "None")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.primary)
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                }
+                .onChange(of: selectedDriver) { _, _ in
+                    saveDriver()
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
     // MARK: - Helper Methods
 
     private func fetchDriver() {
@@ -571,6 +579,55 @@ struct EventDetailView: View {
             }
         } catch {
             print("❌ Failed to fetch driver for event: \(error.localizedDescription)")
+        }
+    }
+
+    private func saveDriver() {
+        let fetchRequest = FamilyEvent.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", event.id)
+
+        do {
+            let results = try viewContext.fetch(fetchRequest)
+
+            guard let familyEvent = results.first else {
+                print("❌ Could not find FamilyEvent to update driver")
+                return
+            }
+
+            // Clear existing driver relationships
+            familyEvent.driver = nil
+            familyEvent.driverFamilyMemberId = nil
+
+            // Set new driver
+            if let selectedDriver = selectedDriver {
+                switch selectedDriver {
+                case .regular(let driver):
+                    familyEvent.driver = driver
+                    print("✅ Saved regular driver: \(driver.name ?? "Unknown")")
+
+                case .familyMember(let member):
+                    familyEvent.driverFamilyMemberId = member.id
+                    print("✅ Saved family member driver: \(member.name ?? "Unknown")")
+
+                    // If driver is a family member and not already in attendees, add them
+                    if let attendees = familyEvent.attendees as? Set<FamilyMember> {
+                        if !attendees.contains(member) {
+                            familyEvent.addToAttendees(member)
+                            print("✅ Added family member driver to attendees")
+                        }
+                    } else {
+                        familyEvent.addToAttendees(member)
+                        print("✅ Added family member driver to attendees")
+                    }
+                }
+            } else {
+                print("✅ Cleared driver")
+            }
+
+            try viewContext.save()
+            print("✅ Driver saved to CoreData")
+        } catch {
+            print("❌ Failed to save driver: \(error.localizedDescription)")
         }
     }
 
