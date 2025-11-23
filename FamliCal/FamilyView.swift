@@ -688,10 +688,16 @@ struct FamilyView: View {
     private func eventCard(_ groupedEvent: GroupedEvent) -> some View {
         let dateBoxWidth: CGFloat = 64
         let cardCornerRadius: CGFloat = 16
+        let now = Date()
+        let isInProgress = groupedEvent.startDate <= now && now < groupedEvent.endDate
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(groupedEvent.isImportant ? Color.orange.opacity(0.15) : theme.cardBackground)
+                .fill(
+                    groupedEvent.isImportant ? Color.orange.opacity(0.15) :
+                    isInProgress ? Color.green.opacity(0.12) :
+                    theme.cardBackground
+                )
 
             // Colored date panel that fills the card height with rounded left edge
             Group {

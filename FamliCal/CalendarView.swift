@@ -361,6 +361,8 @@ struct CalendarView: View {
     private func dayEventButton(for groupedEvent: GroupedDayEvent, isCompact: Bool) -> some View {
         let upcomingEvent = makeUpcomingEvent(from: groupedEvent)
         let isPast = Date() > groupedEvent.endDate
+        let now = Date()
+        let isInProgress = groupedEvent.startDate <= now && now < groupedEvent.endDate
 
         Button(action: {
             selectedEvent = upcomingEvent
@@ -374,7 +376,7 @@ struct CalendarView: View {
 
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                    .fill(theme.cardBackground)
+                    .fill(isInProgress ? Color.green.opacity(0.12) : theme.cardBackground)
 
                 memberColorBackground(for: groupedEvent)
                     .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
