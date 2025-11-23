@@ -123,28 +123,34 @@ class SupabaseAuthManager: ObservableObject {
         defer { isLoading = false }
 
         do {
+            // Use auth/v1/token with password grant type
+            // Supabase GoTrue requires form-encoded body, not JSON
             let url = supabaseURL.appendingPathComponent("auth/v1/token")
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // Use form-urlencoded for password grant (OAuth 2.0 standard)
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.setValue(anonKey, forHTTPHeaderField: "apikey")
 
-            let body: [String: String] = [
-                "email": email,
-                "password": password,
-                "grant_type": "password"
-            ]
-            request.httpBody = try JSONEncoder().encode(body)
+            // Build form-encoded body with percent encoding
+            let bodyString = "grant_type=password&email=\(email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email)&password=\(password.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? password)"
+            request.httpBody = bodyString.data(using: .utf8)
 
             print("ℹ️ Sign-in request: POST \(url.absoluteString)")
-            print("ℹ️ Headers: Content-Type=application/json, apikey=\(anonKey.prefix(20))...")
-            print("ℹ️ Body: email=\(email), grant_type=password")
+            print("ℹ️ Content-Type: application/x-www-form-urlencoded")
+            print("ℹ️ apikey: \(anonKey.prefix(20))...")
+            print("ℹ️ Body: grant_type=password&email=\(email)&password=\(String(repeating: "*", count: password.count))")
+            if let bodyStr = String(data: request.httpBody ?? Data(), encoding: .utf8) {
+                print("ℹ️ Raw body (masked): \(bodyStr.replacingOccurrences(of: password, with: String(repeating: "*", count: password.count)))")
+            }
 
             let (data, response) = try await URLSession.shared.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw NSError(domain: "InvalidResponse", code: -1)
             }
+
+            print("ℹ️ Response status: \(httpResponse.statusCode)")
 
             if httpResponse.statusCode == 200 {
                 do {
@@ -164,12 +170,21 @@ class SupabaseAuthManager: ObservableObject {
             } else {
                 let errorData = String(data: data, encoding: .utf8) ?? "No error details"
                 print("❌ HTTP Status: \(httpResponse.statusCode)")
-                print("❌ Error response body: \(errorData)")
+                print("❌ Full error response: \(errorData)")
 
                 // Try to parse the error response
-                let error = try? JSONDecoder().decode(ErrorResponse.self, from: data)
-                let errorMessage = error?.message ?? error?.error_description ?? error?.error ?? errorData
-                print("❌ Parsed error message: \(errorMessage)")
+                let decodedError = try? JSONDecoder().decode(ErrorResponse.self, from: data)
+
+                // Build comprehensive error message from all available fields
+                var errorParts: [String] = []
+                if let err = decodedError?.error { errorParts.append("error: \(err)") }
+                if let desc = decodedError?.error_description { errorParts.append("description: \(desc)") }
+                if let msg = decodedError?.message { errorParts.append("message: \(msg)") }
+                if let hint = decodedError?.hint { errorParts.append("hint: \(hint)") }
+                if let details = decodedError?.details { errorParts.append("details: \(details)") }
+
+                let errorMessage = errorParts.isEmpty ? errorData : errorParts.joined(separator: " | ")
+                print("❌ Parsed error: \(errorMessage)")
 
                 throw NSError(domain: "AuthError", code: httpResponse.statusCode, userInfo: ["message": errorMessage])
             }
@@ -267,4 +282,6 @@ private struct ErrorResponse: Codable {
     let error: String?
     let error_description: String?
     let message: String?
+    let hint: String?
+    let details: String?
 }
