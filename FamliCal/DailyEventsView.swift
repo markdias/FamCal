@@ -289,23 +289,31 @@ struct DailyEventsView: View {
 
     private func eventCell(for event: DayEventItem, isTapped: Bool) -> some View {
         let isPast = Date() > event.endDate
+        let duration = event.endDate.timeIntervalSince(event.startDate)
+        let isShortEvent = duration <= 1800 // 30 minutes
 
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: isShortEvent ? 0 : 2) {
             Text(event.title)
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.white)
-                .lineLimit(2)
+                .lineLimit(isShortEvent ? 1 : 2)
                 .opacity(isPast ? 0.7 : 1.0)
 
-            Text(event.timeRange ?? "")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+            if !isShortEvent {
+                Text(event.timeRange ?? "")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
 
-            Text(event.memberNames.joined(separator: ", "))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+                Text(event.memberNames.joined(separator: ", "))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+            } else {
+                 // For short events, maybe show time in a more compact way or hide it if it doesn't fit
+                 // User only asked to remove member name, but 15pt is very small.
+                 // Let's try showing just the title for maximum "thinner" look.
+            }
         }
-        .padding(6)
+        .padding(isShortEvent ? 2 : 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(event.color).opacity(isPast ? (isTapped ? 0.5 : 0.35) : (isTapped ? 1.0 : 0.6)))
         .cornerRadius(6)
@@ -370,7 +378,7 @@ struct DailyEventsView: View {
         for (columnIndex, column) in columns.enumerated() {
             for event in column {
                 let yPosition = yOffset(for: event.startDate)
-                let height = max(20, yOffset(for: event.endDate) - yPosition)
+                let height = max(15, yOffset(for: event.endDate) - yPosition)
                 let xPosition = xOffset + CGFloat(columnIndex) * (columnWidth + overlappingEventSpacing)
 
                 layouts.append(EventLayout(event: event, x: xPosition, y: yPosition, width: columnWidth, height: height))
@@ -381,9 +389,9 @@ struct DailyEventsView: View {
     }
 
     private func yOffset(for date: Date) -> CGFloat {
-        let hour = calendar.component(.hour, from: date)
-        let minute = calendar.component(.minute, from: date)
-        return CGFloat(hour) * hourHeight + CGFloat(minute) / 60.0 * hourHeight
+        let startOfDay = calendar.startOfDay(for: date)
+        let timeInterval = date.timeIntervalSince(startOfDay)
+        return (CGFloat(timeInterval) / 3600.0 * hourHeight) + 4.0
     }
 
     private func startTimeUpdates() {

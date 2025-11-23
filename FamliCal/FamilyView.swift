@@ -19,6 +19,7 @@ struct FamilyView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @AppStorage("eventsPerPerson") private var eventsPerPerson: Int = 3
     @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
+    @AppStorage("nextEventColumns") private var nextEventColumns: Int = 2
     @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
 
     @FetchRequest(
@@ -329,11 +330,12 @@ struct FamilyView: View {
         return VStack(alignment: .leading, spacing: 24) {
             // MARK: Next Events Section
             VStack(alignment: .leading, spacing: 16) {
+                let spacing: CGFloat = nextEventColumns <= 2 ? 24 : 12
                 let columns = isLandscape
-                    ? Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
-                    : [GridItem(.flexible()), GridItem(.flexible())]
+                    ? Array(repeating: GridItem(.flexible(), spacing: spacing), count: nextEventColumns + 2)
+                    : Array(repeating: GridItem(.flexible(), spacing: spacing), count: nextEventColumns)
 
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: spacing) {
                     ForEach(displayedEvents) { memberGroup in
                         if let nextEvent = memberGroup.nextEvent,
                            !nextEvent.isAllDay,
@@ -385,7 +387,7 @@ struct FamilyView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, nextEventColumns > 2 ? 16 : 32)
             }
 
             // MARK: Important Events Section
@@ -558,9 +560,16 @@ struct FamilyView: View {
     }
 
     private func nextEventCard(for memberGroup: MemberEventGroup, event: GroupedEvent) -> some View {
-        let (statusText, _) = getEventStatus(event)
+        let (statusText, statusColor) = getEventStatus(event)
         let barColor = Color(uiColor: event.calendarColor)
-        let barWidth: CGFloat = 5
+        let barWidth: CGFloat = 6
+        
+        // Dynamic font sizing based on columns
+        let titleSize: CGFloat = nextEventColumns >= 4 ? 11 : (nextEventColumns == 3 ? 12 : 14)
+        let detailSize: CGFloat = nextEventColumns >= 4 ? 9 : (nextEventColumns == 3 ? 10 : 11)
+        
+        // Format date with relative labels
+        let dateText = formatRelativeDate(event.startDate)
 
         return ZStack(alignment: .topLeading) {
             // Card background
@@ -571,39 +580,41 @@ struct FamilyView: View {
             VStack(alignment: .leading, spacing: 6) {
                 // Member name
                 Text(memberGroup.memberName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: titleSize, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
                 // Event title
                 Text(event.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: titleSize, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(2)
 
                 Spacer(minLength: 0)
 
-                // Day name and date
-                Text("\(Self.dayOfWeekFormatter.string(from: event.startDate)), \(Self.dateFormatter.string(from: event.startDate))")
-                    .font(.system(size: 11, weight: .semibold))
+                // Day name and date (with relative formatting)
+                Text(dateText)
+                    .font(.system(size: detailSize, weight: .semibold))
                     .foregroundColor(secondaryTextColor)
 
                 // Time on its own line to avoid truncation
                 if let timeRange = event.timeRange {
                     Text(timeRange)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: detailSize, weight: .semibold))
                         .foregroundColor(secondaryTextColor)
                 }
 
-                // Status on separate line
+                // Status on separate line with color
                 Text(statusText)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(secondaryTextColor)
+                    .font(.system(size: detailSize, weight: .semibold))
+                    .foregroundColor(statusColor)
             }
             .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
             .padding(12)
         }
-        .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)
+
+        .aspectRatio(1, contentMode: .fill)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(theme.cardStroke, lineWidth: 1)
@@ -621,7 +632,7 @@ struct FamilyView: View {
             alignment: .leading
         )
         .overlay(alignment: .bottomTrailing) {
-            if let bubble = timeBubble(for: event) {
+            if nextEventColumns <= 2, let bubble = timeBubble(for: event) {
                 Text(bubble.text)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(bubble.foreground)
@@ -632,7 +643,6 @@ struct FamilyView: View {
                     .padding(10)
             }
         }
-        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 
     private func getTimeUntilEvent(_ eventDate: Date) -> String {
@@ -1179,6 +1189,19 @@ struct FamilyView: View {
         // Wait for the task to complete with a brief delay to show refresh indicator
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
+    
+    private func formatRelativeDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInTomorrow(date) {
+            return "Tomorrow"
+        } else {
+            // Use the standard format for dates beyond tomorrow
+            return "\(Self.dayOfWeekFormatter.string(from: date)), \(Self.dateFormatter.string(from: date))"
+        }
+    }
 
     private func getEventStatus(_ event: GroupedEvent) -> (status: String, color: Color) {
         let now = currentTime
@@ -1219,8 +1242,14 @@ struct FamilyView: View {
 
     private func bubbleText(from components: DateComponents) -> String? {
         if let days = components.day, days > 0 {
+            if let hours = components.hour, hours > 0 {
+                return "\(days)d \(hours)h"
+            }
             return "\(days)d"
         } else if let hours = components.hour, hours > 0 {
+            if let minutes = components.minute, minutes > 0 {
+                return "\(hours)h \(minutes)m"
+            }
             return "\(hours)h"
         } else if let minutes = components.minute, minutes > 0 {
             return "\(minutes)m"

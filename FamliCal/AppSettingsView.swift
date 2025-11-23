@@ -19,6 +19,7 @@ struct AppSettingsView: View {
 
     @AppStorage("eventsPerPerson") private var eventsPerPerson: Int = 3
     @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
+    @AppStorage("nextEventColumns") private var nextEventColumns: Int = 2
     @AppStorage("eventsPastDays") private var eventsPastDays: Int = 90
     @AppStorage("eventsFutureDays") private var eventsFutureDays: Int = 180
     @AppStorage("defaultAlertOption") private var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
@@ -114,27 +115,7 @@ struct AppSettingsView: View {
                                     )
                                 )
                                 
-                                Divider().padding(.leading, 16)
-                                
-                                NavigationLink(destination: DriversListView().environment(\.managedObjectContext, viewContext)) {
-                                    HStack(spacing: 16) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Drivers")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
 
-                                            Text("Manage drivers for events")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor.opacity(0.6))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
                             }
                         }
 
@@ -224,6 +205,22 @@ struct AppSettingsView: View {
                                         }
                                         .pickerStyle(.menu)
                                         .tint(theme.accentColor)
+                                    )
+                                )
+                                
+                                Divider().padding(.leading, 16)
+                                
+                                settingCard(
+                                    title: "Next event columns",
+                                    subtitle: "Number of panels per row",
+                                    picker: AnyView(
+                                        Picker("Columns", selection: $nextEventColumns) {
+                                            Text("2").tag(2)
+                                            Text("3").tag(3)
+                                            Text("4").tag(4)
+                                        }
+                                        .pickerStyle(.segmented)
+                                        .frame(width: 120)
                                     )
                                 )
                                 
@@ -320,6 +317,28 @@ struct AppSettingsView: View {
                                                 .foregroundColor(primaryTextColor)
 
                                             Text("Manage favorite locations")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(secondaryTextColor.opacity(0.6))
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                
+                                Divider().padding(.leading, 16)
+                                
+                                NavigationLink(destination: DriversListView().environment(\.managedObjectContext, viewContext)) {
+                                    HStack(spacing: 16) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Drivers")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+
+                                            Text("Manage drivers for events")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(secondaryTextColor)
                                         }
