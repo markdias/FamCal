@@ -123,23 +123,31 @@ class SupabaseAuthManager: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // Use auth/v1/token with password grant type
-            // Supabase GoTrue requires form-encoded body, not JSON
-            let url = supabaseURL.appendingPathComponent("auth/v1/token")
+            // Use auth/v1/token with grant_type as query parameter
+            // Supabase GoTrue requires:
+            // - grant_type=password as query parameter
+            // - JSON content-type body with email and password
+            var urlComponents = URLComponents(url: supabaseURL.appendingPathComponent("auth/v1/token"), resolvingAgainstBaseURL: false)!
+            urlComponents.queryItems = [URLQueryItem(name: "grant_type", value: "password")]
+            let url = urlComponents.url!
+
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            // Use form-urlencoded for password grant (OAuth 2.0 standard)
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(anonKey, forHTTPHeaderField: "apikey")
 
-            // Build form-encoded body with percent encoding
-            let bodyString = "grant_type=password&email=\(email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email)&password=\(password.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? password)"
-            request.httpBody = bodyString.data(using: .utf8)
+            struct SignInBody: Encodable {
+                let email: String
+                let password: String
+            }
+
+            let body = SignInBody(email: email, password: password)
+            request.httpBody = try JSONEncoder().encode(body)
 
             print("ℹ️ Sign-in request: POST \(url.absoluteString)")
-            print("ℹ️ Content-Type: application/x-www-form-urlencoded")
+            print("ℹ️ Content-Type: application/json")
             print("ℹ️ apikey: \(anonKey.prefix(20))...")
-            print("ℹ️ Body: grant_type=password&email=\(email)&password=\(String(repeating: "*", count: password.count))")
+            print("ℹ️ Body: {\"email\":\"\(email)\",\"password\":\"***\"}")
             if let bodyStr = String(data: request.httpBody ?? Data(), encoding: .utf8) {
                 print("ℹ️ Raw body (masked): \(bodyStr.replacingOccurrences(of: password, with: String(repeating: "*", count: password.count)))")
             }
