@@ -3,8 +3,8 @@ import CoreData
 import Contacts
 
 struct EditDriverView: View {
-    @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     let driver: Driver
 
@@ -109,39 +109,41 @@ struct EditDriverView: View {
     }
 
     private func updateDriver() {
-        driver.name = name.trimmingCharacters(in: .whitespaces)
-        driver.phone = phone.trimmingCharacters(in: .whitespaces).isEmpty ? nil : phone
-        driver.email = email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email
-        driver.notes = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
+        guard let id = driver.id else {
+            print("❌ Cannot update driver: missing ID")
+            return
+        }
 
-        print("🚗 Updating driver: \(driver.name ?? "nil")")
-        print("   Driver ID: \(driver.id?.uuidString ?? "nil")")
-        print("   Has changes: \(viewContext.hasChanges)")
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespaces)
 
-        do {
-            try viewContext.save()
-            print("✅ Driver updated successfully")
-            dismiss()
-        } catch {
-            print("❌ Failed to update driver: \(error.localizedDescription)")
-            let nsError = error as NSError
-            print("   Error domain: \(nsError.domain)")
-            print("   Error code: \(nsError.code)")
+        Task {
+            await dataManager.updateDriver(
+                id: id,
+                name: trimmedName,
+                phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
+                email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+            )
+            await MainActor.run {
+                dismiss()
+            }
         }
     }
 
     private func deleteDriver() {
-        viewContext.delete(driver)
+        guard let id = driver.id else {
+            print("❌ Cannot delete driver: missing ID")
+            return
+        }
 
-        do {
-            try viewContext.save()
-            print("✅ Driver deleted successfully: \(driver.name ?? "Unknown")")
-            dismiss()
-        } catch {
-            print("❌ Failed to delete driver: \(error.localizedDescription)")
-            let nsError = error as NSError
-            print("   Error domain: \(nsError.domain)")
-            print("   Error code: \(nsError.code)")
+        Task {
+            await dataManager.deleteDriver(id: id)
+            await MainActor.run {
+                dismiss()
+            }
         }
     }
 }
@@ -158,5 +160,6 @@ struct EditDriverView: View {
     return NavigationStack {
         EditDriverView(driver: driver)
             .environment(\.managedObjectContext, context)
+            .environmentObject(SupabaseDataManager.shared)
     }
 }

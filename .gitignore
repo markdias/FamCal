@@ -1,4 +1,10 @@
-.build
-.claude
+.DS_Store
+build/
+.build/
+
+# Environment and secrets
+.env
+SupabaseConfig.swift
 .vscode
 build/
+.env.example

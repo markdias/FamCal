@@ -12,6 +12,7 @@ struct FamilyAndEventsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -98,6 +99,7 @@ struct FamilyAndEventsView: View {
         .sheet(isPresented: $showingAddSharedCalendar) {
             AddSharedCalendarView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
         }
         .sheet(item: $selectedMember) { member in
             SelectMemberCalendarsView(member: member)

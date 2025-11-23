@@ -12,6 +12,8 @@ struct SettingsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var authManager: SupabaseAuthManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @State private var showingFamilySettings = false
     @State private var showingAppSettings = false
     @State private var showingNotifications = false
@@ -72,6 +74,58 @@ struct SettingsView: View {
                             .padding(.vertical, 8)
                         }
                         
+                        // Account Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Account")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .padding(.horizontal, 16)
+                            
+                            settingsContainer {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.system(size: 24))
+                                            .foregroundColor(theme.accentColor)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Signed in as")
+                                                .font(.caption)
+                                                .foregroundColor(secondaryTextColor)
+                                            Text(authManager.userEmail ?? "Unknown")
+                                                .font(.system(size: 15, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                        }
+                                        
+                                        Spacer()
+                                    }
+                                    .padding()
+                                    
+                                    Divider()
+                                    
+                                    Button {
+                                        Task {
+                                            try? await authManager.signOut()
+                                            // Reset onboarding state on logout
+                                            UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "arrow.left.square")
+                                                .font(.system(size: 20))
+                                                .foregroundColor(.red)
+                                            Text("Sign Out")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.red)
+                                            Spacer()
+                                        }
+                                        .padding()
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        
                         // More Section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("More")
@@ -93,19 +147,6 @@ struct SettingsView: View {
                         }
                         
                         Spacer(minLength: 40)
-                        
-                        // Log out
-                        Button(action: {
-                            // Log out action
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.left.square")
-                                Text("Log out")
-                            }
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(secondaryTextColor)
-                        }
-                        .padding(.bottom, 20)
                     }
                     .padding(.vertical, 20)
                 }
@@ -134,11 +175,15 @@ struct SettingsView: View {
         .sheet(isPresented: $showingAppSettings) {
             AppSettingsView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(appSettingsManager)
+                .environmentObject(themeManager)
         }
         .sheet(isPresented: $showingNotifications) {
             NavigationView {
                 NotificationSettingsView()
                     .environment(\.managedObjectContext, viewContext)
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
             }
         }
         .sheet(isPresented: $showingPermissions) {
@@ -149,6 +194,8 @@ struct SettingsView: View {
         .sheet(isPresented: $showingWidgetSettings) {
             NavigationView {
                 WidgetSettingsView()
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
             }
         }
         .sheet(isPresented: $showingHelp) {

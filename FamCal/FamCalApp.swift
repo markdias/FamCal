@@ -15,6 +15,7 @@ struct FamCalApp: App {
     @StateObject private var authManager = SupabaseAuthManager.shared
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
+    @StateObject private var appSettingsManager = AppSettingsManager.shared
     @State private var hasCompletedOnboarding: Bool?
     @State private var deepLinkEventTitle: String?
     @State private var deepLinkMemberId: UUID?
@@ -63,8 +64,12 @@ struct FamCalApp: App {
                                 .environmentObject(themeManager)
                                 .environmentObject(authManager)
                                 .environmentObject(dataManager)
+                                .environmentObject(appSettingsManager)
                                 .onAppear {
                                     dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                                    Task {
+                                        await appSettingsManager.loadSettings()
+                                    }
                                 }
                         } else {
                             OnboardingView()
@@ -72,8 +77,12 @@ struct FamCalApp: App {
                                 .environmentObject(themeManager)
                                 .environmentObject(authManager)
                                 .environmentObject(dataManager)
+                                .environmentObject(appSettingsManager)
                                 .onAppear {
                                     dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                                    Task {
+                                        await appSettingsManager.loadSettings()
+                                    }
                                 }
                         }
                     } else {
@@ -83,9 +92,13 @@ struct FamCalApp: App {
                             .environmentObject(themeManager)
                             .environmentObject(authManager)
                             .environmentObject(dataManager)
+                            .environmentObject(appSettingsManager)
                             .onAppear {
                                 hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                                Task {
+                                    await appSettingsManager.loadSettings()
+                                }
                             }
                     }
                 } else {

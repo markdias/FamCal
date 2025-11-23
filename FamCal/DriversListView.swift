@@ -12,6 +12,7 @@ struct DriversListView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(entity: Driver.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \Driver.name, ascending: true)])
     private var drivers: FetchedResults<Driver>
@@ -130,12 +131,14 @@ struct DriversListView: View {
         .sheet(isPresented: $showingAddDriver) {
             AddDriverView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
         }
         .sheet(item: $editingDriver) { driver in
             NavigationStack {
                 EditDriverView(driver: driver)
             }
             .environment(\.managedObjectContext, viewContext)
+            .environmentObject(dataManager)
         }
         .alert("Delete Driver?", isPresented: $showingDeleteConfirmation, presenting: driverPendingDelete) { driver in
             Button("Cancel", role: .cancel) { }
@@ -191,16 +194,13 @@ struct DriversListView: View {
     }
 
     private func deleteDriver(_ driver: Driver) {
-        viewContext.delete(driver)
+        guard let id = driver.id else {
+            print("❌ Cannot delete driver: missing ID")
+            return
+        }
 
-        do {
-            try viewContext.save()
-            print("✅ Driver deleted successfully: \(driver.name ?? "Unknown")")
-        } catch {
-            print("❌ Failed to delete driver: \(error.localizedDescription)")
-            let nsError = error as NSError
-            print("   Error domain: \(nsError.domain)")
-            print("   Error code: \(nsError.code)")
+        Task {
+            await dataManager.deleteDriver(id: id)
         }
     }
 
@@ -210,4 +210,5 @@ struct DriversListView: View {
     DriversListView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(ThemeManager())
+        .environmentObject(SupabaseDataManager.shared)
 }

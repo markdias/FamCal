@@ -3,8 +3,8 @@ import CoreData
 import Contacts
 
 struct AddDriverView: View {
-    @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @State private var name = ""
     @State private var phone = ""
@@ -88,41 +88,26 @@ struct AddDriverView: View {
     }
 
     private func saveDriver() {
-        let newDriver = Driver(context: viewContext)
-        newDriver.id = UUID()
-        newDriver.name = name.trimmingCharacters(in: .whitespaces)
-        newDriver.phone = phone.trimmingCharacters(in: .whitespaces).isEmpty ? nil : phone
-        newDriver.email = email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email
-        newDriver.notes = notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespaces)
 
-        print("🚗 Saving driver: \(newDriver.name ?? "nil")")
-        print("   Driver ID: \(newDriver.id?.uuidString ?? "nil")")
-        print("   Context: \(viewContext)")
-        print("   Has changes: \(viewContext.hasChanges)")
-
-        do {
-            try viewContext.save()
-            print("✅ Driver saved successfully")
-
-            // Verify save by fetching back
-            let request = Driver.fetchRequest()
-            request.predicate = NSPredicate(format: "id == %@", newDriver.id! as NSUUID)
-            if let saved = try viewContext.fetch(request).first {
-                print("✅ Verified: Driver \(saved.name ?? "nil") exists in database")
+        Task {
+            await dataManager.createDriver(
+                name: trimmedName,
+                phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
+                email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+            )
+            await MainActor.run {
+                dismiss()
             }
-
-            dismiss()
-        } catch {
-            print("❌ Failed to save driver: \(error.localizedDescription)")
-            let nsError = error as NSError
-            print("   Error domain: \(nsError.domain)")
-            print("   Error code: \(nsError.code)")
-            print("   User info: \(nsError.userInfo)")
         }
     }
 }
 
 #Preview {
     AddDriverView()
-        .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environmentObject(SupabaseDataManager.shared)
 }

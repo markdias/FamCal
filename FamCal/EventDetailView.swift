@@ -590,6 +590,13 @@ struct EventDetailView: View {
                     self.selectedDriver = .familyMember(familyMember)
                     print("✅ Family member driver loaded: \(familyMember.name ?? "nil")")
                 }
+
+                // Ensure metadata exists remotely if we already have a driver
+                if familyEvent.driver != nil || familyEvent.driverFamilyMemberId != nil {
+                    Task {
+                        await syncDriverMetadataToSupabase(for: familyEvent)
+                    }
+                }
             } else {
                 print("ℹ️ No FamilyEvent found for this event")
             }
@@ -605,9 +612,23 @@ struct EventDetailView: View {
         do {
             let results = try viewContext.fetch(fetchRequest)
 
-            guard let familyEvent = results.first else {
-                print("❌ Could not find FamilyEvent to update driver")
-                return
+            // Ensure a FamilyEvent exists for this calendar item so we can persist driver metadata
+            let familyEvent: FamilyEvent
+            if let existing = results.first {
+                familyEvent = existing
+            } else {
+                familyEvent = FamilyEvent(context: viewContext)
+                familyEvent.id = UUID()
+                familyEvent.eventGroupId = UUID()
+                familyEvent.eventIdentifier = event.id
+                familyEvent.calendarId = event.calendarID
+                familyEvent.createdAt = Date()
+                print("ℹ️ Created FamilyEvent placeholder for driver sync (event \(event.id))")
+            }
+
+            // Keep calendar linkage up to date
+            if familyEvent.calendarId == nil {
+                familyEvent.calendarId = event.calendarID
             }
 
             // Clear existing driver relationships
@@ -642,8 +663,72 @@ struct EventDetailView: View {
 
             try viewContext.save()
             print("✅ Driver saved to CoreData")
+
+            // Persist the app-only driver link to Supabase
+            Task {
+                await syncDriverMetadataToSupabase(for: familyEvent)
+            }
         } catch {
             print("❌ Failed to save driver: \(error.localizedDescription)")
+        }
+    }
+
+    private func syncDriverMetadataToSupabase(for familyEvent: FamilyEvent) async {
+        guard let userId = SupabaseAuthManager.shared.userId else {
+            print("⚠️ Supabase sync skipped: no user ID")
+            return
+        }
+
+        guard !event.calendarID.isEmpty else {
+            print("⚠️ Supabase sync skipped: missing calendar ID for event \(event.id)")
+            return
+        }
+
+        let driverFamilyMemberId = familyEvent.driverFamilyMemberId?.uuidString
+        let extra = buildDriverExtraMetadata(from: selectedDriver)
+
+        do {
+            try await SupabaseManager.shared.upsertCalendarEventMetadata(
+                userId: userId,
+                calendarId: event.calendarID,
+                eventIdentifier: event.id,
+                driverFamilyMemberId: driverFamilyMemberId,
+                extra: extra.isEmpty ? nil : extra
+            )
+            print("✅ Synced driver metadata to Supabase for event \(event.id)")
+        } catch {
+            print("❌ Failed to sync driver metadata to Supabase: \(error)")
+        }
+    }
+
+    private func buildDriverExtraMetadata(from driver: DriverWrapper?) -> [String: AnyCodable] {
+        guard let driver else { return [:] }
+
+        switch driver {
+        case .regular(let driverModel):
+            var payload: [String: AnyCodable] = ["driver_type": .string("driver_record")]
+            if let id = driverModel.id?.uuidString {
+                payload["driver_id"] = .string(id)
+            }
+            if let name = driverModel.name {
+                payload["driver_name"] = .string(name)
+            }
+            if let phone = driverModel.phone {
+                payload["driver_phone"] = .string(phone)
+            }
+            if let email = driverModel.email {
+                payload["driver_email"] = .string(email)
+            }
+            return payload
+        case .familyMember(let member):
+            var payload: [String: AnyCodable] = ["driver_type": .string("family_member")]
+            if let name = member.name {
+                payload["driver_name"] = .string(name)
+            }
+            if let memberId = member.id?.uuidString {
+                payload["family_member_id"] = .string(memberId)
+            }
+            return payload
         }
     }
 

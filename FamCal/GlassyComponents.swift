@@ -102,6 +102,13 @@ extension View {
     func glassyCard(padding: CGFloat = 16) -> some View {
         modifier(GlassyCard(padding: padding))
     }
+
+    func placeholder<Content: View>(when shouldShow: Bool, alignment: Alignment = .leading, @ViewBuilder placeholder: () -> Content) -> some View {
+        ZStack(alignment: alignment) {
+            placeholder().opacity(shouldShow ? 1 : 0)
+            self
+        }
+    }
 }
 
 struct GlassyGridItem<Content: View>: View {
@@ -140,5 +147,86 @@ struct GlassyGridItem<Content: View>: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Glassy Text Field Components
+
+struct GlassyTextField: View {
+    let icon: String
+    let placeholder: String
+    @Binding var text: String
+    var theme: AppTheme?
+
+    var body: some View {
+        let theme = theme ?? AppTheme.classic
+
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(theme.textSecondary.opacity(0.7))
+                .frame(width: 20)
+
+            TextField(placeholder, text: $text)
+                .foregroundStyle(theme.textPrimary)
+                .tint(theme.accentColor)
+                .placeholder(when: text.isEmpty) {
+                    Text(placeholder).foregroundColor(theme.textSecondary.opacity(0.6))
+                }
+        }
+        .padding()
+        .background(theme.floatingControlsBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.floatingControlsBorder, lineWidth: 1)
+        )
+        .cornerRadius(12)
+    }
+}
+
+struct GlassySecureField: View {
+    let icon: String
+    let placeholder: String
+    @Binding var text: String
+    @Binding var showPassword: Bool
+    var theme: AppTheme?
+
+    var body: some View {
+        let theme = theme ?? AppTheme.classic
+
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(theme.textSecondary.opacity(0.7))
+                .frame(width: 20)
+
+            if showPassword {
+                TextField(placeholder, text: $text)
+                    .foregroundStyle(theme.textPrimary)
+                    .tint(theme.accentColor)
+                    .placeholder(when: text.isEmpty) {
+                        Text(placeholder).foregroundColor(theme.textSecondary.opacity(0.6))
+                    }
+            } else {
+                SecureField(placeholder, text: $text)
+                    .foregroundStyle(theme.textPrimary)
+                    .tint(theme.accentColor)
+                    .placeholder(when: text.isEmpty) {
+                        Text(placeholder).foregroundColor(theme.textSecondary.opacity(0.6))
+                    }
+            }
+
+            Button {
+                showPassword.toggle()
+            } label: {
+                Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
+                    .foregroundStyle(theme.textSecondary.opacity(0.7))
+            }
+        }
+        .padding()
+        .background(theme.floatingControlsBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.floatingControlsBorder, lineWidth: 1)
+        )
+        .cornerRadius(12)
     }
 }

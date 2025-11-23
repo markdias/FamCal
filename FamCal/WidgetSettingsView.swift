@@ -10,15 +10,32 @@ import SwiftUI
 struct WidgetSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
-    @AppStorage("widgetShowTime", store: UserDefaults(suiteName: "group.com.markdias.famli")) private var showTime: Bool = true
-    @AppStorage("widgetShowLocation", store: UserDefaults(suiteName: "group.com.markdias.famli")) private var showLocation: Bool = true
-    @AppStorage("widgetShowAttendees", store: UserDefaults(suiteName: "group.com.markdias.famli")) private var showAttendees: Bool = true
-    @AppStorage("widgetShowDrivers", store: UserDefaults(suiteName: "group.com.markdias.famli")) private var showDrivers: Bool = true
-    
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
     private var toggleColor: Color { theme.accentGradient?.colors.first ?? theme.accentColor }
+
+    private var widgetShowEventsBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.widgetShowEventsCount },
+            set: {
+                appSettingsManager.widgetShowEventsCount = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var widgetOwnCalendarsBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.widgetShowOwnCalendarsOnly },
+            set: {
+                appSettingsManager.widgetShowOwnCalendarsOnly = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -36,19 +53,23 @@ struct WidgetSettingsView: View {
                         settingsContainer {
                             HStack(spacing: 16) {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Event Time")
+                                    Text("Number of Events")
                                         .font(.system(size: 16, weight: .medium))
                                         .foregroundColor(primaryTextColor)
 
-                                    Text("Show event start time")
+                                    Text("How many events to display")
                                         .font(.system(size: 13))
                                         .foregroundColor(secondaryTextColor)
                                 }
 
                                 Spacer()
 
-                                Toggle("", isOn: $showTime)
-                                    .tint(toggleColor)
+                                Picker("", selection: widgetShowEventsBinding) {
+                                    ForEach(1...10, id: \.self) { count in
+                                        Text("\(count)").tag(count)
+                                    }
+                                }
+                                .pickerStyle(.menu)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
@@ -57,60 +78,18 @@ struct WidgetSettingsView: View {
 
                             HStack(spacing: 16) {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Location")
+                                    Text("Own Calendars Only")
                                         .font(.system(size: 16, weight: .medium))
                                         .foregroundColor(primaryTextColor)
 
-                                    Text("Show event location")
+                                    Text("Show only your calendars")
                                         .font(.system(size: 13))
                                         .foregroundColor(secondaryTextColor)
                                 }
 
                                 Spacer()
 
-                                Toggle("", isOn: $showLocation)
-                                    .tint(toggleColor)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-
-                            Divider().padding(.leading, 16)
-
-                            HStack(spacing: 16) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Attendees")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(primaryTextColor)
-
-                                    Text("Show family members attending")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(secondaryTextColor)
-                                }
-
-                                Spacer()
-
-                                Toggle("", isOn: $showAttendees)
-                                    .tint(toggleColor)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-
-                            Divider().padding(.leading, 16)
-
-                            HStack(spacing: 16) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Drivers")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(primaryTextColor)
-
-                                    Text("Show assigned drivers")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(secondaryTextColor)
-                                }
-
-                                Spacer()
-
-                                Toggle("", isOn: $showDrivers)
+                                Toggle("", isOn: widgetOwnCalendarsBinding)
                                     .tint(toggleColor)
                             }
                             .padding(.horizontal, 16)

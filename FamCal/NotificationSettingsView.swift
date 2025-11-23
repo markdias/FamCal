@@ -12,16 +12,65 @@ struct NotificationSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var notificationManager = NotificationManager.shared
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
 
+    private var notificationsEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.notificationsEnabled },
+            set: {
+                appSettingsManager.notificationsEnabled = $0
+                Task { await appSettingsManager.saveSettings() }
+                if $0 {
+                    Task {
+                        _ = await notificationManager.requestNotificationPermission()
+                    }
+                }
+            }
+        )
+    }
+
+    private var morningBriefEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.morningBriefEnabled },
+            set: {
+                appSettingsManager.morningBriefEnabled = $0
+                Task { await appSettingsManager.saveSettings() }
+                notificationManager.scheduleMorningBrief()
+            }
+        )
+    }
+
+    private var morningBriefTimeHourBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.morningBriefTimeHour },
+            set: {
+                appSettingsManager.morningBriefTimeHour = $0
+                Task { await appSettingsManager.saveSettings() }
+                notificationManager.scheduleMorningBrief()
+            }
+        )
+    }
+
+    private var morningBriefTimeMinuteBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.morningBriefTimeMinute },
+            set: {
+                appSettingsManager.morningBriefTimeMinute = $0
+                Task { await appSettingsManager.saveSettings() }
+                notificationManager.scheduleMorningBrief()
+            }
+        )
+    }
+
     var body: some View {
         NavigationView {
             ZStack {
                 theme.backgroundLayer().ignoresSafeArea()
-                
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         // Notifications Section
@@ -36,7 +85,7 @@ struct NotificationSettingsView: View {
                             }
                         }
 
-                        if notificationManager.notificationsEnabled {
+                        if appSettingsManager.notificationsEnabled {
                             // Morning Brief Section
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Morning Brief")
@@ -93,15 +142,7 @@ struct NotificationSettingsView: View {
 
             Spacer()
 
-            Toggle("", isOn: $notificationManager.notificationsEnabled)
-                .onChange(of: notificationManager.notificationsEnabled) { _, newValue in
-                    notificationManager.saveSettings()
-                    if newValue {
-                        Task {
-                            _ = await notificationManager.requestNotificationPermission()
-                        }
-                    }
-                }
+            Toggle("", isOn: notificationsEnabledBinding)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -127,16 +168,12 @@ struct NotificationSettingsView: View {
 
                 Spacer()
 
-                Toggle("", isOn: $notificationManager.morningBriefEnabled)
-                    .onChange(of: notificationManager.morningBriefEnabled) { _, _ in
-                        notificationManager.saveSettings()
-                        notificationManager.scheduleMorningBrief()
-                    }
+                Toggle("", isOn: morningBriefEnabledBinding)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            if notificationManager.morningBriefEnabled {
+            if appSettingsManager.morningBriefEnabled {
                 Divider().padding(.leading, 56)
                 morningBriefTimePicker
             }
@@ -156,7 +193,7 @@ struct NotificationSettingsView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(secondaryTextColor)
 
-                    Picker("Hour", selection: $notificationManager.morningBriefTime.hour) {
+                    Picker("Hour", selection: morningBriefTimeHourBinding) {
                         ForEach(0..<24, id: \.self) { hour in
                             Text(String(format: "%02d", hour)).tag(hour)
                         }
@@ -170,7 +207,7 @@ struct NotificationSettingsView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(secondaryTextColor)
 
-                    Picker("Minute", selection: $notificationManager.morningBriefTime.minute) {
+                    Picker("Minute", selection: morningBriefTimeMinuteBinding) {
                         ForEach(Array(stride(from: 0, to: 60, by: 15)), id: \.self) { minute in
                             Text(String(format: "%02d", minute)).tag(minute)
                         }
@@ -181,10 +218,6 @@ struct NotificationSettingsView: View {
             }
         }
         .padding(16)
-        .onChange(of: notificationManager.morningBriefTime) { _, _ in
-            notificationManager.saveSettings()
-            notificationManager.scheduleMorningBrief()
-        }
     }
 
     private func settingsContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {

@@ -153,13 +153,28 @@ struct FamilySettingsView: View {
     }
 
     private func deleteMember(_ member: FamilyMember) {
+        // Delete from Supabase first
+        if let memberId = member.id?.uuidString {
+            Task {
+                do {
+                    let dataManager = SupabaseDataManager.shared
+                    try await dataManager.deleteFamilyMember(id: memberId)
+                    print("✅ Family member deleted from Supabase")
+                } catch {
+                    print("❌ Error deleting family member from Supabase: \(error)")
+                }
+            }
+        }
+
+        // Then delete from CoreData
         viewContext.delete(member)
 
         do {
             try viewContext.save()
+            print("✅ Family member deleted from CoreData")
         } catch {
             let nsError = error as NSError
-            print("Error deleting family member: \(nsError), \(nsError.userInfo)")
+            print("❌ Error deleting family member: \(nsError), \(nsError.userInfo)")
         }
     }
     

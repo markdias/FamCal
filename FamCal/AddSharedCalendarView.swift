@@ -13,6 +13,7 @@ struct AddSharedCalendarView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         entity: SharedCalendar.entity(),
@@ -83,7 +84,9 @@ struct AddSharedCalendarView: View {
                                                 let isAlreadyAdded = sharedCalendars.contains { $0.calendarID == calendar.id }
 
                                                 Button(action: {
-                                                    if !isAlreadyAdded {
+                                                    if isAlreadyAdded {
+                                                        removeSharedCalendar(calendar)
+                                                    } else {
                                                         addSharedCalendar(calendar)
                                                     }
                                                 }) {
@@ -114,7 +117,6 @@ struct AddSharedCalendarView: View {
                                                     .padding(.vertical, 12)
                                                     .contentShape(Rectangle())
                                                }
-                                                .disabled(isAlreadyAdded)
 
                                                 if index < (calendarsBySource[sourceTitle] ?? []).count - 1 {
                                                     Divider()
@@ -193,22 +195,64 @@ struct AddSharedCalendarView: View {
     }
 
     private func addSharedCalendar(_ calendar: AvailableCalendar) {
-        let newSharedCalendar = SharedCalendar(context: viewContext)
-        newSharedCalendar.id = UUID()
-        newSharedCalendar.calendarID = calendar.id
-        newSharedCalendar.calendarName = calendar.title
-        newSharedCalendar.calendarColorHex = calendar.color.hex()
+        // Save to Supabase first
+        Task {
+            do {
+                _ = try await dataManager.addSharedCalendar(
+                    calendarId: calendar.id,
+                    calendarName: calendar.title,
+                    calendarColorHex: calendar.color.hex()
+                )
+                print("✅ Shared calendar saved to Supabase")
 
-        // Link shared calendar to all family members
-        for member in familyMembers {
-            newSharedCalendar.addToMembers(member)
+                // Refresh data to sync shared calendars
+                await dataManager.fetchUserData()
+            } catch {
+                print("❌ Error saving shared calendar: \(error)")
+            }
         }
+    }
 
-        do {
-            try viewContext.save()
-        } catch {
-            let nsError = error as NSError
-            print("Error saving shared calendar: \(nsError), \(nsError.userInfo)")
+    private func removeSharedCalendar(_ calendar: AvailableCalendar) {
+        print("🔍 removeSharedCalendar called for: \(calendar.title)")
+
+        // Find the shared calendar in CoreData
+        if let sharedCalendar = sharedCalendars.first(where: { $0.calendarID == calendar.id }) {
+            guard let calendarId = sharedCalendar.id?.uuidString else {
+                print("❌ Cannot delete: calendar ID not available")
+                return
+            }
+
+            print("📱 Calendar ID: \(calendarId)")
+
+            // Delete from CoreData first (immediate UI update)
+            viewContext.delete(sharedCalendar)
+            do {
+                try viewContext.save()
+                print("✅ Shared calendar deleted from CoreData")
+            } catch {
+                let nsError = error as NSError
+                print("❌ Error deleting from CoreData: \(nsError), \(nsError.userInfo)")
+                return
+            }
+
+            // Then sync deletion to Supabase
+            Task {
+                print("🌐 Starting Supabase deletion for ID: \(calendarId)")
+                do {
+                    let userId = dataManager.authManager.userId ?? "unknown"
+                    print("📧 User ID for deletion: \(userId)")
+
+                    try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
+                    print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
+                } catch {
+                    print("❌ Error deleting from Supabase: \(error)")
+                    // Note: Calendar is already deleted from CoreData locally
+                    // Will be re-synced if Supabase still has it on next fetch
+                }
+            }
+        } else {
+            print("⚠️ Could not find shared calendar in CoreData for ID: \(calendar.id)")
         }
     }
 }

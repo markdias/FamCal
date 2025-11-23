@@ -11,6 +11,7 @@ import CoreData
 struct AddFamilyMemberView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @State private var name = ""
     @State private var isDriver = false
@@ -20,6 +21,8 @@ struct AddFamilyMemberView: View {
     @State private var noCalendarTimer: Timer?
     @State private var showCreateCalendarAlert = false
     @State private var pendingCalendarName: String?
+    @State private var saveError: String?
+    @State private var showSaveError = false
 
     private var calendarLinkingBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -227,6 +230,11 @@ struct AddFamilyMemberView: View {
         } message: {
             Text("Would you like to create a calendar named '\(pendingCalendarName ?? "")'?")
         }
+        .alert("Error", isPresented: $showSaveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(saveError ?? "An unknown error occurred")
+        }
     }
 
     private func loadAvailableCalendars() {
@@ -265,33 +273,41 @@ struct AddFamilyMemberView: View {
     }
 
     private func saveMember() {
-        let newMember = FamilyMember(context: viewContext)
-        newMember.id = UUID()
-        newMember.name = name
-        newMember.isDriver = isDriver
-        newMember.colorHex = getRandomColor().toHex()
-        newMember.avatarInitials = getInitials(from: name)
-        newMember.linkedCalendarID = matchedCalendar?.id
+        Task {
+            do {
+                // Check if member already exists
+                if dataManager.familyMembers.contains(where: { $0.name.lowercased() == name.lowercased() }) {
+                    saveError = "A family member named '\(name)' already exists"
+                    showSaveError = true
+                    return
+                }
 
-        // Create FamilyMemberCalendar entry if a calendar was matched
-        if let matched = matchedCalendar {
-            let memberCalendar = FamilyMemberCalendar(context: viewContext)
-            memberCalendar.id = UUID()
-            memberCalendar.calendarID = matched.id
-            memberCalendar.calendarName = matched.title
-            memberCalendar.calendarColorHex = matched.color.hex()
-            memberCalendar.isAutoLinked = true
-            memberCalendar.familyMember = newMember
-        }
+                let colorHex = getRandomColor().toHex()
+                _ = try await dataManager.createFamilyMember(name: name, colorHex: colorHex)
 
-        do {
-            try viewContext.save()
-            print("✅ App: Family member '\(name)' saved successfully")
-            print("   Store URL: \(viewContext.persistentStoreCoordinator?.persistentStores.first?.url?.path ?? "unknown")")
-            dismiss()
-        } catch {
-            let nsError = error as NSError
-            print("❌ App: Error saving member '\(name)': \(nsError), \(nsError.userInfo)")
+                // If a calendar was matched, add it to the member
+                if let matched = matchedCalendar,
+                   let newMember = dataManager.familyMembers.first(where: { $0.name == name }) {
+                    try await dataManager.supabaseManager.addFamilyMemberCalendar(
+                        memberId: newMember.id,
+                        calendarId: matched.id,
+                        calendarName: matched.title,
+                        calendarColorHex: matched.color.hex(),
+                        isAutoLinked: true
+                    )
+                    print("✅ Calendar linked to family member")
+
+                    // Refresh data to sync the newly added calendar
+                    await dataManager.fetchUserData()
+                }
+
+                print("✅ Family member '\(name)' saved to Supabase successfully")
+                dismiss()
+            } catch {
+                saveError = "Failed to save family member: \(error.localizedDescription)"
+                showSaveError = true
+                print("❌ Error saving member '\(name)': \(error)")
+            }
         }
     }
 

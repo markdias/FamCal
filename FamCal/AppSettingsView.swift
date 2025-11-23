@@ -12,32 +12,98 @@ struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var themeManager: ThemeManager
-
-    @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
-    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
-    @AppStorage("defaultHomeScreen") private var defaultHomeScreenRawValue: String = DefaultHomeScreen.family.rawValue
-
-    @AppStorage("eventsPerPerson") private var eventsPerPerson: Int = 3
-    @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
-    @AppStorage("nextEventColumns") private var nextEventColumns: Int = 2
-    @AppStorage("eventsPastDays") private var eventsPastDays: Int = 90
-    @AppStorage("eventsFutureDays") private var eventsFutureDays: Int = 180
-    @AppStorage("defaultAlertOption") private var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     private let mapsAppOptions = ["Apple Maps", "Google Maps", "Waze"]
     private let refreshIntervalOptions: [Int] = [1, 5, 10, 15, 30, 60]
 
+    private var autoRefreshBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.autoRefreshInterval },
+            set: {
+                appSettingsManager.autoRefreshInterval = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var defaultMapsAppBinding: Binding<String> {
+        Binding(
+            get: { appSettingsManager.defaultMapsApp },
+            set: {
+                appSettingsManager.defaultMapsApp = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
     private var defaultHomeScreenBinding: Binding<DefaultHomeScreen> {
         Binding(
-            get: { DefaultHomeScreen(rawValue: defaultHomeScreenRawValue) ?? .family },
-            set: { defaultHomeScreenRawValue = $0.rawValue }
+            get: { DefaultHomeScreen(rawValue: appSettingsManager.defaultHomeScreenRawValue) ?? .family },
+            set: {
+                appSettingsManager.defaultHomeScreenRawValue = $0.rawValue
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var eventsPerPersonBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.eventsPerPerson },
+            set: {
+                appSettingsManager.eventsPerPerson = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var spotlightEventsBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.spotlightEventsPerPerson },
+            set: {
+                appSettingsManager.spotlightEventsPerPerson = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var nextEventColumnsBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.nextEventColumns },
+            set: {
+                appSettingsManager.nextEventColumns = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var eventsPastDaysBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.eventsPastDays },
+            set: {
+                appSettingsManager.eventsPastDays = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var eventsFutureDaysBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.eventsFutureDays },
+            set: {
+                appSettingsManager.eventsFutureDays = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
         )
     }
 
     private var defaultAlertBinding: Binding<AlertOption> {
         Binding(
-            get: { AlertOption(rawValue: defaultAlertOptionRawValue) ?? .none },
-            set: { defaultAlertOptionRawValue = $0.rawValue }
+            get: { AlertOption(rawValue: appSettingsManager.defaultAlertOptionRawValue) ?? .none },
+            set: {
+                appSettingsManager.defaultAlertOptionRawValue = $0.rawValue
+                Task { await appSettingsManager.saveSettings() }
+            }
         )
     }
 
@@ -88,7 +154,7 @@ struct AppSettingsView: View {
                                     title: "Auto refresh interval",
                                     subtitle: "Minutes between auto-refresh",
                                     picker: AnyView(
-                                        Picker("Refresh Interval", selection: $autoRefreshInterval) {
+                                        Picker("Refresh Interval", selection: autoRefreshBinding) {
                                             ForEach(refreshIntervalOptions, id: \.self) { option in
                                                 Text(option == 1 ? "1 minute" : "\(option) minutes")
                                                     .tag(option)
@@ -105,7 +171,7 @@ struct AppSettingsView: View {
                                     title: "Default maps app",
                                     subtitle: "App to use for location links",
                                     picker: AnyView(
-                                        Picker("Maps App", selection: $defaultMapsApp) {
+                                        Picker("Maps App", selection: defaultMapsAppBinding) {
                                             ForEach(mapsAppOptions, id: \.self) { app in
                                                 Text(app).tag(app)
                                             }
@@ -182,7 +248,7 @@ struct AppSettingsView: View {
                                     title: "Events per person",
                                     subtitle: "How many upcoming events to show",
                                     picker: AnyView(
-                                        Picker("Events", selection: $eventsPerPerson) {
+                                        Picker("Events", selection: eventsPerPersonBinding) {
                                             ForEach(1...10, id: \.self) { number in
                                                 Text("\(number)").tag(number)
                                             }
@@ -191,14 +257,14 @@ struct AppSettingsView: View {
                                         .tint(theme.accentColor)
                                     )
                                 )
-                                
+
                                 Divider().padding(.leading, 16)
-                                
+
                                 settingCard(
                                     title: "Spotlight events",
                                     subtitle: "Events to show in spotlight view",
                                     picker: AnyView(
-                                        Picker("Spotlight", selection: $spotlightEventsPerPerson) {
+                                        Picker("Spotlight", selection: spotlightEventsBinding) {
                                             ForEach(1...15, id: \.self) { number in
                                                 Text("\(number)").tag(number)
                                             }
@@ -207,14 +273,14 @@ struct AppSettingsView: View {
                                         .tint(theme.accentColor)
                                     )
                                 )
-                                
+
                                 Divider().padding(.leading, 16)
-                                
+
                                 settingCard(
                                     title: "Next event columns",
                                     subtitle: "Number of panels per row",
                                     picker: AnyView(
-                                        Picker("Columns", selection: $nextEventColumns) {
+                                        Picker("Columns", selection: nextEventColumnsBinding) {
                                             Text("2").tag(2)
                                             Text("3").tag(3)
                                             Text("4").tag(4)
@@ -246,7 +312,7 @@ struct AppSettingsView: View {
                                     title: "Show past events",
                                     subtitle: "Days to look back",
                                     picker: AnyView(
-                                        Picker("Past Days", selection: $eventsPastDays) {
+                                        Picker("Past Days", selection: eventsPastDaysBinding) {
                                             Text("None").tag(0)
                                             Text("1 Month").tag(30)
                                             Text("2 Months").tag(60)
@@ -258,14 +324,14 @@ struct AppSettingsView: View {
                                         .tint(theme.accentColor)
                                     )
                                 )
-                                
+
                                 Divider().padding(.leading, 16)
-                                
+
                                 settingCard(
                                     title: "Look ahead",
                                     subtitle: "Days to look forward",
                                     picker: AnyView(
-                                        Picker("Future Days", selection: $eventsFutureDays) {
+                                        Picker("Future Days", selection: eventsFutureDaysBinding) {
                                             Text("1 Month").tag(30)
                                             Text("3 Months").tag(90)
                                             Text("6 Months").tag(180)

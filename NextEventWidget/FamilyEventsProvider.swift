@@ -138,29 +138,27 @@ struct FamilyEventsProvider: TimelineProvider {
                 }
             }
 
-            // Fetch FamilyMemberCalendar entities
-            let memberCalendarRequest: NSFetchRequest<NSFetchRequestResult> = NSFetchRequest(entityName: "FamilyMemberCalendar")
+            // Fetch FamilyMemberCalendar entities (as objects to properly handle relationships)
+            let memberCalendarRequest: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "FamilyMemberCalendar")
             memberCalendarRequest.returnsObjectsAsFaults = false
-            memberCalendarRequest.resultType = .dictionaryResultType
 
-            if let memberCalendarResults = try context.fetch(memberCalendarRequest) as? [[String: Any]] {
-                for result in memberCalendarResults {
-                if let calendarID = result["calendarID"] as? String, !calendarID.isEmpty {
-                    if let memberIDObj = result["familyMember"] as? NSManagedObjectID {
-                        do {
-                            let memberObj = try context.existingObject(with: memberIDObj)
-                            let calendarColorHex = (result["calendarColorHex"] as? String)
+            do {
+                let memberCalendarObjects = try context.fetch(memberCalendarRequest)
+                for calendarObj in memberCalendarObjects {
+                    if let calendarID = calendarObj.value(forKey: "calendarID") as? String, !calendarID.isEmpty {
+                        if let memberObj = calendarObj.value(forKey: "familyMember") as? NSManagedObject {
+                            let calendarColorHex = (calendarObj.value(forKey: "calendarColorHex") as? String)
                             if let name = memberObj.value(forKey: "name") as? String,
                                let colorHex = (calendarColorHex ?? memberObj.value(forKey: "colorHex") as? String),
                                let id = memberObj.value(forKey: "id") as? UUID {
                                 memberCalendarMap[calendarID] = (memberId: id, name: name, colorHex: colorHex)
-                            }
-                        } catch {
-                            // Skip if member object can't be fetched
+                                print("✅ Widget: Added member calendar: \(name) - \(calendarID)")
                             }
                         }
                     }
                 }
+            } catch {
+                print("⚠️ Widget: Error fetching FamilyMemberCalendar: \(error)")
             }
 
             // Fetch shared calendars
@@ -183,8 +181,26 @@ struct FamilyEventsProvider: TimelineProvider {
             }
 
             guard !memberCalendarMap.isEmpty else {
+                print("⚠️ Widget: No calendars found in memberCalendarMap")
+                print("   - Legacy linkedCalendarID calendars: \(results.filter { ($0["linkedCalendarID"] as? String)?.isEmpty == false }.count)")
+
+                // Fetch to check how many FamilyMemberCalendar records exist
+                let memberCalendarCountRequest: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "FamilyMemberCalendar")
+                if let count = try? context.fetch(memberCalendarCountRequest).count {
+                    print("   - FamilyMemberCalendar records in DB: \(count)")
+                }
+
+                // Fetch to check how many SharedCalendar records exist
+                let sharedCalendarCountRequest: NSFetchRequest<NSFetchRequestResult> = NSFetchRequest(entityName: "SharedCalendar")
+                sharedCalendarCountRequest.resultType = .countResultType
+                if let countResult = try? context.fetch(sharedCalendarCountRequest).first as? Int {
+                    print("   - SharedCalendar records in DB: \(countResult)")
+                }
+
                 return FamilyEventsEntry(date: Date(), errorMessage: "No calendars found")
             }
+
+            print("✅ Widget: Found \(memberCalendarMap.count) calendars in total")
 
             // Check calendar access
             let calendarAccess = EKEventStore.authorizationStatus(for: .event)

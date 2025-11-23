@@ -13,6 +13,7 @@ struct SavedAddressesSettingsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
@@ -122,6 +123,7 @@ struct SavedAddressesSettingsView: View {
         .sheet(isPresented: $showingAddSheet) {
             AddSavedAddressView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
         }
         .alert("Delete Place?", isPresented: $showingDeleteConfirmation, presenting: addressPendingDelete) { address in
             Button("Cancel", role: .cancel) { }
@@ -173,21 +175,21 @@ struct SavedAddressesSettingsView: View {
     }
     
     private func deleteAddress(_ address: SavedAddress) {
-        withAnimation {
-            viewContext.delete(address)
-            do {
-                try viewContext.save()
-            } catch {
-                print("Error deleting address: \(error)")
-            }
+        guard let id = address.id else {
+            print("❌ Cannot delete saved address: missing ID")
+            return
+        }
+
+        Task {
+            await dataManager.deleteSavedAddress(id: id)
         }
     }
 }
 
 struct AddSavedAddressView: View {
-    @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @State private var name = ""
     @State private var address = ""
@@ -358,16 +360,19 @@ struct AddSavedAddressView: View {
     }
 
     private func saveAddress() {
-        let newAddress = SavedAddress(context: viewContext)
-        newAddress.id = UUID()
-        newAddress.name = name.trimmingCharacters(in: .whitespaces)
-        newAddress.address = address.trimmingCharacters(in: .whitespaces)
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedAddress = address.trimmingCharacters(in: .whitespaces)
 
-        do {
-            try viewContext.save()
-            dismiss()
-        } catch {
-            print("Error saving address: \(error)")
+        Task {
+            await dataManager.createSavedAddress(
+                name: trimmedName,
+                address: trimmedAddress,
+                latitude: 0,
+                longitude: 0
+            )
+            await MainActor.run {
+                dismiss()
+            }
         }
     }
 }

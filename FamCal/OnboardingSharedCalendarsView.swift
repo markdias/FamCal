@@ -10,6 +10,7 @@ import CoreData
 
 struct OnboardingSharedCalendarsView: View {
     @Environment(\.managedObjectContext) private var viewContext
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         entity: SharedCalendar.entity(),
@@ -113,6 +114,7 @@ struct OnboardingSharedCalendarsView: View {
         .sheet(isPresented: $showingAddSharedCalendar) {
             AddSharedCalendarView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
         }
     }
 }

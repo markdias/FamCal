@@ -12,6 +12,7 @@ struct SharedCalendarsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         entity: SharedCalendar.entity(),
@@ -20,6 +21,8 @@ struct SharedCalendarsView: View {
     private var sharedCalendars: FetchedResults<SharedCalendar>
 
     @State private var showingAddSharedCalendar = false
+    @State private var calendarPendingDelete: SharedCalendar?
+    @State private var showingDeleteConfirmation = false
     
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -71,7 +74,8 @@ struct SharedCalendarsView: View {
                                         subtitle: "Shared with all",
                                         colorHex: calendar.calendarColorHex ?? "#007AFF",
                                         onDelete: {
-                                            deleteSharedCalendar(calendar)
+                                            calendarPendingDelete = calendar
+                                            showingDeleteConfirmation = true
                                         }
                                     )
 
@@ -126,17 +130,30 @@ struct SharedCalendarsView: View {
         .sheet(isPresented: $showingAddSharedCalendar) {
             AddSharedCalendarView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
+        }
+        .alert("Delete Shared Calendar?", isPresented: $showingDeleteConfirmation, presenting: calendarPendingDelete) { calendar in
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteSharedCalendar(calendar)
+            }
+        } message: { calendar in
+            Text("Are you sure you want to delete \(calendar.calendarName ?? "this calendar")? This will remove it from the app and Supabase.")
         }
     }
 
     private func deleteSharedCalendar(_ calendar: SharedCalendar) {
-        viewContext.delete(calendar)
+        guard let id = calendar.id else {
+            print("❌ Cannot delete shared calendar: missing ID")
+            return
+        }
 
-        do {
-            try viewContext.save()
-        } catch {
-            let nsError = error as NSError
-            print("Error deleting shared calendar: \(nsError), \(nsError.userInfo)")
+        Task {
+            do {
+                try await dataManager.deleteSharedCalendar(id: id.uuidString)
+            } catch {
+                print("❌ Failed to delete shared calendar in Supabase: \(error)")
+            }
         }
     }
 }

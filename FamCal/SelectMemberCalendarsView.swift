@@ -11,6 +11,7 @@ import CoreData
 struct SelectMemberCalendarsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @ObservedObject private var member: FamilyMember
 
@@ -404,6 +405,7 @@ struct SelectMemberCalendarsView: View {
             return
         }
 
+        // Create in CoreData first
         let newMemberCalendar = FamilyMemberCalendar(context: viewContext)
         newMemberCalendar.id = UUID()
         newMemberCalendar.calendarID = calendar.id
@@ -414,9 +416,34 @@ struct SelectMemberCalendarsView: View {
 
         do {
             try viewContext.save()
+            print("✅ Calendar added to CoreData")
+
+            // Sync to Supabase
+            guard let memberId = member.id?.uuidString else {
+                print("❌ Member ID not available")
+                return
+            }
+
+            Task {
+                do {
+                    try await dataManager.supabaseManager.addFamilyMemberCalendar(
+                        memberId: memberId,
+                        calendarId: calendar.id,
+                        calendarName: calendar.title,
+                        calendarColorHex: calendar.color.hex(),
+                        isAutoLinked: false
+                    )
+                    print("✅ Calendar added to Supabase")
+
+                    // Refresh data to ensure sync
+                    await dataManager.fetchUserData()
+                } catch {
+                    print("❌ Error syncing calendar to Supabase: \(error)")
+                }
+            }
         } catch {
             let nsError = error as NSError
-            print("Error adding calendar: \(nsError), \(nsError.userInfo)")
+            print("❌ Error adding calendar to CoreData: \(nsError), \(nsError.userInfo)")
         }
     }
 
@@ -426,13 +453,35 @@ struct SelectMemberCalendarsView: View {
             return
         }
 
+        guard let memberCalendarId = calendar.id?.uuidString else {
+            print("❌ Member calendar ID not available for deletion")
+            return
+        }
+
+        // Delete from CoreData first
         viewContext.delete(calendar)
 
         do {
             try viewContext.save()
+            print("✅ Calendar removed from CoreData")
+
+            // Sync deletion to Supabase
+            Task {
+                do {
+                    try await dataManager.supabaseManager.deleteFamilyMemberCalendar(
+                        id: memberCalendarId
+                    )
+                    print("✅ Calendar removed from Supabase")
+
+                    // Refresh data to ensure sync
+                    await dataManager.fetchUserData()
+                } catch {
+                    print("❌ Error removing calendar from Supabase: \(error)")
+                }
+            }
         } catch {
             let nsError = error as NSError
-            print("Error removing calendar: \(nsError), \(nsError.userInfo)")
+            print("❌ Error removing calendar from CoreData: \(nsError), \(nsError.userInfo)")
         }
     }
 }

@@ -11,6 +11,7 @@ import CoreData
 struct VisibleCalendarsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -151,10 +152,12 @@ struct VisibleCalendarsView: View {
         .sheet(isPresented: $showingAddSharedCalendar) {
             AddSharedCalendarView()
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
         }
         .sheet(item: $selectedMember) { member in
             SelectMemberCalendarsView(member: member)
                 .environment(\.managedObjectContext, viewContext)
+                .environmentObject(dataManager)
         }
         .alert("Delete Calendar?", isPresented: $showingDeleteConfirmation, presenting: sharedCalendarPendingDelete) { calendar in
             Button("Cancel", role: .cancel) { }
@@ -202,48 +205,74 @@ struct VisibleCalendarsView: View {
     }
 
     private func sharedCalendarRow(for calendar: SharedCalendar) -> some View {
-        Menu {
+        HStack(spacing: 16) {
+            Circle()
+                .fill(Color.fromHex(calendar.calendarColorHex ?? "#007AFF"))
+                .frame(width: 12, height: 12)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(calendar.calendarName ?? "Unknown")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.primary)
+
+                Text("Shared Family Calendar")
+                    .font(.system(size: 13))
+                    .foregroundColor(.gray)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.gray.opacity(0.5))
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive, action: {
                 sharedCalendarPendingDelete = calendar
                 showingDeleteConfirmation = true
             }) {
-                Label("Remove", systemImage: "trash.fill")
+                Label("Delete", systemImage: "trash.fill")
             }
-        } label: {
-            HStack(spacing: 16) {
-                Circle()
-                    .fill(Color.fromHex(calendar.calendarColorHex ?? "#007AFF"))
-                    .frame(width: 12, height: 12)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(calendar.calendarName ?? "Unknown")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.primary)
-
-                    Text("Shared Family Calendar")
-                        .font(.system(size: 13))
-                        .foregroundColor(.gray)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.gray.opacity(0.5))
-            }
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
         }
     }
 
     private func deleteSharedCalendar(_ calendar: SharedCalendar) {
-        viewContext.delete(calendar)
+        print("🔍 deleteSharedCalendar called for: \(calendar.calendarName ?? "Unknown")")
 
+        guard let calendarId = calendar.id?.uuidString else {
+            print("❌ Cannot delete: calendar ID not available")
+            return
+        }
+
+        print("📱 Calendar ID: \(calendarId)")
+
+        // Delete from CoreData first (immediate UI update)
+        viewContext.delete(calendar)
         do {
             try viewContext.save()
+            print("✅ Shared calendar deleted from CoreData")
         } catch {
             let nsError = error as NSError
-            print("Error deleting shared calendar: \(nsError), \(nsError.userInfo)")
+            print("❌ Error deleting from CoreData: \(nsError), \(nsError.userInfo)")
+            return
+        }
+
+        // Then sync deletion to Supabase
+        Task {
+            print("🌐 Starting Supabase deletion for ID: \(calendarId)")
+            do {
+                let userId = dataManager.authManager.userId ?? "unknown"
+                print("📧 User ID for deletion: \(userId)")
+
+                try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
+                print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
+            } catch {
+                print("❌ Error deleting from Supabase: \(error)")
+                // Note: Calendar is already deleted from CoreData locally
+                // Will be re-synced if Supabase still has it on next fetch
+            }
         }
     }
 }
