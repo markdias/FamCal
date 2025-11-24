@@ -14,9 +14,11 @@ import MapKit
 struct CalendarView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
-    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
+
+    private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
+    private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
 
     var onAddEventRequested: ((Date) -> Void)? = nil
     @Binding var selectedDateBinding: Date
@@ -39,10 +41,15 @@ struct CalendarView: View {
     )
     private var savedAddresses: FetchedResults<SavedAddress>
 
+    @FetchRequest(
+        entity: FamilyEvent.entity(),
+        sortDescriptors: []
+    )
+    private var familyEvents: FetchedResults<FamilyEvent>
+
     @State private var currentMonth: Date = Date()
     @State private var dayEvents: [String: [DayEventItem]] = [:]
     @State private var isLoadingEvents = false
-    @State private var showingEventDetail = false
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
     @State private var eventStore = EKEventStore()
     @State private var refreshTimer: Timer? = nil
@@ -137,6 +144,9 @@ struct CalendarView: View {
                     ScrollView {
                         content
                     }
+                    .refreshable {
+                        await reloadEvents()
+                    }
                 } else {
                     content
                 }
@@ -144,10 +154,8 @@ struct CalendarView: View {
             .navigationBarHidden(true)
         }
         .navigationViewStyle(.stack)
-        .sheet(isPresented: $showingEventDetail) {
-            if let event = selectedEvent {
-                EventDetailView(event: event)
-            }
+        .sheet(item: $selectedEvent) { event in
+            EventDetailView(event: event)
         }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
             loadEvents()
@@ -217,6 +225,13 @@ struct CalendarView: View {
         let fullScreenDay = isCompactHeight && isDayMode
 
         VStack(alignment: .leading, spacing: isDayMode ? 16 : 24) {
+            // Observe FamilyEvent changes to reload calendar events
+            Group {
+                EmptyView()
+                    .onChange(of: familyEvents.count) { _, _ in loadEvents() }
+            }
+            .frame(height: 0)
+            .hidden()
             if !fullScreenDay {
                 // Header with centered month/year
                 HStack {
@@ -366,7 +381,6 @@ struct CalendarView: View {
 
         Button(action: {
             selectedEvent = upcomingEvent
-            showingEventDetail = true
         }) {
             let timeBoxWidth: CGFloat = 76
             let spacerWidth: CGFloat = 2
@@ -390,6 +404,7 @@ struct CalendarView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(timeLabel)
                                 .font(.system(size: 14, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
@@ -444,7 +459,8 @@ struct CalendarView: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(secondaryTextColor)
                             Text(timeText)
-                                .font(.system(size: 13))
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(secondaryTextColor)
                         }
                         .opacity(isPast ? 0.5 : 1.0)
@@ -816,15 +832,11 @@ struct CalendarView: View {
     }
 
     private func fetchDriverForEvent(_ eventIdentifier: String) -> String? {
-        let fetchRequest = FamilyEvent.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventIdentifier)
-
-        do {
-            let results = try viewContext.fetch(fetchRequest)
-            return results.first?.driver?.name
-        } catch {
-            return nil
+        // Use FetchedResults for reactive updates instead of synchronous fetch
+        if let familyEvent = familyEvents.first(where: { $0.eventIdentifier == eventIdentifier }) {
+            return familyEvent.driver?.name
         }
+        return nil
     }
 
     private func loadEvents() {
@@ -880,7 +892,12 @@ struct CalendarView: View {
 
         // Fetch events for each member
         for (_, (calendarIDs, member)) in memberCalendarMap {
-            let events = CalendarManager.shared.fetchNextEvents(for: Array(calendarIDs), limit: 0)
+            let events = CalendarManager.shared.fetchNextEvents(
+                for: Array(calendarIDs),
+                limit: 0,
+                pastDays: appSettingsManager.eventsPastDays,
+                futureDays: appSettingsManager.eventsFutureDays
+            )
 
             let initials = member.avatarInitials ?? Self.initials(for: member.name)
 
@@ -960,6 +977,11 @@ struct CalendarView: View {
     }
 
     // MARK: - View Lifecycle
+
+    private func reloadEvents() async {
+        // Async wrapper for refreshable modifier
+        loadEvents()
+    }
 
     private func setupView() {
         loadEvents()

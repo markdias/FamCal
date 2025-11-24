@@ -17,6 +17,7 @@ struct NextEventEntry: TimelineEntry {
     let event: WidgetEventData?
     let familyMember: FamilyMemberData?
     let errorMessage: String?
+    let isAuthenticated: Bool
 
     /// Initialize with success data
     init(date: Date = Date(), event: WidgetEventData, familyMember: FamilyMemberData) {
@@ -24,6 +25,7 @@ struct NextEventEntry: TimelineEntry {
         self.event = event
         self.familyMember = familyMember
         self.errorMessage = nil
+        self.isAuthenticated = true
     }
 
     /// Initialize with error state
@@ -32,6 +34,7 @@ struct NextEventEntry: TimelineEntry {
         self.event = nil
         self.familyMember = nil
         self.errorMessage = errorMessage
+        self.isAuthenticated = true
     }
 
     /// Initialize with placeholder
@@ -40,6 +43,16 @@ struct NextEventEntry: TimelineEntry {
         self.event = nil
         self.familyMember = nil
         self.errorMessage = nil
+        self.isAuthenticated = true
+    }
+
+    /// Initialize with authentication required state
+    init(date: Date = Date(), isAuthenticated: Bool) {
+        self.date = date
+        self.event = nil
+        self.familyMember = nil
+        self.errorMessage = nil
+        self.isAuthenticated = isAuthenticated
     }
 }
 
@@ -79,13 +92,30 @@ struct NextEventProvider: AppIntentTimelineProvider {
     func timeline(for configuration: NextEventConfigurationIntent, in context: Context) async -> Timeline<NextEventEntry> {
         let entry = loadNextEvent(intent: configuration)
 
-        // Ask for a quicker refresh; system still enforces its own limits
-        let nextRefreshDate = Calendar.current.date(byAdding: .minute, value: 5, to: Date()) ?? Date()
+        // Refresh more frequently to catch login state changes (1 minute for faster auth detection)
+        let refreshInterval = isUserAuthenticated() ? 5 : 1 // 1 min if not auth'd, 5 min if auth'd
+        let nextRefreshDate = Calendar.current.date(byAdding: .minute, value: refreshInterval, to: Date()) ?? Date()
         return Timeline(entries: [entry], policy: .after(nextRefreshDate))
+    }
+
+    /// Check if user is authenticated by checking app group UserDefaults
+    private func isUserAuthenticated() -> Bool {
+        // Try app group first (shared with main app)
+        if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
+            return appGroupDefaults.bool(forKey: "com.famcal.auth.isAuthenticated")
+        }
+        // Fallback to standard defaults
+        return UserDefaults.standard.bool(forKey: "com.famcal.auth.isAuthenticated")
     }
 
     /// Load the next event for the family member with soonest upcoming event
     private func loadNextEvent(intent: NextEventConfigurationIntent? = nil) -> NextEventEntry {
+        // Check authentication first
+        if !isUserAuthenticated() {
+            print("⚠️ Widget: User not authenticated")
+            return NextEventEntry(isAuthenticated: false)
+        }
+
         do {
             print("🔍 Widget: Starting loadNextEvent()")
 

@@ -121,7 +121,8 @@ class NotificationManager: NSObject, ObservableObject {
         alertOption: AlertOption,
         familyMembers: [String] = [],
         drivers: String? = nil,
-        location: String? = nil
+        location: String? = nil,
+        isSharedCalendarEvent: Bool = false
     ) {
         guard notificationsEnabled else {
             Task {
@@ -139,7 +140,8 @@ class NotificationManager: NSObject, ObservableObject {
                         alertOption: alertOption,
                         familyMembers: familyMembers,
                         drivers: drivers,
-                        location: location
+                        location: location,
+                        isSharedCalendarEvent: isSharedCalendarEvent
                     )
                 } else {
                     print("⚠️ System permission not granted, requesting...")
@@ -156,7 +158,8 @@ class NotificationManager: NSObject, ObservableObject {
                             alertOption: alertOption,
                             familyMembers: familyMembers,
                             drivers: drivers,
-                            location: location
+                            location: location,
+                            isSharedCalendarEvent: isSharedCalendarEvent
                         )
                     } else {
                         print("❌ Permission denied by user")
@@ -177,8 +180,8 @@ class NotificationManager: NSObject, ObservableObject {
         timeFormatter.dateFormat = "h:mm a"
         body = timeFormatter.string(from: event.startDate)
 
-        // Add family members to body
-        if !familyMembers.isEmpty {
+        // Add family members to body - only show if shared calendar event or multiple members
+        if !familyMembers.isEmpty && (isSharedCalendarEvent || familyMembers.count > 1) {
             body += "\nWith: \(familyMembers.joined(separator: ", "))"
         }
 
@@ -198,7 +201,8 @@ class NotificationManager: NSObject, ObservableObject {
         // Build userInfo with all relevant data
         var userInfoDict: [AnyHashable: Any] = [
             "eventIdentifier": event.eventIdentifier ?? "",
-            "eventStart": event.startDate.timeIntervalSince1970
+            "eventStart": event.startDate.timeIntervalSince1970,
+            "isSharedCalendarEvent": isSharedCalendarEvent
         ]
 
         if let location = location, !location.isEmpty {
@@ -271,7 +275,7 @@ class NotificationManager: NSObject, ObservableObject {
 
     // MARK: - Morning Brief
 
-    func scheduleMorningBrief() {
+    func scheduleMorningBrief(withEvents events: [MorningBriefEvent] = []) {
         guard notificationsEnabled && morningBriefEnabled else {
             cancelMorningBrief()
             return
@@ -288,13 +292,57 @@ class NotificationManager: NSObject, ObservableObject {
 
         let content = UNMutableNotificationContent()
         content.title = "Good Morning"
-        content.body = "Check your family's upcoming events for today"
+
+        // Build body based on events
+        if events.isEmpty {
+            content.body = "Check your family's upcoming events for today"
+        } else {
+            var bodyLines = ["\(events.count) event\(events.count == 1 ? "" : "s") today:"]
+
+            for (index, event) in events.prefix(3).enumerated() {
+                let timeStr = event.isAllDay ? "All day" : event.startTimeString
+                bodyLines.append("\(index + 1). \(event.title) at \(timeStr)")
+            }
+
+            if events.count > 3 {
+                bodyLines.append("... and \(events.count - 3) more")
+            }
+
+            content.body = bodyLines.joined(separator: "\n")
+        }
+
         content.sound = .default
+
+        // Store events info for notification handling
+        if !events.isEmpty {
+            var userInfoDict: [AnyHashable: Any] = [
+                "eventCount": events.count,
+                "isMorningBrief": true
+            ]
+
+            for (index, event) in events.enumerated() {
+                userInfoDict["event_\(index)_title"] = event.title
+                userInfoDict["event_\(index)_time"] = event.startTimeString
+                if let location = event.location {
+                    userInfoDict["event_\(index)_location"] = location
+                }
+                if let driver = event.driver {
+                    userInfoDict["event_\(index)_driver"] = driver
+                }
+            }
+
+            content.userInfo = userInfoDict
+        }
+
+        content.categoryIdentifier = "MORNING_BRIEF"
+        content.interruptionLevel = .timeSensitive
 
         let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
         notificationCenter.add(request) { error in
             if let error = error {
                 print("Error scheduling morning brief: \(error)")
+            } else {
+                print("✅ Morning brief scheduled for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
             }
         }
     }

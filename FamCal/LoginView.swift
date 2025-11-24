@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct LoginView: View {
     @EnvironmentObject var authManager: SupabaseAuthManager
@@ -110,6 +111,43 @@ struct LoginView: View {
                         .opacity(isValidInput ? 1.0 : 0.5)
                         .padding(.top, 10)
 
+                        // Divider
+                        HStack {
+                            Rectangle()
+                                .fill(themeManager.selectedTheme.textSecondary.opacity(0.3))
+                                .frame(height: 1)
+                            Text("or")
+                                .font(.caption)
+                                .foregroundStyle(themeManager.selectedTheme.textSecondary.opacity(0.8))
+                            Rectangle()
+                                .fill(themeManager.selectedTheme.textSecondary.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.vertical, 4)
+
+                        // Google Sign-In Button
+                        Button {
+                            performGoogleLogin()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "g.circle.fill")
+                                    .font(.title2)
+                                Text(authManager.isLoading ? "Signing in..." : "Continue with Google")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(themeManager.selectedTheme.floatingControlsBorder, lineWidth: 1)
+                            )
+                            .cornerRadius(16)
+                        }
+                        .foregroundStyle(themeManager.selectedTheme.textPrimary)
+                        .disabled(authManager.isLoading)
+
                         // Sign Up Link
                         HStack(spacing: 4) {
                             Text("Don't have an account?")
@@ -124,9 +162,66 @@ struct LoginView: View {
                         }
                         .font(.subheadline)
                         .padding(.top, 10)
+
+                        // Divider
+                        HStack {
+                            Rectangle()
+                                .fill(themeManager.selectedTheme.textSecondary.opacity(0.3))
+                                .frame(height: 1)
+                            Text("or")
+                                .font(.caption)
+                                .foregroundStyle(themeManager.selectedTheme.textSecondary.opacity(0.8))
+                            Rectangle()
+                                .fill(themeManager.selectedTheme.textSecondary.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.vertical, 8)
+
+                        // Continue as Guest Button
+                        Button {
+                            authManager.continueAsGuest()
+                        } label: {
+                            HStack {
+                                Image(systemName: "person.slash")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("Continue as Guest")
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .foregroundStyle(themeManager.selectedTheme.textSecondary)
+                            .background(.white.opacity(0.05))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(themeManager.selectedTheme.floatingControlsBorder.opacity(0.5), lineWidth: 1)
+                            )
+                            .cornerRadius(16)
+                        }
+                        .disabled(authManager.isLoading)
+
+                        // Guest Warning
+                        VStack(spacing: 6) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle.fill")
+                                    .font(.system(size: 12))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Guest Mode")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    Text("Settings stay local. Create an account to sync across devices.")
+                                        .font(.caption2)
+                                }
+                            }
+                            .foregroundStyle(themeManager.selectedTheme.textSecondary.opacity(0.7))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                        }
+                        .background(themeManager.selectedTheme.textSecondary.opacity(0.05))
+                        .cornerRadius(8)
+                        .padding(.top, 4)
                     }
                     .padding(.horizontal, 30)
-                    
+
                     Spacer()
                 }
             }
@@ -160,6 +255,26 @@ struct LoginView: View {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
+        }
+    }
+
+    private func performGoogleLogin() {
+        guard let rootViewController = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow })?.rootViewController else {
+            errorMessage = "Unable to find a window to present Google Sign-In."
+            showError = true
+            return
+        }
+
+        Task {
+            do {
+                try await authManager.signInWithGoogle(presenting: rootViewController)
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
         }
     }
 }

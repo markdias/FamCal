@@ -11,6 +11,8 @@ import CoreData
 struct EditFamilyMemberView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject private var authManager: SupabaseAuthManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     let member: FamilyMember
 
@@ -24,6 +26,8 @@ struct EditFamilyMemberView: View {
     @State private var pendingCalendarName: String?
     @State private var showDeleteConfirmation = false
     @State private var showDeleteCalendarOption = false
+    @State private var saveError: String?
+    @State private var showSaveError = false
 
     private var calendarLinkingBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -282,6 +286,11 @@ struct EditFamilyMemberView: View {
         } message: { calendar in
             Text("Would you also like to delete the '\(calendar.title)' calendar from your iOS Calendar app?")
         }
+        .alert("Error", isPresented: $showSaveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(saveError ?? "An unknown error occurred")
+        }
     }
 
     private func loadAvailableCalendars() {
@@ -320,44 +329,81 @@ struct EditFamilyMemberView: View {
     }
 
     private func saveMember() {
-        member.name = name
-        member.isDriver = isDriver
-        member.avatarInitials = getInitials(from: name)
-        member.linkedCalendarID = matchedCalendar?.id
+        Task {
+            do {
+                if authManager.isGuest {
+                    // Local-only update for guests
+                    try dataManager.updateFamilyMemberLocal(id: member.id ?? UUID(), name: name, colorHex: member.colorHex ?? "#555555")
 
-        // Handle auto-linked calendar updates
-        let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }
+                    // Handle auto-linked calendar updates locally
+                    let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }
 
-        if let matched = matchedCalendar {
-            // If the matched calendar is different from the current auto-linked one, update it
-            if autoLinkedCal?.calendarID != matched.id {
-                // Remove old auto-linked calendar if it exists
-                if let oldCal = autoLinkedCal {
-                    viewContext.delete(oldCal)
+                    if let matched = matchedCalendar {
+                        if autoLinkedCal?.calendarID != matched.id {
+                            if let oldCal = autoLinkedCal {
+                                viewContext.delete(oldCal)
+                            }
+
+                            let memberCalendar = FamilyMemberCalendar(context: viewContext)
+                            memberCalendar.id = UUID()
+                            memberCalendar.calendarID = matched.id
+                            memberCalendar.calendarName = matched.title
+                            memberCalendar.calendarColorHex = matched.color.hex()
+                            memberCalendar.isAutoLinked = true
+                            memberCalendar.familyMember = member
+                        }
+                    } else {
+                        if let oldCal = autoLinkedCal {
+                            viewContext.delete(oldCal)
+                        }
+                    }
+
+                    try viewContext.save()
+                    print("✅ Family member '\(name)' updated locally (guest mode)")
+                } else {
+                    // Supabase sync for authenticated users
+                    member.name = name
+                    member.isDriver = isDriver
+                    member.avatarInitials = getInitials(from: name)
+                    member.linkedCalendarID = matchedCalendar?.id
+
+                    // Handle auto-linked calendar updates
+                    let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }
+
+                    if let matched = matchedCalendar {
+                        if autoLinkedCal?.calendarID != matched.id {
+                            if let oldCal = autoLinkedCal {
+                                viewContext.delete(oldCal)
+                            }
+
+                            let memberCalendar = FamilyMemberCalendar(context: viewContext)
+                            memberCalendar.id = UUID()
+                            memberCalendar.calendarID = matched.id
+                            memberCalendar.calendarName = matched.title
+                            memberCalendar.calendarColorHex = matched.color.hex()
+                            memberCalendar.isAutoLinked = true
+                            memberCalendar.familyMember = member
+                        }
+                    } else {
+                        if let oldCal = autoLinkedCal {
+                            viewContext.delete(oldCal)
+                        }
+                    }
+
+                    try viewContext.save()
+
+                    // Update in Supabase
+                    if let memberId = member.id?.uuidString {
+                        try await dataManager.updateFamilyMember(id: memberId, name: name, colorHex: member.colorHex ?? "#555555")
+                    }
                 }
 
-                // Create new auto-linked calendar entry
-                let memberCalendar = FamilyMemberCalendar(context: viewContext)
-                memberCalendar.id = UUID()
-                memberCalendar.calendarID = matched.id
-                memberCalendar.calendarName = matched.title
-                memberCalendar.calendarColorHex = matched.color.hex()
-                memberCalendar.isAutoLinked = true
-                memberCalendar.familyMember = member
+                dismiss()
+            } catch {
+                saveError = "Failed to update family member: \(error.localizedDescription)"
+                showSaveError = true
+                print("❌ Error updating member '\(name)': \(error)")
             }
-        } else {
-            // No match found, remove auto-linked calendar if it exists
-            if let oldCal = autoLinkedCal {
-                viewContext.delete(oldCal)
-            }
-        }
-
-        do {
-            try viewContext.save()
-            dismiss()
-        } catch {
-            let nsError = error as NSError
-            print("Error saving member: \(nsError), \(nsError.userInfo)")
         }
     }
 
@@ -402,30 +448,43 @@ struct EditFamilyMemberView: View {
             }
         }
 
-        // Delete all associated calendar entries (auto-linked and manually added)
-        if let memberCalendars = member.memberCalendars?.allObjects as? [FamilyMemberCalendar] {
-            for calendar in memberCalendars {
-                viewContext.delete(calendar)
+        Task {
+            do {
+                if authManager.isGuest {
+                    // Local-only delete for guests
+                    try dataManager.deleteFamilyMemberLocal(id: member.id ?? UUID())
+                } else {
+                    // Delete from Supabase for authenticated users
+                    if let memberId = member.id?.uuidString {
+                        try await dataManager.deleteFamilyMember(id: memberId)
+                    }
+                }
+
+                // Delete all associated calendar entries (auto-linked and manually added)
+                if let memberCalendars = member.memberCalendars?.allObjects as? [FamilyMemberCalendar] {
+                    for calendar in memberCalendars {
+                        viewContext.delete(calendar)
+                    }
+                }
+
+                // Delete shared calendar associations
+                if let sharedCalendars = member.sharedCalendars?.allObjects as? [SharedCalendar] {
+                    for sharedCalendar in sharedCalendars {
+                        sharedCalendar.removeFromMembers(member)
+                    }
+                }
+
+                // Delete the family member from CoreData
+                viewContext.delete(member)
+
+                try viewContext.save()
+                print("✅ Family member deleted successfully")
+                dismiss()
+            } catch {
+                saveError = "Failed to delete family member: \(error.localizedDescription)"
+                showSaveError = true
+                print("❌ Error deleting member: \(error)")
             }
-        }
-
-        // Delete shared calendar associations
-        if let sharedCalendars = member.sharedCalendars?.allObjects as? [SharedCalendar] {
-            for sharedCalendar in sharedCalendars {
-                sharedCalendar.removeFromMembers(member)
-            }
-        }
-
-        // Delete the family member from CoreData
-        viewContext.delete(member)
-
-        do {
-            try viewContext.save()
-            print("✅ Family member deleted successfully")
-            dismiss()
-        } catch {
-            let nsError = error as NSError
-            print("❌ Error deleting member: \(nsError), \(nsError.userInfo)")
         }
     }
 }

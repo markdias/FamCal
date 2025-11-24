@@ -26,7 +26,28 @@ struct NextEventWidgetView: View {
 
     var body: some View {
         ZStack {
-            if let event = entry.event, let member = entry.familyMember {
+            if !entry.isAuthenticated {
+                // Login required state
+                VStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.blue)
+
+                    Text("Login Required")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+
+                    Text("Open FamCal and sign in to view events")
+                        .font(.system(size: 12, weight: .regular))
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                        .lineLimit(3)
+
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(16)
+            } else if let event = entry.event, let member = entry.familyMember {
                 // Content with event - expands edge-to-edge
                 eventCardContent(event: event, member: member)
             } else if let error = entry.errorMessage {
@@ -354,5 +375,10 @@ extension View {
 
 #Preview("Error") {
     let entry = NextEventEntry(date: Date(), errorMessage: "No upcoming events")
+    NextEventWidgetView(entry: entry)
+}
+
+#Preview("Login Required") {
+    let entry = NextEventEntry(date: Date(), isAuthenticated: false)
     NextEventWidgetView(entry: entry)
 }

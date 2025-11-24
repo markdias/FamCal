@@ -29,15 +29,32 @@ struct FamilyEventsProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<FamilyEventsEntry>) -> Void) {
         let entry = loadEvents()
 
-        // Ask for a quicker refresh to keep events timely; system still governs actual cadence
-        let nextRefreshDate = Calendar.current.date(byAdding: .minute, value: 5, to: Date()) ?? Date()
+        // Refresh more frequently to catch login state changes (1 minute for faster auth detection)
+        let refreshInterval = isUserAuthenticated() ? 5 : 1 // 1 min if not auth'd, 5 min if auth'd
+        let nextRefreshDate = Calendar.current.date(byAdding: .minute, value: refreshInterval, to: Date()) ?? Date()
         let timeline = Timeline(entries: [entry], policy: .after(nextRefreshDate))
 
         completion(timeline)
     }
 
+    /// Check if user is authenticated by checking app group UserDefaults
+    private func isUserAuthenticated() -> Bool {
+        // Try app group first (shared with main app)
+        if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
+            return appGroupDefaults.bool(forKey: "com.famcal.auth.isAuthenticated")
+        }
+        // Fallback to standard defaults
+        return UserDefaults.standard.bool(forKey: "com.famcal.auth.isAuthenticated")
+    }
+
     /// Load all upcoming events for family members
     private func loadEvents() -> FamilyEventsEntry {
+        // Check authentication first
+        if !isUserAuthenticated() {
+            print("⚠️ Widget: User not authenticated")
+            return FamilyEventsEntry(date: Date(), errorMessage: "Please log in to see events", isAuthenticated: false)
+        }
+
         do {
             // Get max events from user preferences using app group
             guard let defaults = UserDefaults(suiteName: "group.com.markdias.famli") else {

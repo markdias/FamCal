@@ -10,17 +10,56 @@ import SwiftUI
 struct EventPreferencesView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
-    @AppStorage("eventsPerPerson") private var eventsPerPerson: Int = 3
-    @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
-    @AppStorage("eventsPastDays") private var eventsPastDays: Int = 90
-    @AppStorage("eventsFutureDays") private var eventsFutureDays: Int = 180
-    @AppStorage("defaultAlertOption") private var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @AppStorage("spotlightShowGapsBetweenEvents") private var spotlightShowGapsBetweenEvents: Bool = true
+
+    private var eventsPerPersonBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.eventsPerPerson },
+            set: {
+                appSettingsManager.eventsPerPerson = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var spotlightEventsBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.spotlightEventsPerPerson },
+            set: {
+                appSettingsManager.spotlightEventsPerPerson = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var eventsPastDaysBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.eventsPastDays },
+            set: {
+                appSettingsManager.eventsPastDays = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var eventsFutureDaysBinding: Binding<Int> {
+        Binding(
+            get: { appSettingsManager.eventsFutureDays },
+            set: {
+                appSettingsManager.eventsFutureDays = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
 
     private var defaultAlertBinding: Binding<AlertOption> {
         Binding(
-            get: { AlertOption(rawValue: defaultAlertOptionRawValue) ?? .none },
-            set: { defaultAlertOptionRawValue = $0.rawValue }
+            get: { AlertOption(rawValue: appSettingsManager.defaultAlertOptionRawValue) ?? .none },
+            set: {
+                appSettingsManager.defaultAlertOptionRawValue = $0.rawValue
+                Task { await appSettingsManager.saveSettings() }
+            }
         )
     }
 
@@ -49,7 +88,7 @@ struct EventPreferencesView: View {
 
                                 Spacer()
 
-                                Picker("Events", selection: $eventsPerPerson) {
+                                Picker("Events", selection: eventsPerPersonBinding) {
                                     ForEach(1...10, id: \.self) { number in
                                         Text("\(number)").tag(number)
                                     }
@@ -77,7 +116,7 @@ struct EventPreferencesView: View {
 
                                 Spacer()
 
-                                Picker("Spotlight", selection: $spotlightEventsPerPerson) {
+                                Picker("Spotlight", selection: spotlightEventsBinding) {
                                     ForEach(1...15, id: \.self) { number in
                                         Text("\(number)").tag(number)
                                     }
@@ -113,7 +152,7 @@ struct EventPreferencesView: View {
 
                                 Spacer()
 
-                                Picker("Past Days", selection: $eventsPastDays) {
+                                Picker("Past Days", selection: eventsPastDaysBinding) {
                                     Text("None").tag(0)
                                     Text("1 Month").tag(30)
                                     Text("2 Months").tag(60)
@@ -144,7 +183,7 @@ struct EventPreferencesView: View {
 
                                 Spacer()
 
-                                Picker("Future Days", selection: $eventsFutureDays) {
+                                Picker("Future Days", selection: eventsFutureDaysBinding) {
                                     Text("1 Month").tag(30)
                                     Text("3 Months").tag(90)
                                     Text("6 Months").tag(180)

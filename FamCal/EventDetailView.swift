@@ -19,8 +19,10 @@ struct EventDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var viewContext
-    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     let event: UpcomingCalendarEvent
+
+    private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
 
     @State private var isEditing = false
     @State private var showingDeleteConfirmation = false

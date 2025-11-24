@@ -29,6 +29,7 @@ struct FamilyEventsEntry: TimelineEntry {
     let showLocation: Bool
     let showAttendees: Bool
     let showDrivers: Bool
+    let isAuthenticated: Bool
 
     /// Initialize with event list
     init(date: Date = Date(), events: [EventItem], maxEvents: Int = 10, showTime: Bool = true, showLocation: Bool = true, showAttendees: Bool = true, showDrivers: Bool = true) {
@@ -40,10 +41,11 @@ struct FamilyEventsEntry: TimelineEntry {
         self.showLocation = showLocation
         self.showAttendees = showAttendees
         self.showDrivers = showDrivers
+        self.isAuthenticated = true
     }
 
     /// Initialize with error
-    init(date: Date = Date(), errorMessage: String) {
+    init(date: Date = Date(), errorMessage: String, isAuthenticated: Bool = true) {
         self.date = date
         self.events = []
         self.maxEvents = 10
@@ -52,6 +54,7 @@ struct FamilyEventsEntry: TimelineEntry {
         self.showLocation = true
         self.showAttendees = true
         self.showDrivers = true
+        self.isAuthenticated = isAuthenticated
     }
 
     /// Initialize as placeholder
@@ -64,5 +67,6 @@ struct FamilyEventsEntry: TimelineEntry {
         self.showLocation = true
         self.showAttendees = true
         self.showDrivers = true
+        self.isAuthenticated = true
     }
 }

@@ -15,9 +15,11 @@ struct AddEventView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
-    @AppStorage("defaultAlertOption") private var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     let initialDate: Date?
+
+    private var defaultAlertOptionRawValue: String { appSettingsManager.defaultAlertOptionRawValue }
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -714,7 +716,8 @@ struct AddEventView: View {
                 alertOption: alertOption,
                 familyMembers: memberNames,
                 drivers: driverName,
-                location: location
+                location: location,
+                isSharedCalendarEvent: selectEveryone
             )
         }
     }

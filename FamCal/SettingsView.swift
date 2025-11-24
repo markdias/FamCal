@@ -13,6 +13,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var authManager: SupabaseAuthManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @State private var showingFamilySettings = false
     @State private var showingAppSettings = false
@@ -177,6 +178,7 @@ struct SettingsView: View {
                 .environment(\.managedObjectContext, viewContext)
                 .environmentObject(appSettingsManager)
                 .environmentObject(themeManager)
+                .environmentObject(dataManager)
         }
         .sheet(isPresented: $showingNotifications) {
             NavigationView {

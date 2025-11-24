@@ -20,7 +20,9 @@ struct FamilyEventsWidgetView: View {
 
     var body: some View {
         Group {
-            if #available(iOS 17.0, *), family == .accessoryRectangular {
+            if !entry.isAuthenticated {
+                loginRequiredContent()
+            } else if #available(iOS 17.0, *), family == .accessoryRectangular {
                 accessoryRectangularContent()
             } else {
                 standardContent()
@@ -310,6 +312,29 @@ struct FamilyEventsWidgetView: View {
             Text("Loading events...")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
+
+            Spacer()
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func loginRequiredContent() -> some View {
+        VStack(alignment: .center, spacing: 8) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 20))
+                .foregroundColor(.blue)
+
+            Text("Login Required")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.primary)
+
+            Text("Open FamCal and sign in to view events")
+                .font(.system(size: 11, weight: .regular))
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .lineLimit(3)
 
             Spacer()
         }

@@ -81,6 +81,13 @@ class AppSettingsManager: ObservableObject {
     @MainActor
     func loadSettings() async {
         guard !isLoading else { return }
+
+        // Skip cloud sync for guests - use local defaults only
+        if authManager.isGuest {
+            print("ℹ️ Guest mode detected - using local settings only")
+            return
+        }
+
         guard let userId = authManager.userId else {
             print("⚠️ User ID not available for loading settings")
             return
@@ -124,6 +131,12 @@ class AppSettingsManager: ObservableObject {
 
     @MainActor
     func saveSettings() async {
+        // Skip cloud sync for guests - settings stay local only
+        if authManager.isGuest {
+            print("ℹ️ Guest mode: settings saved locally only (not synced to cloud)")
+            return
+        }
+
         guard let userId = authManager.userId else {
             print("❌ User ID not available for saving settings")
             return
@@ -234,6 +247,34 @@ class AppSettingsManager: ObservableObject {
         } catch {
             print("⚠️ Failed to sync missing settings keys: \(error)")
         }
+    }
+
+    @MainActor
+    func resetToDefaults() {
+        print("ℹ️ Resetting app settings to defaults")
+        autoRefreshInterval = 5
+        defaultMapsApp = "Apple Maps"
+        defaultHomeScreenRawValue = DefaultHomeScreen.family.rawValue
+
+        eventsPerPerson = 3
+        spotlightEventsPerPerson = 5
+        nextEventColumns = 2
+        eventsPastDays = 90
+        eventsFutureDays = 180
+        defaultAlertOptionRawValue = AlertOption.none.rawValue
+
+        notificationsEnabled = false
+        morningBriefEnabled = false
+        morningBriefTimeHour = 8
+        morningBriefTimeMinute = 0
+
+        widgetShowEventsCount = 3
+        widgetShowOwnCalendarsOnly = false
+
+        settingsId = nil
+        hasLoadedForUserId = nil
+
+        print("✅ App settings reset to defaults")
     }
 
     private func buildSettingsDictionary() -> [String: AnyCodable] {

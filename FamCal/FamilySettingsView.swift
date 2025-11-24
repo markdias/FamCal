@@ -12,6 +12,8 @@ struct FamilySettingsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var authManager: SupabaseAuthManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -153,28 +155,28 @@ struct FamilySettingsView: View {
     }
 
     private func deleteMember(_ member: FamilyMember) {
-        // Delete from Supabase first
-        if let memberId = member.id?.uuidString {
-            Task {
-                do {
-                    let dataManager = SupabaseDataManager.shared
-                    try await dataManager.deleteFamilyMember(id: memberId)
-                    print("✅ Family member deleted from Supabase")
-                } catch {
-                    print("❌ Error deleting family member from Supabase: \(error)")
+        Task {
+            do {
+                if authManager.isGuest {
+                    // Local-only delete for guests
+                    try dataManager.deleteFamilyMemberLocal(id: member.id ?? UUID())
+                    print("✅ Family member deleted locally (guest mode)")
+                } else {
+                    // Delete from Supabase for authenticated users
+                    if let memberId = member.id?.uuidString {
+                        try await dataManager.deleteFamilyMember(id: memberId)
+                        print("✅ Family member deleted from Supabase")
+                    }
                 }
+
+                // Delete from CoreData
+                viewContext.delete(member)
+
+                try viewContext.save()
+                print("✅ Family member deleted successfully")
+            } catch {
+                print("❌ Error deleting family member: \(error)")
             }
-        }
-
-        // Then delete from CoreData
-        viewContext.delete(member)
-
-        do {
-            try viewContext.save()
-            print("✅ Family member deleted from CoreData")
-        } catch {
-            let nsError = error as NSError
-            print("❌ Error deleting family member: \(nsError), \(nsError.userInfo)")
         }
     }
     

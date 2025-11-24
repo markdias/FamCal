@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>GIDClientID</key>
+	<string>555073180680-eku35n9vu7rgvr8nohtc0l5dai0fi5av.apps.googleusercontent.com</string>
 	<key>NSCalendarsWriteOnlyUsageDescription</key>
 	<string>FamCal writes new family events, reminders, alerts, and travel time blocks to your calendars.</string>
 	<key>UIBackgroundModes</key>
@@ -33,6 +35,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>famcal</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.555073180680-eku35n9vu7rgvr8nohtc0l5dai0fi5av</string>
 			</array>
 		</dict>
 	</array>

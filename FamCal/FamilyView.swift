@@ -16,12 +16,14 @@ struct FamilyView: View {
     var onChangeViewRequested: (() -> Void)? = nil
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @AppStorage("eventsPerPerson") private var eventsPerPerson: Int = 3
-    @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
-    @AppStorage("nextEventColumns") private var nextEventColumns: Int = 2
-    @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
-    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
+
+    private var eventsPerPerson: Int { appSettingsManager.eventsPerPerson }
+    private var spotlightEventsPerPerson: Int { appSettingsManager.spotlightEventsPerPerson }
+    private var nextEventColumns: Int { appSettingsManager.nextEventColumns }
+    private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
+    private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -43,6 +45,12 @@ struct FamilyView: View {
         sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
     )
     private var savedAddresses: FetchedResults<SavedAddress>
+
+    @FetchRequest(
+        entity: FamilyEvent.entity(),
+        sortDescriptors: []
+    )
+    private var familyEvents: FetchedResults<FamilyEvent>
 
     private enum DeleteScope {
         case single
@@ -126,6 +134,12 @@ struct FamilyView: View {
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
         }
+        .onChange(of: selectedEvent) { oldValue, newValue in
+            // When EventDetailView sheet closes (newValue becomes nil), reload events
+            if oldValue != nil && newValue == nil {
+                loadNextEvents()
+            }
+        }
         .sheet(isPresented: Binding(
             get: { spotlightMemberName != nil },
             set: { if !$0 { spotlightMemberName = nil } }
@@ -195,8 +209,9 @@ struct FamilyView: View {
         .onAppear(perform: setupView)
         .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }
         .onChange(of: memberCalendarLinks.count) { _, _ in loadNextEvents() }
-        .onChange(of: eventsPerPerson) { _, _ in loadNextEvents() }
-        .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
+        .onChange(of: familyEvents.count) { _, _ in loadNextEvents() }
+        .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents() }
+        .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: currentTime) { _, _ in /* Trigger re-render for status updates */ }
         .onDisappear(perform: cleanupView)
     }
@@ -608,6 +623,7 @@ struct FamilyView: View {
                 if let timeRange = event.timeRange {
                     Text(timeRange)
                         .font(.system(size: detailSize, weight: .semibold))
+                        .monospacedDigit()
                         .foregroundColor(secondaryTextColor)
                 }
                 
@@ -747,8 +763,8 @@ struct FamilyView: View {
                         if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
                             let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                             Text(startTime)
-                                .font(.custom("Fira Mono", size: 14))
-                                .fontWeight(.semibold)
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(secondaryTextColor)
                                 .lineLimit(1)
                                 .frame(width: 36, alignment: .trailing)
@@ -777,8 +793,8 @@ struct FamilyView: View {
                                 if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
                                     let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                                     Text(endTime)
-                                        .font(.custom("Fira Mono", size: 14))
-                                        .fontWeight(.semibold)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .monospacedDigit()
                                         .foregroundColor(secondaryTextColor)
                                         .lineLimit(1)
                                         .frame(width: 36, alignment: .trailing)
@@ -792,8 +808,8 @@ struct FamilyView: View {
                         HStack(spacing: 0) {
                             Spacer()
                             Text(endTime)
-                                .font(.custom("Fira Mono", size: 14))
-                                .fontWeight(.semibold)
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(secondaryTextColor)
                                 .lineLimit(1)
                                 .frame(width: 36, alignment: .trailing)
@@ -893,6 +909,9 @@ struct FamilyView: View {
             defer { isLoadingEvents = false }
             resetDragState()
 
+            // Clean up stale FamilyEvent records BEFORE loading to prevent rogue events
+            await cleanupStaleEvents()
+
             guard !familyMembers.isEmpty else {
                 memberEvents = []
                 return
@@ -937,71 +956,38 @@ struct FamilyView: View {
                 // Fetch events for this member
                 let upcomingEvents = CalendarManager.shared.fetchNextEvents(
                     for: Array(calendarIDs),
-                    limit: 0 // Unlimited so we don't miss future events
+                    limit: 0, // Unlimited so we don't miss future events
+                    pastDays: appSettingsManager.eventsPastDays,
+                    futureDays: appSettingsManager.eventsFutureDays
                 )
 
                 // Convert to EventItem and expand recurring events
                 var memberEventItems: [EventItem] = []
                 for event in upcomingEvents {
+                    // Each EKEvent occurrence from EventKit already respects cancelled/edited instances,
+                    // so use it directly instead of manually expanding recurrence rules.
                     let timeRange = formatTimeRange(event.startDate, event.endDate)
-
-                    if event.hasRecurrence, let rule = event.recurrenceRule {
-                        // Expand recurring events into individual occurrences
-                        let occurrences = expandRecurringEvent(
-                            event,
-                            rule: rule,
-                            limit: eventsPerPerson,
-                            now: now
-                        )
-
-                        for occurrence in occurrences {
-                            let displayID = "\(occurrence.id)|\(occurrence.startDate.timeIntervalSince1970)"
-                            let occurrenceTimeRange = formatTimeRange(occurrence.startDate, occurrence.endDate)
-                            let driverName = fetchDriverForEvent(occurrence.id)
-                            memberEventItems.append(EventItem(
-                                id: displayID,
-                                eventIdentifier: occurrence.id,
-                                title: occurrence.title,
-                                location: occurrence.location,
-                                startDate: occurrence.startDate,
-                                endDate: occurrence.endDate,
-                                timeRange: occurrenceTimeRange,
-                                memberName: member.name ?? "Unknown",
-                                memberColor: event.calendarColor,
-                                calendarColor: event.calendarColor,
-                                calendarTitle: event.calendarTitle,
-                                calendarID: event.calendarID,
-                                hasRecurrence: event.hasRecurrence,
-                                recurrenceRule: event.recurrenceRule,
-                                isAllDay: occurrence.isAllDay,
-                                driverName: driverName,
-                                isImportant: importantEventIDs.contains(occurrence.id)
-                            ))
-                        }
-                    } else {
-                        let displayID = "\(event.id)|\(event.startDate.timeIntervalSince1970)"
-                        // Non-recurring events
-                        let driverName = fetchDriverForEvent(event.id)
-                        memberEventItems.append(EventItem(
-                            id: displayID,
-                            eventIdentifier: event.id,
-                            title: event.title,
-                            location: event.location,
-                            startDate: event.startDate,
-                            endDate: event.endDate,
-                            timeRange: timeRange,
-                            memberName: member.name ?? "Unknown",
-                            memberColor: event.calendarColor,
-                            calendarColor: event.calendarColor,
-                            calendarTitle: event.calendarTitle,
-                            calendarID: event.calendarID,
-                            hasRecurrence: event.hasRecurrence,
-                            recurrenceRule: event.recurrenceRule,
-                            isAllDay: event.isAllDay,
-                            driverName: driverName,
-                            isImportant: importantEventIDs.contains(event.id)
-                        ))
-                    }
+                    let displayID = "\(event.id)|\(event.startDate.timeIntervalSince1970)"
+                    let driverName = fetchDriverForEvent(event.id)
+                    memberEventItems.append(EventItem(
+                        id: displayID,
+                        eventIdentifier: event.id,
+                        title: event.title,
+                        location: event.location,
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                        timeRange: timeRange,
+                        memberName: member.name ?? "Unknown",
+                        memberColor: event.calendarColor,
+                        calendarColor: event.calendarColor,
+                        calendarTitle: event.calendarTitle,
+                        calendarID: event.calendarID,
+                        hasRecurrence: event.hasRecurrence,
+                        recurrenceRule: event.recurrenceRule,
+                        isAllDay: event.isAllDay,
+                        driverName: driverName,
+                        isImportant: importantEventIDs.contains(event.id)
+                    ))
                 }
 
                 // Sort member's events by start date
@@ -1045,36 +1031,50 @@ struct FamilyView: View {
         }
     }
 
-    private func fetchDriverForEvent(_ eventIdentifier: String) -> String? {
-        let fetchRequest = FamilyEvent.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventIdentifier)
+    private func cleanupStaleEvents() async {
+        let allFamilyEvents = familyEvents
+        var eventIdentifiersToDelete: [String] = []
 
-        do {
-            let results = try viewContext.fetch(fetchRequest)
-            if results.isEmpty {
-                print("🚗 No FamilyEvent found for eventIdentifier: \(eventIdentifier)")
-                // Debug: Let's see what FamilyEvents exist
-                let allRequest = FamilyEvent.fetchRequest()
-                let allResults = try viewContext.fetch(allRequest)
-                print("🚗 Total FamilyEvents in database: \(allResults.count)")
-                for event in allResults.prefix(5) {
-                    print("   - \(event.eventIdentifier ?? "unknown"): driver = \(event.driver?.name ?? "nil")")
-                }
-                return nil
-            }
+        // Check each FamilyEvent to see if its corresponding iOS calendar event still exists
+        for familyEvent in allFamilyEvents {
+            guard let eventIdentifier = familyEvent.eventIdentifier else { continue }
 
-            let driverName = results.first?.driver?.name
-            if let driverName = driverName {
-                print("🚗 Found driver for event \(eventIdentifier): \(driverName)")
-            } else {
-                print("🚗 FamilyEvent found but no driver for event \(eventIdentifier)")
-                print("🚗 FamilyEvent object has driver relationship: \(results.first?.driver != nil)")
+            // Try to find the event in iOS calendar
+            if CalendarManager.shared.getEvent(withIdentifier: eventIdentifier) == nil &&
+               CalendarManager.shared.fetchEventDetails(withIdentifier: eventIdentifier) == nil {
+                // Event doesn't exist in iOS calendar anymore - mark for deletion
+                eventIdentifiersToDelete.append(eventIdentifier)
             }
-            return driverName
-        } catch {
-            print("🚗 Error fetching driver for event \(eventIdentifier): \(error.localizedDescription)")
-            return nil
         }
+
+        // Delete stale records in batch
+        if !eventIdentifiersToDelete.isEmpty {
+            let fetchRequest = FamilyEvent.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "eventIdentifier IN %@", eventIdentifiersToDelete)
+
+            do {
+                let staleEvents = try viewContext.fetch(fetchRequest)
+                for staleEvent in staleEvents {
+                    viewContext.delete(staleEvent)
+                    print("🗑️ Deleted stale FamilyEvent record for: \(staleEvent.eventIdentifier ?? "unknown")")
+                }
+
+                if !staleEvents.isEmpty {
+                    try viewContext.save()
+                    print("✅ Cleaned up \(staleEvents.count) stale event record(s)")
+                }
+            } catch {
+                print("⚠️ Error cleaning up stale events: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func fetchDriverForEvent(_ eventIdentifier: String) -> String? {
+        // Use FetchedResults for reactive updates instead of synchronous fetch
+        if let familyEvent = familyEvents.first(where: { $0.eventIdentifier == eventIdentifier }) {
+            return familyEvent.driver?.name
+        }
+        return nil
     }
 
     private func groupEventsByDetails(_ events: [EventItem]) -> [GroupedEvent] {
@@ -1142,67 +1142,6 @@ struct FamilyView: View {
         }
 
         return grouped.values.sorted { $0.startDate < $1.startDate }
-    }
-
-    private func expandRecurringEvent(_ event: UpcomingCalendarEvent, rule: EKRecurrenceRule, limit: Int, now: Date) -> [UpcomingCalendarEvent] {
-        var occurrences: [UpcomingCalendarEvent] = []
-        let eventDuration = event.endDate.timeIntervalSince(event.startDate)
-        let calendar = Calendar.current
-
-        // Start from the first occurrence or the next future occurrence
-        var currentDate = event.startDate
-        if currentDate <= now {
-            // Find the next future occurrence
-            while currentDate.addingTimeInterval(eventDuration) <= now {
-                currentDate = advanceByRule(currentDate, rule: rule, calendar: calendar)
-            }
-        }
-
-        var iterations = 0
-        let maxIterations = 100 // Limit iterations to prevent infinite loops
-
-        while iterations < maxIterations && occurrences.count < limit {
-            let endDate = currentDate.addingTimeInterval(eventDuration)
-
-            // Only include if the occurrence ends in the future
-            if endDate > now {
-                let occurrence = UpcomingCalendarEvent(
-                    id: event.id,
-                    title: event.title,
-                    location: event.location,
-                    startDate: currentDate,
-                    endDate: endDate,
-                    calendarID: event.calendarID,
-                    calendarColor: event.calendarColor,
-                    calendarTitle: event.calendarTitle,
-                    hasRecurrence: event.hasRecurrence,
-                    recurrenceRule: event.recurrenceRule,
-                    isAllDay: event.isAllDay
-                )
-                occurrences.append(occurrence)
-            }
-
-            currentDate = advanceByRule(currentDate, rule: rule, calendar: calendar)
-            iterations += 1
-        }
-
-        return occurrences
-    }
-
-    private func advanceByRule(_ date: Date, rule: EKRecurrenceRule, calendar: Calendar) -> Date {
-        let interval = rule.interval
-        switch rule.frequency {
-        case .daily:
-            return calendar.date(byAdding: .day, value: interval, to: date) ?? date
-        case .weekly:
-            return calendar.date(byAdding: .weekOfYear, value: interval, to: date) ?? date
-        case .monthly:
-            return calendar.date(byAdding: .month, value: interval, to: date) ?? date
-        case .yearly:
-            return calendar.date(byAdding: .year, value: interval, to: date) ?? date
-        @unknown default:
-            return calendar.date(byAdding: .day, value: 7, to: date) ?? date
-        }
     }
 
     private func formatTimeRange(_ startDate: Date, _ endDate: Date) -> String? {
@@ -1463,24 +1402,27 @@ struct FamilyView: View {
                 span: span
             )
 
-            if success {
+            // Always try to clean up CoreData records, even if EventKit delete fails
+            // (event might already be deleted from iOS calendar)
+            await NotificationManager.shared.cancelEventNotifications(for: target.id)
+
+            let fetchRequest = FamilyEvent.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", target.id)
+            if let familyEvent = try? viewContext.fetch(fetchRequest).first {
+                viewContext.delete(familyEvent)
                 anyDeleted = true
+            }
 
-                await NotificationManager.shared.cancelEventNotifications(for: target.id)
-
-                let fetchRequest = FamilyEvent.fetchRequest()
-                fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", target.id)
-                if let familyEvent = try? viewContext.fetch(fetchRequest).first {
-                    viewContext.delete(familyEvent)
-                }
+            if success {
+                print("✅ Successfully deleted event \(target.id) from calendar")
             } else {
-                print("⚠️ Failed to delete event \(target.id) in calendar \(target.calendarID)")
+                print("⚠️ Event \(target.id) may have been already deleted from iOS calendar, cleaned up CoreData record")
             }
         }
 
         if anyDeleted {
             try? viewContext.save()
-            print("✅ Deleted \(targets.count) linked event(s)")
+            print("✅ Cleaned up \(targets.count) event record(s)")
             await MainActor.run {
                 loadNextEvents()
             }

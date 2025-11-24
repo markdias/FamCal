@@ -17,7 +17,7 @@ struct AvailableCalendar {
     let sourceType: EKSourceType
 }
 
-struct UpcomingCalendarEvent: Identifiable {
+struct UpcomingCalendarEvent: Identifiable, Equatable {
     let id: String
     let title: String
     let location: String?
@@ -29,6 +29,18 @@ struct UpcomingCalendarEvent: Identifiable {
     let hasRecurrence: Bool
     let recurrenceRule: EKRecurrenceRule?
     let isAllDay: Bool
+
+    static func == (lhs: UpcomingCalendarEvent, rhs: UpcomingCalendarEvent) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.title == rhs.title &&
+        lhs.location == rhs.location &&
+        lhs.startDate == rhs.startDate &&
+        lhs.endDate == rhs.endDate &&
+        lhs.calendarID == rhs.calendarID &&
+        lhs.calendarTitle == rhs.calendarTitle &&
+        lhs.hasRecurrence == rhs.hasRecurrence &&
+        lhs.isAllDay == rhs.isAllDay
+    }
 }
 @MainActor
 final class CalendarManager {
@@ -239,13 +251,9 @@ final class CalendarManager {
         return findEvent(withIdentifier: identifier, occurrenceStartDate: occurrenceStartDate)
     }
 
-    func fetchNextEvents(for calendarIDs: [String], limit: Int) -> [UpcomingCalendarEvent] {
+    func fetchNextEvents(for calendarIDs: [String], limit: Int, pastDays: Int = 90, futureDays: Int = 180) -> [UpcomingCalendarEvent] {
         let calendars = eventStore.calendars(for: .event).filter { calendarIDs.contains($0.calendarIdentifier) }
         guard !calendars.isEmpty else { return [] }
-
-        // Get date range from user settings
-        let pastDays = UserDefaults.standard.integer(forKey: "eventsPastDays")
-        let futureDays = UserDefaults.standard.integer(forKey: "eventsFutureDays")
 
         let calendar = Calendar.current
         let startDate = calendar.date(byAdding: .day, value: -pastDays, to: Date()) ?? Date()

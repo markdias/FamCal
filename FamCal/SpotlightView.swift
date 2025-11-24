@@ -12,12 +12,14 @@ import EventKit
 struct SpotlightView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("spotlightEventsPerPerson") private var spotlightEventsPerPerson: Int = 5
-    @AppStorage("autoRefreshInterval") private var autoRefreshInterval: Int = 5
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @AppStorage("spotlightShowGapsBetweenEvents") private var spotlightShowGapsBetweenEvents: Bool = true
-    @AppStorage("defaultMapsApp") private var defaultMapsApp: String = "Apple Maps"
 
     let member: FamilyMember
+
+    private var spotlightEventsPerPerson: Int { appSettingsManager.spotlightEventsPerPerson }
+    private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
+    private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
 
     @FetchRequest(
         entity: FamilyMemberCalendar.entity(),
@@ -146,7 +148,8 @@ struct SpotlightView: View {
         }
         .navigationViewStyle(.stack)
         .onAppear(perform: setupView)
-        .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
+        .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
+        .onChange(of: appSettingsManager.spotlightEventsPerPerson) { _, _ in loadEvents() }
         .onDisappear(perform: cleanupView)
     }
 
@@ -237,7 +240,7 @@ struct SpotlightView: View {
                         if !event.isAllDay, let timeRange = event.timeRange {
                             let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                             Text(startTime)
-                                .font(.custom("Fira Mono", size: 14))
+                                .font(.system(size: 14, design: .monospaced))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.gray)
                                 .lineLimit(1)
@@ -266,7 +269,7 @@ struct SpotlightView: View {
                                 if !event.isAllDay, let timeRange = event.timeRange {
                                     let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                                     Text(endTime)
-                                        .font(.custom("Fira Mono", size: 14))
+                                        .font(.system(size: 14, design: .monospaced))
                                         .fontWeight(.semibold)
                                         .foregroundColor(.gray)
                                         .lineLimit(1)
@@ -280,7 +283,7 @@ struct SpotlightView: View {
                         HStack(spacing: 0) {
                             Spacer()
                             Text(endTime)
-                                .font(.custom("Fira Mono", size: 14))
+                                .font(.system(size: 14, design: .monospaced))
                                 .fontWeight(.semibold)
                                 .foregroundColor(.gray)
                                 .lineLimit(1)
@@ -389,7 +392,12 @@ struct SpotlightView: View {
         }
 
         // Fetch events for this member
-        let upcomingEvents = CalendarManager.shared.fetchNextEvents(for: Array(calendarIDs), limit: 0)
+        let upcomingEvents = CalendarManager.shared.fetchNextEvents(
+            for: Array(calendarIDs),
+            limit: 0,
+            pastDays: appSettingsManager.eventsPastDays,
+            futureDays: appSettingsManager.eventsFutureDays
+        )
 
         var eventItems: [EventItem] = []
         for event in upcomingEvents {

@@ -12,6 +12,7 @@ struct AddFamilyMemberView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @EnvironmentObject private var authManager: SupabaseAuthManager
 
     @State private var name = ""
     @State private var isDriver = false
@@ -283,25 +284,45 @@ struct AddFamilyMemberView: View {
                 }
 
                 let colorHex = getRandomColor().toHex()
-                _ = try await dataManager.createFamilyMember(name: name, colorHex: colorHex)
 
-                // If a calendar was matched, add it to the member
-                if let matched = matchedCalendar,
-                   let newMember = dataManager.familyMembers.first(where: { $0.name == name }) {
-                    try await dataManager.supabaseManager.addFamilyMemberCalendar(
-                        memberId: newMember.id,
-                        calendarId: matched.id,
-                        calendarName: matched.title,
-                        calendarColorHex: matched.color.hex(),
-                        isAutoLinked: true
-                    )
-                    print("✅ Calendar linked to family member")
+                // Use local-only method for guests, Supabase sync for authenticated users
+                if authManager.isGuest {
+                    let newMember = try dataManager.createFamilyMemberLocal(name: name, colorHex: colorHex)
 
-                    // Refresh data to sync the newly added calendar
-                    await dataManager.fetchUserData()
+                    // If a calendar was matched, add it to the member locally
+                    if let matched = matchedCalendar {
+                        let calendar = FamilyMemberCalendar(context: viewContext)
+                        calendar.id = UUID()
+                        calendar.calendarID = matched.id
+                        calendar.calendarName = matched.title
+                        calendar.calendarColorHex = matched.color.hex()
+                        calendar.isAutoLinked = true
+                        newMember.addToMemberCalendars(calendar)
+
+                        try viewContext.save()
+                        print("✅ Calendar linked to family member (guest mode)")
+                    }
+                } else {
+                    _ = try await dataManager.createFamilyMember(name: name, colorHex: colorHex)
+
+                    // If a calendar was matched, add it to the member
+                    if let matched = matchedCalendar,
+                       let newMember = dataManager.familyMembers.first(where: { $0.name == name }) {
+                        try await dataManager.supabaseManager.addFamilyMemberCalendar(
+                            memberId: newMember.id,
+                            calendarId: matched.id,
+                            calendarName: matched.title,
+                            calendarColorHex: matched.color.hex(),
+                            isAutoLinked: true
+                        )
+                        print("✅ Calendar linked to family member")
+
+                        // Refresh data to sync the newly added calendar
+                        await dataManager.fetchUserData()
+                    }
                 }
 
-                print("✅ Family member '\(name)' saved to Supabase successfully")
+                print("✅ Family member '\(name)' saved successfully")
                 dismiss()
             } catch {
                 saveError = "Failed to save family member: \(error.localizedDescription)"

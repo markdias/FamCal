@@ -100,11 +100,11 @@ struct PermissionScreen: View {
     private func checkCalendarPermission() {
         let status = EKEventStore.authorizationStatus(for: .event)
 
-        switch status {
-        case .authorized:
-            calendarPermissionGranted = true
-        default:
-            calendarPermissionGranted = false
+        // Handle both iOS 16 and iOS 17+ permission statuses
+        if #available(iOS 17.0, *) {
+            calendarPermissionGranted = (status == .fullAccess || status == .writeOnly)
+        } else {
+            calendarPermissionGranted = (status == .authorized)
         }
     }
 

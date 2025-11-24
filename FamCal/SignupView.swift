@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SignupView: View {
     @Environment(\.dismiss) var dismiss
@@ -135,6 +136,43 @@ struct SignupView: View {
                         .opacity(isValidInput ? 1.0 : 0.5)
                         .padding(.top, 10)
 
+                        // Divider
+                        HStack {
+                            Rectangle()
+                                .fill(themeManager.selectedTheme.textSecondary.opacity(0.3))
+                                .frame(height: 1)
+                            Text("or")
+                                .font(.caption)
+                                .foregroundStyle(themeManager.selectedTheme.textSecondary.opacity(0.8))
+                            Rectangle()
+                                .fill(themeManager.selectedTheme.textSecondary.opacity(0.3))
+                                .frame(height: 1)
+                        }
+                        .padding(.vertical, 4)
+
+                        // Google Sign-Up
+                        Button {
+                            performGoogleSignup()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "g.circle.fill")
+                                    .font(.title2)
+                                Text(authManager.isLoading ? "Connecting..." : "Continue with Google")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(themeManager.selectedTheme.floatingControlsBorder, lineWidth: 1)
+                            )
+                            .cornerRadius(16)
+                        }
+                        .foregroundStyle(themeManager.selectedTheme.textPrimary)
+                        .disabled(authManager.isLoading)
+
                         // Terms
                         Text("By creating an account, you agree to our Terms of Service and Privacy Policy")
                             .font(.caption)
@@ -178,6 +216,27 @@ struct SignupView: View {
         } catch {
             errorMessage = error.localizedDescription
             showError = true
+        }
+    }
+
+    private func performGoogleSignup() {
+        guard let rootViewController = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first(where: { $0.isKeyWindow })?.rootViewController else {
+            errorMessage = "Unable to find a window to present Google Sign-In."
+            showError = true
+            return
+        }
+
+        Task {
+            do {
+                try await authManager.signInWithGoogle(presenting: rootViewController)
+                showSuccess = true
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
         }
     }
 }

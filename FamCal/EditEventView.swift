@@ -650,6 +650,7 @@ struct EditEventView: View {
 
             // Update CoreData record if needed
             updateFamilyEvent()
+            await syncDriverMetadataForLinks(span: updateSpan, applyToGroup: applyToGroup)
 
             await MainActor.run {
                 loadLinkedFamilyEvents()
@@ -666,11 +667,13 @@ struct EditEventView: View {
                         memberIds: attendeeInfo.memberIds
                     ),
                        let ekEvent = CalendarManager.shared.getEvent(withIdentifier: upcomingEvent.id) {
+                        let isSharedEvent = linkedFamilyEvents.first?.isSharedCalendarEvent ?? false
                         notificationManager.scheduleEventNotification(
                             event: ekEvent,
                             alertOption: alertOption,
                             familyMembers: attendeeInfo.memberNames,
-                            drivers: selectedDriverName()
+                            drivers: selectedDriverName(),
+                            isSharedCalendarEvent: isSharedEvent
                         )
                     }
                 }
@@ -777,11 +780,122 @@ struct EditEventView: View {
             if let saved = try viewContext.fetch(fetchRequest).first {
                 print("✅ Verified: FamilyEvent driver is now \(saved.driver?.name ?? "nil")")
             }
+
+            // Sync driver metadata to Supabase so future pulls reflect the latest selection
+            Task {
+                await syncDriverMetadataToSupabase(for: familyEvent)
+            }
         } catch {
             print("❌ Failed to update FamilyEvent record: \(error.localizedDescription)")
             let nsError = error as NSError
             print("   Error domain: \(nsError.domain)")
             print("   Error code: \(nsError.code)")
+        }
+    }
+
+    private func syncDriverMetadataToSupabase(for familyEvent: FamilyEvent) async {
+        guard let userId = SupabaseAuthManager.shared.userId else {
+            print("⚠️ Supabase sync skipped: no user ID")
+            return
+        }
+
+        let calId = calendarId ?? upcomingEvent.calendarID
+        guard !calId.isEmpty else {
+            print("⚠️ Supabase sync skipped: missing calendar ID for event \(upcomingEvent.id)")
+            return
+        }
+
+        let driverFamilyMemberId = familyEvent.driverFamilyMemberId?.uuidString
+        let extra = buildDriverExtraMetadata(from: selectedDriver)
+
+        do {
+            try await SupabaseManager.shared.upsertCalendarEventMetadata(
+                userId: userId,
+                calendarId: calId,
+                eventIdentifier: upcomingEvent.id,
+                driverFamilyMemberId: driverFamilyMemberId,
+                extra: extra.isEmpty ? nil : extra
+            )
+            print("✅ Synced driver metadata to Supabase for event \(upcomingEvent.id)")
+        } catch {
+            print("❌ Failed to sync driver metadata to Supabase: \(error)")
+        }
+    }
+
+    /// Syncs driver metadata for the current event and any linked events when applying to a group/future events.
+    private func syncDriverMetadataForLinks(span: EKSpan, applyToGroup: Bool) async {
+        guard let userId = SupabaseAuthManager.shared.userId else {
+            print("⚠️ Supabase sync skipped: no user ID")
+            return
+        }
+
+        let driverFamilyMemberId = selectedDriver?.familyMemberId?.uuidString
+        let extra = buildDriverExtraMetadata(from: selectedDriver)
+        let calendarIdForCurrent = calendarId ?? upcomingEvent.calendarID
+
+        var targets: [(eventId: String, calendarId: String)] = []
+
+        if !calendarIdForCurrent.isEmpty {
+            targets.append((eventId: upcomingEvent.id, calendarId: calendarIdForCurrent))
+        }
+
+        if applyToGroup || span == .futureEvents {
+            for familyEvent in linkedFamilyEvents {
+                guard let eid = familyEvent.eventIdentifier,
+                      let calId = familyEvent.calendarId else { continue }
+                targets.append((eventId: eid, calendarId: calId))
+            }
+        }
+
+        var seen: Set<String> = []
+        for target in targets {
+            let key = "\(target.eventId)|\(target.calendarId)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+
+            do {
+                try await SupabaseManager.shared.upsertCalendarEventMetadata(
+                    userId: userId,
+                    calendarId: target.calendarId,
+                    eventIdentifier: target.eventId,
+                    driverFamilyMemberId: driverFamilyMemberId,
+                    extra: extra.isEmpty ? nil : extra
+                )
+                print("✅ Synced driver metadata to Supabase for event \(target.eventId)")
+            } catch {
+                print("❌ Failed to sync driver metadata to Supabase for event \(target.eventId): \(error)")
+            }
+        }
+    }
+
+    private func buildDriverExtraMetadata(from driver: DriverWrapper?) -> [String: AnyCodable] {
+        guard let driver else { return [:] }
+
+        switch driver {
+        case .regular(let driverModel):
+            var payload: [String: AnyCodable] = ["driver_type": .string("driver_record")]
+            if let id = driverModel.id?.uuidString {
+                payload["driver_id"] = .string(id)
+            }
+            if let name = driverModel.name {
+                payload["driver_name"] = .string(name)
+            }
+            if let phone = driverModel.phone {
+                payload["driver_phone"] = .string(phone)
+            }
+            if let email = driverModel.email {
+                payload["driver_email"] = .string(email)
+            }
+            return payload
+        case .familyMember(let member):
+            var payload: [String: AnyCodable] = ["driver_type": .string("family_member")]
+            if let name = member.name {
+                payload["driver_name"] = .string(name)
+            }
+            if let memberId = member.id?.uuidString {
+                payload["family_member_id"] = .string(memberId)
+            }
+            return payload
         }
     }
 

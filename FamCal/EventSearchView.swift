@@ -11,6 +11,7 @@ import CoreData
 struct EventSearchView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -208,7 +209,9 @@ struct EventSearchView: View {
 
         let fetchedEvents = CalendarManager.shared.fetchNextEvents(
             for: Array(calendarIDs),
-            limit: 500
+            limit: 500,
+            pastDays: appSettingsManager.eventsPastDays,
+            futureDays: appSettingsManager.eventsFutureDays
         )
 
         allEvents = fetchedEvents

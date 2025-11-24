@@ -192,12 +192,80 @@ class SupabaseDataManager: ObservableObject {
         return newMember
     }
 
+    /// Create family member locally only (for guest mode - no Supabase sync)
+    @MainActor
+    func createFamilyMemberLocal(name: String, colorHex: String) throws -> FamilyMember {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use createFamilyMember for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let member = FamilyMember(context: context)
+        member.id = UUID()
+        member.name = name
+        member.colorHex = colorHex
+        member.avatarInitials = getInitials(from: name)
+        member.sortOrder = Int16(familyMembers.count)
+
+        do {
+            try context.save()
+            print("✅ Family member '\(name)' saved locally (guest mode)")
+            return member
+        } catch {
+            print("❌ Error saving family member locally: \(error)")
+            throw error
+        }
+    }
+
+    private func getInitials(from name: String) -> String {
+        let components = name.split(separator: " ")
+        if components.count >= 2 {
+            return String(components[0].first ?? "?") + String(components[1].first ?? "?")
+        } else {
+            return String(name.prefix(2)).uppercased()
+        }
+    }
+
     @MainActor
     func updateFamilyMember(id: String, name: String, colorHex: String) async throws {
         try await supabaseManager.updateFamilyMember(id: id, name: name, colorHex: colorHex)
 
         // Refresh family members list
         await fetchUserData()
+    }
+
+    /// Update family member locally only (for guest mode - no Supabase sync)
+    @MainActor
+    func updateFamilyMemberLocal(id: UUID, name: String, colorHex: String) throws {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use updateFamilyMember for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let fetchRequest = FamilyMember.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+
+        guard let member = try context.fetch(fetchRequest).first else {
+            throw NSError(domain: "MemberNotFound", code: -1, userInfo: ["message": "Family member not found"])
+        }
+
+        member.name = name
+        member.colorHex = colorHex
+        member.avatarInitials = getInitials(from: name)
+
+        do {
+            try context.save()
+            print("✅ Family member '\(name)' updated locally (guest mode)")
+        } catch {
+            print("❌ Error updating family member locally: \(error)")
+            throw error
+        }
     }
 
     @MainActor
@@ -208,8 +276,42 @@ class SupabaseDataManager: ObservableObject {
         await fetchUserData()
     }
 
+    /// Delete family member locally only (for guest mode - no Supabase sync)
+    @MainActor
+    func deleteFamilyMemberLocal(id: UUID) throws {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use deleteFamilyMember for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let fetchRequest = FamilyMember.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+
+        guard let member = try context.fetch(fetchRequest).first else {
+            throw NSError(domain: "MemberNotFound", code: -1, userInfo: ["message": "Family member not found"])
+        }
+
+        context.delete(member)
+
+        do {
+            try context.save()
+            print("✅ Family member '\(member.name ?? "Unknown")' deleted locally (guest mode)")
+        } catch {
+            print("❌ Error deleting family member locally: \(error)")
+            throw error
+        }
+    }
+
     @MainActor
     func addSharedCalendar(calendarId: String, calendarName: String, calendarColorHex: String) async throws -> SharedCalendarDTO {
+        if authManager.isGuest {
+            // For guests, create shared calendar locally
+            return try addSharedCalendarLocal(calendarId: calendarId, calendarName: calendarName, calendarColorHex: calendarColorHex)
+        }
+
         guard let userId = authManager.userId else {
             throw NSError(domain: "NoUserID", code: -1)
         }
@@ -227,13 +329,97 @@ class SupabaseDataManager: ObservableObject {
         return newCalendar
     }
 
+    /// Add shared calendar locally only (for guest mode - no Supabase sync)
+    @MainActor
+    private func addSharedCalendarLocal(calendarId: String, calendarName: String, calendarColorHex: String) throws -> SharedCalendarDTO {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use addSharedCalendar for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let sharedCalendar = SharedCalendar(context: context)
+        sharedCalendar.id = UUID()
+        sharedCalendar.calendarID = calendarId
+        sharedCalendar.calendarName = calendarName
+        sharedCalendar.calendarColorHex = calendarColorHex
+
+        // Link to all existing family members
+        let fetchRequest = FamilyMember.fetchRequest()
+        let allMembers = try context.fetch(fetchRequest)
+        for member in allMembers {
+            sharedCalendar.addToMembers(member)
+        }
+
+        do {
+            try context.save()
+            print("✅ Shared calendar '\(calendarName)' added locally (guest mode)")
+            // Return as DTO
+            return SharedCalendarDTO(
+                id: sharedCalendar.id?.uuidString ?? "",
+                user_id: "",
+                calendar_id: calendarId,
+                calendar_name: calendarName,
+                calendar_color_hex: calendarColorHex,
+                created_at: nil
+            )
+        } catch {
+            print("❌ Error adding shared calendar locally: \(error)")
+            throw error
+        }
+    }
+
     @MainActor
     func deleteSharedCalendar(id: String) async throws {
+        if authManager.isGuest {
+            // For guests, delete shared calendar locally
+            try deleteSharedCalendarLocal(id: id)
+            return
+        }
+
         let userId = authManager.userId ?? ""
         try await supabaseManager.deleteSharedCalendar(id: id, userId: userId)
 
         // Refresh shared calendars list
         await fetchUserData()
+    }
+
+    /// Delete shared calendar locally only (for guest mode - no Supabase sync)
+    @MainActor
+    private func deleteSharedCalendarLocal(id: String) throws {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use deleteSharedCalendar for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let fetchRequest = SharedCalendar.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+
+        guard let sharedCalendar = try context.fetch(fetchRequest).first else {
+            throw NSError(domain: "CalendarNotFound", code: -1, userInfo: ["message": "Shared calendar not found"])
+        }
+
+        // Remove from all members
+        if let members = sharedCalendar.members?.allObjects as? [FamilyMember] {
+            for member in members {
+                sharedCalendar.removeFromMembers(member)
+            }
+        }
+
+        context.delete(sharedCalendar)
+
+        do {
+            try context.save()
+            print("✅ Shared calendar '\(sharedCalendar.calendarName ?? "Unknown")' deleted locally (guest mode)")
+        } catch {
+            print("❌ Error deleting shared calendar locally: \(error)")
+            throw error
+        }
     }
 
     // MARK: - Drivers
@@ -341,5 +527,52 @@ class SupabaseDataManager: ObservableObject {
     @MainActor
     func clearUserData() {
         clearData()
+    }
+
+    /// Clear all local CoreData (family members, shared calendars, drivers, addresses)
+    @MainActor
+    func clearAllLocalData() {
+        guard let context = managedObjectContext else {
+            print("⚠️ CoreData context not available, skipping local data clear")
+            return
+        }
+
+        do {
+            // Delete all family members
+            let familyMemberFetch = FamilyMember.fetchRequest()
+            let familyMembers = try context.fetch(familyMemberFetch)
+            for member in familyMembers {
+                context.delete(member)
+            }
+
+            // Delete all shared calendars
+            let sharedCalendarFetch = SharedCalendar.fetchRequest()
+            let sharedCalendars = try context.fetch(sharedCalendarFetch)
+            for calendar in sharedCalendars {
+                context.delete(calendar)
+            }
+
+            // Delete all drivers
+            let driverFetch = Driver.fetchRequest()
+            let drivers = try context.fetch(driverFetch)
+            for driver in drivers {
+                context.delete(driver)
+            }
+
+            // Delete all saved addresses
+            let addressFetch = SavedAddress.fetchRequest()
+            let addresses = try context.fetch(addressFetch)
+            for address in addresses {
+                context.delete(address)
+            }
+
+            try context.save()
+            print("✅ All local CoreData cleared")
+
+            // Also clear in-memory data
+            clearData()
+        } catch {
+            print("❌ Error clearing local CoreData: \(error)")
+        }
     }
 }

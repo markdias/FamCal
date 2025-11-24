@@ -7,6 +7,8 @@
 
 import Foundation
 import Combine
+import GoogleSignIn
+import UIKit
 
 /// Manages authentication state and operations
 @MainActor
@@ -14,6 +16,7 @@ class SupabaseAuthManager: ObservableObject {
     static let shared = SupabaseAuthManager()
 
     @Published var isAuthenticated = false
+    @Published var isGuest = false
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var userEmail: String?
@@ -31,6 +34,7 @@ class SupabaseAuthManager: ObservableObject {
     private let userDefaultsKeyEmail = "com.famcal.auth.userEmail"
     private let userDefaultsKeyAccessToken = "com.famcal.auth.accessToken"
     private let userDefaultsKeyIsAuthenticated = "com.famcal.auth.isAuthenticated"
+    private let userDefaultsKeyIsGuest = "com.famcal.auth.isGuest"
 
     init() {
         // Validate configuration
@@ -58,6 +62,16 @@ class SupabaseAuthManager: ObservableObject {
         print("ℹ️ Checking for existing session...")
 
         let defaults = UserDefaults.standard
+
+        // Check for guest mode first
+        if defaults.bool(forKey: userDefaultsKeyIsGuest) {
+            print("✅ Guest mode detected")
+            await MainActor.run {
+                self.isGuest = true
+                self.isAuthenticated = false
+            }
+            return
+        }
 
         // Try to restore session from UserDefaults
         if let savedUserId = defaults.string(forKey: userDefaultsKeyUserId),
@@ -90,6 +104,13 @@ class SupabaseAuthManager: ObservableObject {
             defaults.set(email, forKey: userDefaultsKeyEmail)
             defaults.set(token, forKey: userDefaultsKeyAccessToken)
             defaults.set(true, forKey: userDefaultsKeyIsAuthenticated)
+
+            // Also save to app group for widget access
+            if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
+                appGroupDefaults.set(true, forKey: userDefaultsKeyIsAuthenticated)
+                appGroupDefaults.synchronize()
+            }
+
             print("ℹ️ Session saved to persistent storage")
         }
     }
@@ -102,6 +123,14 @@ class SupabaseAuthManager: ObservableObject {
         defaults.removeObject(forKey: userDefaultsKeyEmail)
         defaults.removeObject(forKey: userDefaultsKeyAccessToken)
         defaults.removeObject(forKey: userDefaultsKeyIsAuthenticated)
+        defaults.removeObject(forKey: userDefaultsKeyIsGuest)
+
+        // Also clear from app group for widget access
+        if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
+            appGroupDefaults.removeObject(forKey: userDefaultsKeyIsAuthenticated)
+            appGroupDefaults.synchronize()
+        }
+
         print("ℹ️ Session cleared from persistent storage")
     }
 
@@ -359,8 +388,176 @@ class SupabaseAuthManager: ObservableObject {
         }
     }
 
+    /// Sign in via Google OAuth and exchange the ID token with Supabase
+    func signInWithGoogle(presenting viewController: UIViewController) async throws {
+        isLoading = true
+        errorMessage = nil
+
+        defer { isLoading = false }
+
+        let configuredClientID = (Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clientID = configuredClientID?.isEmpty == false ? configuredClientID! : SupabaseConfig.googleClientID
+        print("ℹ️ Google Sign-In configuredClientID (plist): \(configuredClientID ?? "nil")")
+        print("ℹ️ Google Sign-In clientID (resolved): \(clientID)")
+
+        guard !clientID.isEmpty,
+              clientID != "REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID" else {
+            let message = "Set your Google client ID in SupabaseConfig.swift and Info.plist before using Google Sign-In."
+            errorMessage = message
+            throw NSError(domain: "GoogleAuth", code: -10, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+
+        // Configure Google Sign-In
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+
+        // Present Google sign-in flow
+        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: viewController)
+
+        guard let idToken = result.user.idToken?.tokenString else {
+            let message = "Missing Google ID token from sign-in response."
+            errorMessage = message
+            throw NSError(domain: "GoogleAuth", code: -11, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+
+        let decodedNonce = extractNonce(from: idToken)
+        print("ℹ️ Google ID token nonce (decoded): \(decodedNonce ?? "nil")")
+
+        try await exchangeGoogleIDTokenForSession(
+            idToken: idToken,
+            emailHint: result.user.profile?.email,
+            nonce: decodedNonce
+        )
+    }
+
+    /// Exchange a Google ID token for a Supabase session
+    private func exchangeGoogleIDTokenForSession(idToken: String, emailHint: String?, nonce: String?) async throws {
+        var urlComponents = URLComponents(url: supabaseURL.appendingPathComponent("auth/v1/token"), resolvingAgainstBaseURL: false)!
+        urlComponents.queryItems = [URLQueryItem(name: "grant_type", value: "id_token")]
+        let url = urlComponents.url!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+
+        struct GoogleTokenBody: Encodable {
+            let id_token: String
+            let provider: String
+            let nonce: String?
+        }
+
+        request.httpBody = try JSONEncoder().encode(GoogleTokenBody(id_token: idToken, provider: "google", nonce: nonce))
+
+        print("ℹ️ Exchanging Google ID token with Supabase... (nonce present: \(nonce != nil))")
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "InvalidResponse", code: -1)
+        }
+
+        print("ℹ️ Supabase token exchange status: \(httpResponse.statusCode)")
+
+        if httpResponse.statusCode == 200 {
+            do {
+                let response = try JSONDecoder().decode(TokenResponse.self, from: data)
+                self.userId = response.user.id
+                self.userEmail = response.user.email ?? emailHint
+                self.accessToken = response.access_token
+                self.isAuthenticated = true
+                self.saveSession()
+                print("✅ User signed in with Google")
+            } catch {
+                print("⚠️ Could not parse Google token exchange response: \(error)")
+
+                // Attempt a basic JSON parse to salvage the session
+                guard let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    let message = "Google sign-in succeeded but response could not be parsed."
+                    errorMessage = message
+                    throw NSError(domain: "GoogleAuth", code: -12, userInfo: [NSLocalizedDescriptionKey: message])
+                }
+
+                if let accessToken = jsonObject["access_token"] as? String {
+                    self.accessToken = accessToken
+                }
+
+                if let userDict = jsonObject["user"] as? [String: Any],
+                   let userId = userDict["id"] as? String {
+                    self.userId = userId
+                } else if let userId = jsonObject["user_id"] as? String {
+                    self.userId = userId
+                } else if let userId = jsonObject["id"] as? String {
+                    self.userId = userId
+                }
+
+                self.userEmail = emailHint ?? self.userEmail
+                self.isAuthenticated = self.accessToken != nil
+                self.saveSession()
+                print("✅ User signed in with Google (manual parse)")
+            }
+        } else {
+            let errorData = String(data: data, encoding: .utf8) ?? "No error details"
+            print("❌ Google token exchange failed: \(errorData)")
+
+            let decodedError = try? JSONDecoder().decode(ErrorResponse.self, from: data)
+            let message = decodedError?.message ??
+                decodedError?.error_description ??
+                decodedError?.error ??
+                errorData
+
+            errorMessage = "Google login failed: \(message)"
+            throw NSError(domain: "AuthError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+    }
+
+    /// Extract nonce from a JWT (if present) without verification
+    private func extractNonce(from idToken: String) -> String? {
+        let parts = idToken.split(separator: ".")
+        guard parts.count > 1 else { return nil }
+
+        var base64 = String(parts[1])
+        base64 = base64.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64.append("=") }
+
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        return json["nonce"] as? String
+    }
+
     /// Sign out the current user
     func signOut() async throws {
+        isLoading = true
+        errorMessage = nil
+
+        defer { isLoading = false }
+
+        let wasAuthenticated = self.isAuthenticated
+
+        self.userId = nil
+        self.userEmail = nil
+        self.accessToken = nil
+        self.isAuthenticated = false
+        self.isGuest = false
+        self.clearSession()  // Clear persisted session
+        GIDSignIn.sharedInstance.signOut()
+
+        // Only reset settings and clear data if user was authenticated
+        // If user was in guest mode, preserve their local data
+        if wasAuthenticated {
+            print("ℹ️ Clearing data from authenticated session")
+            AppSettingsManager.shared.resetToDefaults()
+            SupabaseDataManager.shared.clearAllLocalData()
+        } else {
+            print("ℹ️ User was in guest mode - preserving local data")
+        }
+
+        print("✅ User signed out successfully")
+    }
+
+    /// Continue as guest (no cloud sync, local-only settings)
+    func continueAsGuest() {
         isLoading = true
         errorMessage = nil
 
@@ -370,9 +567,16 @@ class SupabaseAuthManager: ObservableObject {
         self.userEmail = nil
         self.accessToken = nil
         self.isAuthenticated = false
-        self.clearSession()  // Clear persisted session
+        self.isGuest = true
 
-        print("✅ User signed out successfully")
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: userDefaultsKeyIsGuest)
+
+        // Note: Do NOT reset settings or clear local data here
+        // Guests should be able to return to their local data across sessions
+        // Settings will only be reset and data cleared when signing out from an authenticated session
+
+        print("✅ User continuing as guest - settings will be local only")
     }
 
     /// Send password reset email

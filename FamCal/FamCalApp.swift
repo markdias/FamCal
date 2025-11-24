@@ -8,6 +8,7 @@
 import SwiftUI
 import CoreData
 import WidgetKit
+import GoogleSignIn
 
 @main
 struct FamCalApp: App {
@@ -16,9 +17,12 @@ struct FamCalApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
     @StateObject private var appSettingsManager = AppSettingsManager.shared
-    @State private var hasCompletedOnboarding: Bool?
+    @State private var hasCompletedOnboarding: Bool = false
     @State private var deepLinkEventTitle: String?
     @State private var deepLinkMemberId: UUID?
+    @State private var isFirstLoad = true
+    @State private var previousAuthState: (isAuthenticated: Bool, isGuest: Bool)?
+    @State private var isCheckingSession = true
 
     init() {
         let defaults = UserDefaults.standard
@@ -34,6 +38,10 @@ struct FamCalApp: App {
         if defaults.integer(forKey: "eventsFutureDays") == 0 {
             defaults.set(180, forKey: "eventsFutureDays")
         }
+
+        // Load onboarding completion status from UserDefaults
+        // This prevents showing onboarding again for returning users
+        _hasCompletedOnboarding = State(initialValue: defaults.bool(forKey: "hasCompletedOnboarding"))
 
         // Move diagnostics off main thread to prevent blocking UI
         DispatchQueue.global(qos: .utility).async {
@@ -51,42 +59,66 @@ struct FamCalApp: App {
         }
     }
 
+    /// Check if user has existing data (family members or shared calendars)
+    /// Returns true if any data exists, false if database is empty (brand new user)
+    private func userHasExistingData(_ persistenceController: PersistenceController) -> Bool {
+        let context = persistenceController.container.viewContext
+
+        // Check for existing family members
+        let familyMemberFetch = FamilyMember.fetchRequest()
+        do {
+            let familyMemberCount = try context.count(for: familyMemberFetch)
+            if familyMemberCount > 0 {
+                return true
+            }
+        } catch {
+            print("⚠️ Error checking family members: \(error)")
+        }
+
+        // Check for existing shared calendars
+        let sharedCalendarFetch = SharedCalendar.fetchRequest()
+        do {
+            let sharedCalendarCount = try context.count(for: sharedCalendarFetch)
+            if sharedCalendarCount > 0 {
+                return true
+            }
+        } catch {
+            print("⚠️ Error checking shared calendars: \(error)")
+        }
+
+        return false
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
-                // Authentication check first
-                if authManager.isAuthenticated {
-                    // User is authenticated, check onboarding status
-                    if let completed = hasCompletedOnboarding {
-                        if completed {
-                            MainTabView()
-                                .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                                .environmentObject(themeManager)
-                                .environmentObject(authManager)
-                                .environmentObject(dataManager)
-                                .environmentObject(appSettingsManager)
-                                .onAppear {
-                                    dataManager.setManagedObjectContext(persistenceController.container.viewContext)
-                                    Task {
-                                        await appSettingsManager.loadSettings()
-                                    }
+                // While session is being checked, show loading screen
+                if isCheckingSession {
+                    ZStack {
+                        Color(.systemBackground)
+                            .ignoresSafeArea()
+                        ProgressView()
+                    }
+                }
+                // Check if user is authenticated or guest
+                else if authManager.isAuthenticated || authManager.isGuest {
+                    // For authenticated users or returning guests with completed onboarding, go straight to main app
+                    // Skip onboarding entirely if data exists (family members or shared calendars)
+                    if hasCompletedOnboarding || userHasExistingData(persistenceController) {
+                        MainTabView()
+                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                            .environmentObject(themeManager)
+                            .environmentObject(authManager)
+                            .environmentObject(dataManager)
+                            .environmentObject(appSettingsManager)
+                            .onAppear {
+                                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                                Task {
+                                    await appSettingsManager.loadSettings()
                                 }
-                        } else {
-                            OnboardingView()
-                                .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                                .environmentObject(themeManager)
-                                .environmentObject(authManager)
-                                .environmentObject(dataManager)
-                                .environmentObject(appSettingsManager)
-                                .onAppear {
-                                    dataManager.setManagedObjectContext(persistenceController.container.viewContext)
-                                    Task {
-                                        await appSettingsManager.loadSettings()
-                                    }
-                                }
-                        }
+                            }
                     } else {
-                        // Loading onboarding state
+                        // Only show onboarding for brand new users with no existing data
                         OnboardingView()
                             .environment(\.managedObjectContext, persistenceController.container.viewContext)
                             .environmentObject(themeManager)
@@ -94,7 +126,6 @@ struct FamCalApp: App {
                             .environmentObject(dataManager)
                             .environmentObject(appSettingsManager)
                             .onAppear {
-                                hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
                                 Task {
                                     await appSettingsManager.loadSettings()
@@ -102,25 +133,61 @@ struct FamCalApp: App {
                             }
                     }
                 } else {
-                    // User not authenticated, show login
+                    // User not authenticated and not guest, show login
                     LoginView()
                         .environmentObject(authManager)
                         .environmentObject(themeManager)
                         .onAppear {
                             // Reset onboarding state when logged out
-                            hasCompletedOnboarding = nil
+                            hasCompletedOnboarding = false
                         }
                 }
             }
             .preferredColorScheme(themeManager.selectedTheme.prefersDarkInterface ? .dark : .light)
             .onOpenURL(perform: handleDeepLink(_:))
-            .onChange(of: authManager.isAuthenticated) { _, isAuth in
-                // When authentication state changes, reload onboarding status
-                if isAuth {
-                    hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-                } else {
-                    hasCompletedOnboarding = nil
+            .onChange(of: authManager.isAuthenticated) { oldValue, newValue in
+                // Only handle actual state changes, not first load
+                if !isFirstLoad && oldValue != newValue {
+                    if newValue {
+                        // User just logged in - reset onboarding for fresh flow
+                        hasCompletedOnboarding = false
+                        print("ℹ️ Authenticated user logging in - resetting onboarding flag for fresh flow")
+                    } else {
+                        // User just logged out
+                        hasCompletedOnboarding = false
+                    }
                 }
+            }
+            .onChange(of: authManager.isGuest) { oldValue, newValue in
+                // Only handle actual state changes, not first load
+                if !isFirstLoad && oldValue != newValue {
+                    if newValue {
+                        // User switched to guest mode - preserve saved onboarding state
+                        hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+                        print("ℹ️ Guest mode - onboarding flag: \(hasCompletedOnboarding)")
+                    } else if !authManager.isAuthenticated {
+                        // User switched away from guest mode
+                        hasCompletedOnboarding = false
+                    }
+                }
+            }
+            .onAppear {
+                // Mark first load as complete after initial render
+                isFirstLoad = false
+                previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
+
+                // Stop showing loading screen after a short delay to allow session check to complete
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isCheckingSession = false
+                }
+            }
+            .onChange(of: authManager.isAuthenticated) { _, _ in
+                // Session changed, stop loading
+                isCheckingSession = false
+            }
+            .onChange(of: authManager.isGuest) { _, _ in
+                // Session changed, stop loading
+                isCheckingSession = false
             }
         }
     }
@@ -129,6 +196,12 @@ struct FamCalApp: App {
     private func handleDeepLink(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
             print("❌ Failed to parse deep link URL: \(url.absoluteString)")
+            return
+        }
+
+        // Handle Google Sign-In redirect
+        if GIDSignIn.sharedInstance.handle(url) {
+            print("✅ Handled Google Sign-In redirect")
             return
         }
 

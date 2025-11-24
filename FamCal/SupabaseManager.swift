@@ -290,7 +290,7 @@ class SupabaseManager: @unchecked Sendable {
         let userToken = token ?? authManager.accessToken
         let (_, statusCode) = try await makeRequest("PATCH", path: "rest/v1/app_settings", queryItems: queryItems, body: body, userToken: userToken)
 
-        guard statusCode == 200 else {
+        guard statusCode == 200 || statusCode == 204 else {
             throw NSError(domain: "UpdateAppSettings", code: statusCode)
         }
     }
@@ -490,6 +490,33 @@ class SupabaseManager: @unchecked Sendable {
             let driver_family_member_id: String?
             let notes: String?
             let extra: [String: AnyCodable]?
+
+            enum CodingKeys: String, CodingKey {
+                case user_id, calendar_id, event_identifier, driver_family_member_id, notes, extra
+            }
+
+            // Encode nils explicitly so Supabase columns are cleared when a driver is removed
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
+                try container.encode(calendar_id, forKey: .calendar_id)
+                try container.encode(event_identifier, forKey: .event_identifier)
+                if let driver_family_member_id {
+                    try container.encode(driver_family_member_id, forKey: .driver_family_member_id)
+                } else {
+                    try container.encodeNil(forKey: .driver_family_member_id)
+                }
+                if let notes {
+                    try container.encode(notes, forKey: .notes)
+                } else {
+                    try container.encodeNil(forKey: .notes)
+                }
+                if let extra {
+                    try container.encode(extra, forKey: .extra)
+                } else {
+                    try container.encodeNil(forKey: .extra)
+                }
+            }
         }
 
         let body = MetadataBody(
@@ -502,7 +529,9 @@ class SupabaseManager: @unchecked Sendable {
         )
 
         let userToken = token ?? authManager.accessToken
-        let (_, statusCode) = try await makeRequest(
+
+        // Primary attempt: upsert via POST with merge-duplicates
+        let (postData, statusCode) = try await makeRequest(
             "POST",
             path: "rest/v1/calendar_event_metadata",
             body: body,
@@ -510,10 +539,64 @@ class SupabaseManager: @unchecked Sendable {
             extraHeaders: ["Prefer": "resolution=merge-duplicates"]
         )
 
-        guard statusCode == 201 || statusCode == 200 || statusCode == 204 else {
-            print("❌ UpsertCalendarEventMetadata failed with status \(statusCode)")
-            throw NSError(domain: "UpsertCalendarEventMetadata", code: statusCode)
+        if statusCode == 201 || statusCode == 200 || statusCode == 204 {
+            return
         }
+
+        // If the record already exists, retry with PATCH to overwrite the existing row
+        if statusCode == 409 {
+            print("⚠️ UpsertCalendarEventMetadata hit 409, retrying with PATCH")
+            let queryItems = [
+                URLQueryItem(name: "user_id", value: "eq.\(userId)"),
+                URLQueryItem(name: "calendar_id", value: "eq.\(calendarId)"),
+                URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)")
+            ]
+
+            let (_, patchStatus) = try await makeRequest(
+                "PATCH",
+                path: "rest/v1/calendar_event_metadata",
+                queryItems: queryItems,
+                body: body,
+                userToken: userToken,
+                extraHeaders: ["Prefer": "return=minimal"]
+            )
+
+            guard patchStatus == 200 || patchStatus == 204 else {
+                logErrorResponse(postData, statusCode: statusCode, operation: "upsertCalendarEventMetadata_POST")
+                print("❌ Patch calendar_event_metadata failed with status \(patchStatus)")
+                throw NSError(domain: "UpsertCalendarEventMetadata", code: patchStatus)
+            }
+
+            return
+        }
+
+        logErrorResponse(postData, statusCode: statusCode, operation: "upsertCalendarEventMetadata_POST")
+
+        // If we're clearing driver info (all metadata is nil/empty), try deleting the row as a fallback
+        let isClearingDriver = driverFamilyMemberId == nil && (extra == nil || extra?.isEmpty == true) && (notes == nil || notes?.isEmpty == true)
+        if isClearingDriver {
+            let deleteQuery = [
+                URLQueryItem(name: "user_id", value: "eq.\(userId)"),
+                URLQueryItem(name: "calendar_id", value: "eq.\(calendarId)"),
+                URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)")
+            ]
+            let (deleteData, deleteStatus) = try await makeRequest(
+                "DELETE",
+                path: "rest/v1/calendar_event_metadata",
+                queryItems: deleteQuery,
+                userToken: userToken
+            )
+
+            if deleteStatus == 200 || deleteStatus == 204 {
+                print("✅ Deleted calendar_event_metadata row while clearing driver")
+                return
+            } else {
+                logErrorResponse(deleteData, statusCode: deleteStatus, operation: "upsertCalendarEventMetadata_DELETE")
+            }
+        }
+
+        print("❌ UpsertCalendarEventMetadata failed with status \(statusCode)")
+        throw NSError(domain: "UpsertCalendarEventMetadata", code: statusCode)
     }
 }
 

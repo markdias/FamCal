@@ -10,6 +10,8 @@ import CoreData
 
 struct MainTabView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
+
     private enum ActiveView: String {
         case events
         case calendar
@@ -24,29 +26,20 @@ struct MainTabView: View {
         }
     }
 
-    @AppStorage("defaultHomeScreen") private var defaultHomeScreenRawValue: String = DefaultHomeScreen.family.rawValue
-
-    @State private var activeView: ActiveView
-    @State private var startCalendarInDayMode: Bool
+    @State private var activeView: ActiveView = .events
+    @State private var startCalendarInDayMode: Bool = false
     @State private var showingSettings = false
     @State private var showingAddEvent = false
     @State private var showingSearch = false
     @State private var addEventInitialDate: Date? = nil
     @State private var calendarSelectedDate: Date = Date()
-    @State private var calendarDisplayMode: CalendarView.CalendarDisplayMode
+    @State private var calendarDisplayMode: CalendarView.CalendarDisplayMode = .month
     @State private var calendarTodayTrigger = UUID()
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var themeManager: ThemeManager
 
     private var theme: AppTheme {
         themeManager.selectedTheme
-    }
-
-    init() {
-        let savedDefault = DefaultHomeScreen(rawValue: UserDefaults.standard.string(forKey: "defaultHomeScreen") ?? "") ?? .family
-        _activeView = State(initialValue: MainTabView.activeView(for: savedDefault))
-        _startCalendarInDayMode = State(initialValue: savedDefault == .calendarDay)
-        _calendarDisplayMode = State(initialValue: savedDefault == .calendarDay ? .day : .month)
     }
 
     var body: some View {
@@ -102,7 +95,7 @@ struct MainTabView: View {
             AddEventView(initialDate: addEventInitialDate)
                 .environment(\.managedObjectContext, viewContext)
         }
-        .onChange(of: defaultHomeScreenRawValue) { _, newValue in
+        .onChange(of: appSettingsManager.defaultHomeScreenRawValue) { _, newValue in
             let screen = DefaultHomeScreen(rawValue: newValue) ?? .family
             startCalendarInDayMode = screen == .calendarDay
             let targetView = MainTabView.activeView(for: screen)
