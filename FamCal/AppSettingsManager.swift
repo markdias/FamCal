@@ -31,6 +31,9 @@ class AppSettingsManager: ObservableObject {
     @Published var widgetShowEventsCount: Int = 3
     @Published var widgetShowOwnCalendarsOnly: Bool = false
 
+    // Account Link
+    @Published var linkedFamilyMemberId: String?
+
     let supabaseManager: SupabaseManager
     let authManager: SupabaseAuthManager
     private let settingKeys: Set<String> = [
@@ -48,7 +51,8 @@ class AppSettingsManager: ObservableObject {
         "morningBriefTimeHour",
         "morningBriefTimeMinute",
         "widgetShowEventsCount",
-        "widgetShowOwnCalendarsOnly"
+        "widgetShowOwnCalendarsOnly",
+        "linkedFamilyMemberId"
     ]
     private var settingsId: String?
     private var cancellables = Set<AnyCancellable>()
@@ -222,6 +226,11 @@ class AppSettingsManager: ObservableObject {
         if case .bool(let value) = dict["widgetShowOwnCalendarsOnly"] {
             widgetShowOwnCalendarsOnly = value
         }
+        
+        // Account Link
+        if case .string(let value) = dict["linkedFamilyMemberId"] {
+            linkedFamilyMemberId = value
+        }
     }
 
     @MainActor
@@ -270,6 +279,8 @@ class AppSettingsManager: ObservableObject {
 
         widgetShowEventsCount = 3
         widgetShowOwnCalendarsOnly = false
+        
+        linkedFamilyMemberId = nil
 
         settingsId = nil
         hasLoadedForUserId = nil
@@ -300,7 +311,10 @@ class AppSettingsManager: ObservableObject {
 
             // Widget Settings
             "widgetShowEventsCount": .int(widgetShowEventsCount),
-            "widgetShowOwnCalendarsOnly": .bool(widgetShowOwnCalendarsOnly)
+            "widgetShowOwnCalendarsOnly": .bool(widgetShowOwnCalendarsOnly),
+            
+            // Account Link
+            "linkedFamilyMemberId": linkedFamilyMemberId != nil ? .string(linkedFamilyMemberId!) : .null
         ]
     }
 }

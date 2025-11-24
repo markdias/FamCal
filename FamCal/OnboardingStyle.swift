@@ -13,32 +13,40 @@ struct OnboardingGradientBackground: View {
 
     var body: some View {
         ZStack {
-            // Swap gradient colors or tweak circle sizes to quickly restyle onboarding.
+            // Sophisticated grey gradient background
             LinearGradient(
                 colors: [
-                    Color(red: 0.02, green: 0.15, blue: 0.32),
-                    Color(red: 0.05, green: 0.34, blue: 0.46),
-                    Color(red: 0.04, green: 0.56, blue: 0.54)
+                    Color(red: 0.96, green: 0.96, blue: 0.97), // #F5F5F7
+                    Color(red: 0.91, green: 0.91, blue: 0.92)  // #E8E8EA
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
 
+            // Subtle floating element 1 - top right
             Circle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 280, height: 280)
-                .blur(radius: 60)
-                .offset(x: animate ? 110 : -40, y: animate ? -160 : -40)
-                // Adjust duration/damping here to slow down or speed up the ambient motion.
-                .animation(.easeInOut(duration: 5).repeatForever(autoreverses: true), value: animate)
+                .fill(Color(red: 0.85, green: 0.85, blue: 0.87).opacity(0.4))
+                .frame(width: 200, height: 200)
+                .blur(radius: 50)
+                .offset(x: animate ? 80 : 60, y: animate ? -120 : -100)
+                .animation(.easeInOut(duration: 8).repeatForever(autoreverses: true), value: animate)
 
+            // Subtle floating element 2 - bottom left
             Circle()
-                .fill(Color(red: 0.12, green: 0.69, blue: 0.74).opacity(0.25))
-                .frame(width: 220, height: 220)
-                .blur(radius: 70)
-                .offset(x: animate ? -120 : 60, y: animate ? 160 : 20)
-                .animation(.easeInOut(duration: 6.2).repeatForever(autoreverses: true), value: animate)
+                .fill(Color(red: 0.88, green: 0.88, blue: 0.90).opacity(0.35))
+                .frame(width: 180, height: 180)
+                .blur(radius: 45)
+                .offset(x: animate ? -70 : -50, y: animate ? 140 : 120)
+                .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: animate)
+            
+            // Subtle floating element 3 - center
+            Circle()
+                .fill(Color(red: 0.82, green: 0.82, blue: 0.85).opacity(0.25))
+                .frame(width: 150, height: 150)
+                .blur(radius: 40)
+                .offset(x: animate ? 30 : -30, y: animate ? 0 : 20)
+                .animation(.easeInOut(duration: 10).repeatForever(autoreverses: true), value: animate)
         }
         .onAppear { animate = true }
     }
@@ -56,23 +64,14 @@ struct OnboardingGlassCard<Content: View>: View {
             .padding(24)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.20),
-                                Color.white.opacity(0.08)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .blendMode(.plusLighter)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white.opacity(0.95))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color(red: 0.85, green: 0.85, blue: 0.87).opacity(0.3), lineWidth: 1)
             )
+            .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: 10)
     }
 }
 
@@ -86,17 +85,65 @@ struct OnboardingPrimaryButton: View {
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(maxWidth: .infinity)
-                .frame(height: 58)
+                .frame(height: 56)
         }
         .foregroundColor(.white)
         .background(
-            // Adjust these gradient colors to quickly experiment with new brand palettes.
-            LinearGradient(colors: [Color(red: 0.95, green: 0.63, blue: 0.15), Color(red: 0.92, green: 0.33, blue: 0.6)], startPoint: .leading, endPoint: .trailing)
+            LinearGradient(
+                colors: [Color(red: 0.0, green: 0.48, blue: 1.0), Color(red: 0.35, green: 0.34, blue: 0.84)],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .opacity(isDisabled ? 0.4 : 1)
-        .shadow(color: Color.black.opacity(0.15), radius: 15, x: 0, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .opacity(isDisabled ? 0.5 : 1)
+        .shadow(color: Color.black.opacity(0.2), radius: 12, x: 0, y: 6)
         .disabled(isDisabled)
+    }
+}
+
+// Shared dot indicator so we can position progress consistently near the buttons.
+struct OnboardingProgressDots: View {
+    let theme: AppTheme
+    let currentStep: OnboardingStep
+    var onSelectStep: ((OnboardingStep) -> Void)?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Spacer(minLength: 0)
+            ForEach(OnboardingStep.allCases, id: \.rawValue) { step in
+                dot(for: step)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24)
+    }
+
+    @ViewBuilder
+    private func dot(for step: OnboardingStep) -> some View {
+        let isActive = currentStep == step
+        let circle = Circle()
+            .fill(
+                LinearGradient(
+                    colors: isActive
+                    ? [Color(red: 0.0, green: 0.48, blue: 1.0), Color(red: 0.35, green: 0.34, blue: 0.84)]
+                    : [Color(red: 0.78, green: 0.78, blue: 0.80), Color(red: 0.68, green: 0.68, blue: 0.70)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .frame(width: isActive ? 12 : 9, height: isActive ? 12 : 9)
+            .shadow(color: isActive ? Color(red: 0.0, green: 0.48, blue: 1.0).opacity(0.4) : .clear, radius: isActive ? 6 : 0)
+
+        if let onSelectStep {
+            Button(action: { onSelectStep(step) }) {
+                circle
+            }
+            .buttonStyle(.plain)
+            .contentShape(Circle())
+        } else {
+            circle
+        }
     }
 }
 
@@ -108,12 +155,12 @@ struct OnboardingSecondaryButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(Color(red: 0.28, green: 0.28, blue: 0.30))
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
                 .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color(red: 0.78, green: 0.78, blue: 0.80), lineWidth: 1.5)
                 )
         }
     }

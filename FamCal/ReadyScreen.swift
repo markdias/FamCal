@@ -9,68 +9,165 @@ import SwiftUI
 
 struct ReadyScreen: View {
     var onStartUsingApp: () -> Void
-    @State private var confetti = false
+    let theme: AppTheme
+    let currentStep: OnboardingStep
+    var onSelectStep: ((OnboardingStep) -> Void)? = nil
+    @State private var scale: CGFloat = 0.8
+    @State private var opacity: Double = 0
 
     var body: some View {
         ZStack {
+            // Grey gradient background
             OnboardingGradientBackground()
+            
+            VStack(spacing: 0) {
+                Spacer(minLength: 60)
 
-            VStack(spacing: 28) {
-                Spacer(minLength: 40)
-
-                OnboardingGlassCard {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            ForEach(0..<12, id: \.self) { index in
-                                Capsule()
-                                    .fill(index % 2 == 0 ? Color.white.opacity(0.7) : Color.white.opacity(0.4))
-                                    .frame(width: 6, height: 24)
-                                    .offset(y: -70)
-                                    .rotationEffect(.degrees(Double(index) / 12.0 * 360.0))
-                                    .opacity(confetti ? 1 : 0)
-                                    .animation(
-                                        .easeInOut(duration: 0.8)
-                                            .repeatForever(autoreverses: true)
-                                            .delay(Double(index) * 0.05),
-                                        value: confetti
-                                    )
-                            }
-
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.system(size: 86))
-                                .foregroundColor(.white)
-                        }
-
-                        Text("You're all set!")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundColor(.white)
-
-                        Text("FamCal will keep your crew in sync with smart linking, shared timelines, and spotlight summaries.")
-                            .font(.system(size: 15))
-                            .foregroundColor(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(4)
-                    }
-                }
-
+                // Header card with success animation
                 VStack(spacing: 16) {
-                    OnboardingPrimaryButton(title: "Start using FamCal", action: onStartUsingApp)
-
-                    Text("Tip: You can tweak colors and calendars anytime from Settings.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 0.2, green: 0.78, blue: 0.35).opacity(0.15))
+                            .frame(width: 100, height: 100)
+                            .scaleEffect(scale)
+                            .opacity(opacity)
+                        
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 72))
+                            .foregroundColor(Color(red: 0.2, green: 0.78, blue: 0.35))
+                            .scaleEffect(scale)
+                            .opacity(opacity)
+                            .shadow(color: Color.green.opacity(0.3), radius: 10, x: 0, y: 5)
+                    }
+                    
+                    Text("You're All Set!")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(Color(red: 0.11, green: 0.11, blue: 0.12))
+                    
+                    Text("Here are some helpful resources")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.45))
                         .multilineTextAlignment(.center)
                 }
+                .padding(32)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.white, lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.06), radius: 25, x: 0, y: 12)
+                .padding(.horizontal, 24)
 
-                Spacer(minLength: 32)
+                Spacer().frame(height: 40)
+
+                // Resource cards
+                VStack(spacing: 16) {
+                    ResourceCard(
+                        icon: "checkmark.circle.fill",
+                        title: "Check Permissions",
+                        subtitle: "Settings › Permissions",
+                        action: {}
+                    )
+
+                    ResourceCard(
+                        icon: "book.circle.fill",
+                        title: "User Guide",
+                        subtitle: "Settings › Help",
+                        action: {}
+                    )
+
+                    ResourceCard(
+                        icon: "envelope.circle.fill",
+                        title: "Contact Support",
+                        subtitle: "help@famcal.app",
+                        action: {
+                            if let url = URL(string: "mailto:help@famcal.app") {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                    )
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+
+                // Progress dots
+                OnboardingProgressDots(
+                    theme: theme,
+                    currentStep: currentStep,
+                    onSelectStep: onSelectStep
+                )
+                .padding(.bottom, 20)
+
+                // Start button
+                OnboardingPrimaryButton(title: "Start Using FamCal", action: onStartUsingApp)
+                    .padding(.horizontal, 24)
+
+                Spacer(minLength: 40)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 40)
         }
-        .onAppear { confetti = true }
+        .onAppear {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                scale = 1.0
+                opacity = 1.0
+            }
+        }
     }
 }
 
 #Preview {
-    ReadyScreen(onStartUsingApp: {})
+    ReadyScreen(onStartUsingApp: {}, theme: .classic, currentStep: .getStarted)
+}
+
+struct ResourceCard: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                // Icon
+                Image(systemName: icon)
+                    .font(.system(size: 28))
+                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0))
+                    .frame(width: 48)
+                    .shadow(color: Color.blue.opacity(0.2), radius: 5, x: 0, y: 2)
+                
+                // Text content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Color(red: 0.11, green: 0.11, blue: 0.12))
+                    
+                    Text(subtitle)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(Color(red: 0.43, green: 0.43, blue: 0.45))
+                }
+                
+                Spacer()
+                
+                // Chevron
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color(red: 0.78, green: 0.78, blue: 0.80))
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white, lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.04), radius: 12, x: 0, y: 6)
+        }
+        .buttonStyle(.plain)
+    }
 }

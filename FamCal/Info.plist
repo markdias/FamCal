@@ -4,8 +4,18 @@
 <dict>
 	<key>GIDClientID</key>
 	<string>555073180680-eku35n9vu7rgvr8nohtc0l5dai0fi5av.apps.googleusercontent.com</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>FamCal needs access to your calendars to display family members' events and sync them.</string>
 	<key>NSCalendarsWriteOnlyUsageDescription</key>
 	<string>FamCal writes new family events, reminders, alerts, and travel time blocks to your calendars.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>FamCal uses your contacts to help identify family members' calendars automatically.</string>
+	<key>NSPrivacyContactsUsageDescription</key>
+	<string>FamCal uses your contacts to help identify family members' calendars automatically.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>FamCal sends notifications for upcoming family events and morning summaries.</string>
+	<key>NSPrivacyCalendarsUsageDescription</key>
+	<string>FamCal needs access to your calendars to display family members' events and sync them.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

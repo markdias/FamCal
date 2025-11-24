@@ -21,7 +21,15 @@ struct SettingsView: View {
     @State private var showingPermissions = false
     @State private var showingWidgetSettings = false
     @State private var showingHelp = false
+    @State private var showingOnboarding = false
+    @State private var onboardingCompletedInSettings = false
     
+    @FetchRequest(
+        entity: FamilyMember.entity(),
+        sortDescriptors: []
+    )
+    private var familyMembers: FetchedResults<FamilyMember>
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
@@ -40,6 +48,50 @@ struct SettingsView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
                         
+                            .padding(.vertical, 8)
+                        }
+                        
+                        // Account Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Account")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .padding(.horizontal, 16)
+                            
+                            settingsContainer {
+                                NavigationLink(destination: AccountSettingsView()
+                                    .environment(\.managedObjectContext, viewContext)
+                                    .environmentObject(themeManager)
+                                    .environmentObject(authManager)
+                                    .environmentObject(appSettingsManager)
+                                    .environmentObject(dataManager)
+                                ) {
+                                    HStack {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.system(size: 24))
+                                            .foregroundColor(theme.accentColor)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Signed in as")
+                                                .font(.caption)
+                                                .foregroundColor(secondaryTextColor)
+                                            Text(getDisplayName())
+                                                .font(.system(size: 15, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(secondaryTextColor.opacity(0.6))
+                                    }
+                                    .padding()
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+
                         // Settings Section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Settings")
@@ -75,78 +127,44 @@ struct SettingsView: View {
                             .padding(.vertical, 8)
                         }
                         
-                        // Account Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Account")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .padding(.horizontal, 16)
-                            
-                            settingsContainer {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Image(systemName: "person.circle.fill")
-                                            .font(.system(size: 24))
-                                            .foregroundColor(theme.accentColor)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Signed in as")
-                                                .font(.caption)
-                                                .foregroundColor(secondaryTextColor)
-                                            Text(authManager.userEmail ?? "Unknown")
-                                                .font(.system(size: 15, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                        }
-                                        
-                                        Spacer()
-                                    }
-                                    .padding()
-                                    
-                                    Divider()
-                                    
-                                    Button {
-                                        Task {
-                                            try? await authManager.signOut()
-                                            // Reset onboarding state on logout
-                                            UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-                                        }
-                                    } label: {
-                                        HStack {
-                                            Image(systemName: "arrow.left.square")
-                                                .font(.system(size: 20))
-                                                .foregroundColor(.red)
-                                            Text("Sign Out")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(.red)
-                                            Spacer()
-                                        }
-                                        .padding()
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        
                         // More Section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("More")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(secondaryTextColor)
                                 .padding(.horizontal, 16)
-                            
+
                             settingsContainer {
                                 Button(action: { /* Rate & Review Action */ }) {
                                     SettingsRowView(iconName: "star.bubble", title: "Rate & Review")
                                 }
                                 Divider().padding(.leading, 56)
-                                
+
                                 Button(action: { showingHelp = true }) {
                                     SettingsRowView(iconName: "questionmark.circle", title: "Help")
                                 }
                             }
                             .padding(.vertical, 8)
                         }
-                        
+
+                        // Testing Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Testing")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .padding(.horizontal, 16)
+
+                            settingsContainer {
+                                Button(action: {
+                                    onboardingCompletedInSettings = false
+                                    showingOnboarding = true
+                                }) {
+                                    SettingsRowView(iconName: "play.circle", title: "Run Startup Workflow")
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+
                         Spacer(minLength: 40)
                     }
                     .padding(.vertical, 20)
@@ -203,6 +221,14 @@ struct SettingsView: View {
         .sheet(isPresented: $showingHelp) {
             HelpView()
         }
+        .fullScreenCover(isPresented: $showingOnboarding) {
+            OnboardingView(hasCompletedOnboarding: $onboardingCompletedInSettings)
+                .onChange(of: onboardingCompletedInSettings) { _, newValue in
+                    if newValue {
+                        showingOnboarding = false
+                    }
+                }
+        }
     }
     
     private func settingsContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -217,6 +243,19 @@ struct SettingsView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
         .padding(.horizontal, 16)
+    }
+    
+    private func getDisplayName() -> String {
+        if let linkedId = appSettingsManager.linkedFamilyMemberId,
+           let member = familyMembers.first(where: { $0.id?.uuidString == linkedId }) {
+            return member.name ?? "Unknown"
+        }
+        
+        if authManager.isGuest {
+            return "Guest"
+        }
+        
+        return authManager.userEmail ?? "Unknown"
     }
 }
 

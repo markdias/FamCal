@@ -24,10 +24,14 @@ struct NotificationSettingsView: View {
             set: {
                 appSettingsManager.notificationsEnabled = $0
                 Task { await appSettingsManager.saveSettings() }
+                notificationManager.notificationsEnabled = $0
+                notificationManager.saveSettings()
                 if $0 {
                     Task {
                         _ = await notificationManager.requestNotificationPermission()
                     }
+                } else {
+                    notificationManager.cancelMorningBrief()
                 }
             }
         )
@@ -39,6 +43,8 @@ struct NotificationSettingsView: View {
             set: {
                 appSettingsManager.morningBriefEnabled = $0
                 Task { await appSettingsManager.saveSettings() }
+                notificationManager.morningBriefEnabled = $0
+                notificationManager.saveSettings()
                 notificationManager.scheduleMorningBrief()
             }
         )
@@ -50,6 +56,8 @@ struct NotificationSettingsView: View {
             set: {
                 appSettingsManager.morningBriefTimeHour = $0
                 Task { await appSettingsManager.saveSettings() }
+                notificationManager.morningBriefTime.hour = $0
+                notificationManager.saveSettings()
                 notificationManager.scheduleMorningBrief()
             }
         )
@@ -61,6 +69,8 @@ struct NotificationSettingsView: View {
             set: {
                 appSettingsManager.morningBriefTimeMinute = $0
                 Task { await appSettingsManager.saveSettings() }
+                notificationManager.morningBriefTime.minute = $0
+                notificationManager.saveSettings()
                 notificationManager.scheduleMorningBrief()
             }
         )

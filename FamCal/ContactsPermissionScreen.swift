@@ -57,11 +57,28 @@ struct ContactsPermissionScreen: View {
 
                 OnboardingGlassCard {
                     VStack(spacing: 20) {
-                        PermissionStatusRow(
-                            title: "Contacts",
-                            detail: contactsAccessGranted ? "Permission granted" : "Not permitted yet",
-                            granted: contactsAccessGranted
-                        )
+                        HStack(spacing: 16) {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.white.opacity(0.15))
+                                .frame(width: 46, height: 46)
+                                .overlay(
+                                    Image(systemName: contactsAccessGranted ? "checkmark.circle.fill" : "person.crop.circle.badge.xmark")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundColor(contactsAccessGranted ? .green : .yellow)
+                                )
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Contacts")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+
+                                Text(contactsAccessGranted ? "Permission granted" : "Not permitted yet")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white.opacity(0.75))
+                            }
+
+                            Spacer()
+                        }
 
                         Button(action: requestContactsPermission) {
                             if isRequestingPermission {

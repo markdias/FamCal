@@ -119,7 +119,7 @@ struct FamCalApp: App {
                             }
                     } else {
                         // Only show onboarding for brand new users with no existing data
-                        OnboardingView()
+                        OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
                             .environment(\.managedObjectContext, persistenceController.container.viewContext)
                             .environmentObject(themeManager)
                             .environmentObject(authManager)

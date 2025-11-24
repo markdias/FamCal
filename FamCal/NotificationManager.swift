@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import UserNotifications
 import EventKit
+import CoreData
 import UIKit
 import MapKit
 import CoreLocation
@@ -21,6 +22,17 @@ class NotificationManager: NSObject, ObservableObject {
     @Published var morningBriefTime = TimeComponents(hour: 8, minute: 0)
     @Published var selectedMembersForNotifications: Set<UUID> = []
     @Published var selectedCalendarsForNotifications: Set<String> = []
+
+    private struct CalendarOwnerInfo {
+        let memberId: UUID?
+        let displayName: String
+    }
+
+    private static let briefTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
 
     private let userDefaults = UserDefaults.standard
     private let notificationCenter = UNUserNotificationCenter.current()
@@ -62,6 +74,8 @@ class NotificationManager: NSObject, ObservableObject {
     func checkNotificationPermission() async -> Bool {
         let settings = await notificationCenter.notificationSettings()
         return settings.authorizationStatus == .authorized
+            || settings.authorizationStatus == .provisional
+            || settings.authorizationStatus == .ephemeral
     }
 
     @MainActor
@@ -264,6 +278,114 @@ class NotificationManager: NSObject, ObservableObject {
         }
     }
 
+    private func fetchCalendarOwners() -> [String: CalendarOwnerInfo] {
+        let context = PersistenceController.shared.container.viewContext
+        var lookup: [String: CalendarOwnerInfo] = [:]
+
+        context.performAndWait {
+            let fetchRequest: NSFetchRequest<FamilyMember> = FamilyMember.fetchRequest()
+            fetchRequest.relationshipKeyPathsForPrefetching = ["memberCalendars", "sharedCalendars"]
+
+            if let members = try? context.fetch(fetchRequest) {
+                for member in members {
+                    let memberId = member.id
+                    let name = member.name ?? "Family Member"
+
+                    if let linkedCalendarID = member.linkedCalendarID, !linkedCalendarID.isEmpty {
+                        lookup[linkedCalendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                    }
+
+                    if let calendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                        for calendar in calendars {
+                            if let calendarID = calendar.calendarID, !calendarID.isEmpty {
+                                lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                            }
+                        }
+                    }
+
+                    if let sharedCalendars = member.sharedCalendars as? Set<SharedCalendar> {
+                        for shared in sharedCalendars {
+                            if let calendarID = shared.calendarID, !calendarID.isEmpty {
+                                if lookup[calendarID] == nil {
+                                    let displayName = shared.calendarName ?? "Shared Calendar"
+                                    lookup[calendarID] = CalendarOwnerInfo(memberId: nil, displayName: displayName)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                print("⚠️ Morning brief: Failed to fetch family members from CoreData")
+            }
+        }
+
+        return lookup
+    }
+
+    private func fetchMorningBriefEvents() -> [MorningBriefEvent] {
+        let calendarLookup = fetchCalendarOwners()
+        guard !calendarLookup.isEmpty else {
+            print("⚠️ Morning brief: No calendar mappings found for family members")
+            return []
+        }
+
+        let calendarStatus = EKEventStore.authorizationStatus(for: .event)
+        let hasReadAccess: Bool
+        if #available(iOS 17.0, *) {
+            hasReadAccess = (calendarStatus == .fullAccess) || (calendarStatus == .authorized)
+        } else {
+            hasReadAccess = (calendarStatus == .authorized)
+        }
+
+        guard hasReadAccess else {
+            print("⚠️ Morning brief: Calendar access not authorized for reading (status=\(calendarStatus.rawValue))")
+            return []
+        }
+
+        let eventStore = EKEventStore()
+        let calendars = eventStore.calendars(for: .event)
+            .filter { calendarLookup[$0.calendarIdentifier] != nil }
+
+        guard !calendars.isEmpty else {
+            print("⚠️ Morning brief: No matching calendars found on device")
+            return []
+        }
+
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? startOfDay.addingTimeInterval(86400)
+
+        let predicate = eventStore.predicateForEvents(withStart: startOfDay, end: endOfDay, calendars: calendars)
+        let events = eventStore.events(matching: predicate)
+            .filter { $0.endDate >= startOfDay }
+            .sorted { $0.startDate < $1.startDate }
+
+        var briefEvents: [MorningBriefEvent] = []
+
+        for event in events {
+            guard let owner = calendarLookup[event.calendar.calendarIdentifier] else { continue }
+
+            let memberIds = owner.memberId.map { [$0] } ?? []
+            if !shouldNotifyForEvent(calendarId: event.calendar.calendarIdentifier, memberIds: memberIds) {
+                continue
+            }
+
+            let briefEvent = MorningBriefEvent(
+                title: event.title ?? "Event",
+                startTime: event.startDate,
+                endTime: event.endDate,
+                location: event.location,
+                driver: nil,
+                attendees: [owner.displayName],
+                isAllDay: event.isAllDay
+            )
+            briefEvents.append(briefEvent)
+        }
+
+        print("ℹ️ Morning brief: Prepared \(briefEvents.count) event(s) for today")
+        return briefEvents
+    }
+
 
     func cancelEventNotifications(for eventIdentifier: String) async {
         let pending = await UNUserNotificationCenter.current().pendingNotificationRequests()
@@ -276,6 +398,13 @@ class NotificationManager: NSObject, ObservableObject {
     // MARK: - Morning Brief
 
     func scheduleMorningBrief(withEvents events: [MorningBriefEvent] = []) {
+        // Sync with app settings so toggles in UI take effect here
+        let appSettings = AppSettingsManager.shared
+        notificationsEnabled = appSettings.notificationsEnabled
+        morningBriefEnabled = appSettings.morningBriefEnabled
+        morningBriefTime = TimeComponents(hour: appSettings.morningBriefTimeHour, minute: appSettings.morningBriefTimeMinute)
+        saveSettings()
+
         guard notificationsEnabled && morningBriefEnabled else {
             cancelMorningBrief()
             return
@@ -294,18 +423,22 @@ class NotificationManager: NSObject, ObservableObject {
         content.title = "Good Morning"
 
         // Build body based on events
-        if events.isEmpty {
-            content.body = "Check your family's upcoming events for today"
-        } else {
-            var bodyLines = ["\(events.count) event\(events.count == 1 ? "" : "s") today:"]
+        let briefEvents = events.isEmpty ? fetchMorningBriefEvents() : events
 
-            for (index, event) in events.prefix(3).enumerated() {
-                let timeStr = event.isAllDay ? "All day" : event.startTimeString
-                bodyLines.append("\(index + 1). \(event.title) at \(timeStr)")
+        if briefEvents.isEmpty {
+            content.body = "No events scheduled for today. Open FamCal to add one."
+        } else {
+            var bodyLines = ["\(briefEvents.count) event\(briefEvents.count == 1 ? "" : "s") today:"]
+
+            for (index, event) in briefEvents.prefix(5).enumerated() {
+                let timeStr = event.isAllDay ? "All day" : Self.briefTimeFormatter.string(from: event.startTime)
+                let member = event.attendees.first ?? "Family"
+                let locationText = (event.location?.isEmpty ?? true) ? "" : " @ \(event.location!)"
+                bodyLines.append("\(index + 1). \(event.title) — \(member) · \(timeStr)\(locationText)")
             }
 
-            if events.count > 3 {
-                bodyLines.append("... and \(events.count - 3) more")
+            if briefEvents.count > 5 {
+                bodyLines.append("...and \(briefEvents.count - 5) more")
             }
 
             content.body = bodyLines.joined(separator: "\n")
@@ -314,15 +447,16 @@ class NotificationManager: NSObject, ObservableObject {
         content.sound = .default
 
         // Store events info for notification handling
-        if !events.isEmpty {
+        if !briefEvents.isEmpty {
             var userInfoDict: [AnyHashable: Any] = [
-                "eventCount": events.count,
+                "eventCount": briefEvents.count,
                 "isMorningBrief": true
             ]
 
-            for (index, event) in events.enumerated() {
+            for (index, event) in briefEvents.enumerated() {
                 userInfoDict["event_\(index)_title"] = event.title
-                userInfoDict["event_\(index)_time"] = event.startTimeString
+                userInfoDict["event_\(index)_member"] = event.attendees.first ?? "Family"
+                userInfoDict["event_\(index)_time"] = event.isAllDay ? "All day" : event.startTimeString
                 if let location = event.location {
                     userInfoDict["event_\(index)_location"] = location
                 }
