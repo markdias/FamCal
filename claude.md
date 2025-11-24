@@ -3,9 +3,53 @@
 ## Overview
 FamCal is an iOS calendar application built with SwiftUI and CoreData. It uses a multi-screen onboarding flow to introduce users to the app and request necessary permissions.
 
-## Instructions 
-Ask Questions if unsure. 
+## Instructions
+Ask Questions if unsure.
 Using Settings Layout.png as a design guide for settings
+
+## Completed Tasks (Nov 24, 2025 - Streamlined Onboarding)
+
+### Streamlined 3-Step Onboarding Workflow
+A complete refactoring of the onboarding experience to be more seamless and user-friendly.
+
+**Screen 1: Welcome Screen** (`IntroScreen.swift`)
+- Header: "The Family Calendar"
+- Displays "Fam Cal" app name with calendar icon
+- Description: "FamCal is a simple way to organize your family calendar by syncing to Apple Calendar."
+- Single "Next" button to proceed
+
+**Screen 2: Permissions Screen** (Consolidated `PermissionScreen.swift`)
+- Single consolidated screen for all three permissions:
+  - **Calendar** - "Needed to sync Calendar" (Required)
+  - **Contacts** - "Optional to sync contacts" (Optional - marked with tag)
+  - **Notifications** - "Operational to get notifications" (Required)
+- Each permission has:
+  - Individual status card showing current permission state
+  - Color-coded icon (green checkmark if granted, orange/yellow warning if pending)
+  - "Allow" button to trigger OS permission prompt
+  - Real-time status updates
+- Next button only enabled when Calendar and Notifications are granted
+- Contacts can remain ungranteed (optional)
+
+**Screen 3: Get Started Screen** (`ReadyScreen.swift`)
+- Success message with confetti animation
+- Three helpful resource cards:
+  1. **Help** - "Permission Check - Settings Permissions"
+  2. **Guide** - "Settings - Help"
+  3. **Contact Us** - "help@famcal.app"
+- "Start Using FamCal" button to enter main app
+
+**OnboardingView.swift Updates**
+- Simplified enum: `welcome` → `permissions` → `getStarted`
+- Removed complex conditional logic for family setup and shared calendars
+- Linear, predictable progression through screens
+- Cleaner state management
+
+**Testing Feature**
+- Added "Testing" section in Settings View
+- "Run Startup Workflow" button (play.circle icon)
+- Opens onboarding as fullScreenCover for easy testing
+- Located in SettingsView.swift
 
 ## Completed Tasks (Nov 17, 2025)
 
