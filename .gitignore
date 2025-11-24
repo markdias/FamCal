@@ -2,7 +2,8 @@
 # Environment and secrets
 .env
 SupabaseConfig.swift
-.vscode
+.vscode*
+.claude*
 build/*
 Build/
 .env.example
