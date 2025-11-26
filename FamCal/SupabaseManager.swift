@@ -67,8 +67,10 @@ class SupabaseManager: @unchecked Sendable {
                 try await authManager.refreshAccessToken()
                 print("✅ Token refreshed, retrying request...")
 
-                // Get the new access token from the main actor
-                let newToken = await authManager.accessToken
+                // Retry the request with the new token from authManager
+                let newToken: String? = await MainActor.run {
+                    authManager.accessToken
+                }
 
                 // Retry the request with the new token
                 return try await makeRequest(
