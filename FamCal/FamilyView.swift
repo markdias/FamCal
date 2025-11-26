@@ -921,12 +921,51 @@ struct FamilyView: View {
 
     // MARK: - Data Loading
 
+    /// Populate missing calendarID values in FamilyMemberCalendar entries by matching calendar names
+    /// This is needed because calendar_id is not synced from Supabase (device-specific), so we match locally
+    private func populateMissingCalendarIDs() {
+        let availableCalendars = CalendarManager.shared.fetchAvailableCalendars()
+
+        for link in memberCalendarLinks {
+            // Skip if already has calendarID
+            if link.calendarID != nil && !link.calendarID!.isEmpty {
+                continue
+            }
+
+            // Try to find matching calendar by name
+            guard let calendarName = link.calendarName else { continue }
+            if let matchingCalendar = availableCalendars.first(where: { $0.title == calendarName }) {
+                link.calendarID = matchingCalendar.id
+            }
+        }
+
+        // Also populate for shared calendars
+        for member in familyMembers {
+            if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
+                for sharedCal in sharedCals {
+                    if sharedCal.calendarID == nil || sharedCal.calendarID!.isEmpty {
+                        guard let calendarName = sharedCal.calendarName else { continue }
+                        if let matchingCalendar = availableCalendars.first(where: { $0.title == calendarName }) {
+                            sharedCal.calendarID = matchingCalendar.id
+                        }
+                    }
+                }
+            }
+        }
+
+        // Save changes
+        try? viewContext.save()
+    }
+
     private func loadNextEvents() {
         eventsTask?.cancel()
         eventsTask = Task { @MainActor in
             isLoadingEvents = true
             defer { isLoadingEvents = false }
             resetDragState()
+
+            // Populate missing calendar IDs by matching calendar names
+            populateMissingCalendarIDs()
 
             // Clean up stale FamilyEvent records BEFORE loading to prevent rogue events
             await cleanupStaleEvents()
