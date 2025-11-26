@@ -491,10 +491,20 @@ class SupabaseDataManager: ObservableObject {
         let userId = authManager.userId ?? ""
         try await supabaseManager.deleteSharedCalendar(id: id, userId: userId)
 
-        // Remove from in-memory list immediately without full refresh
-        // (fetchUserData would re-fetch and re-add if not fully deleted yet)
+        // Remove from in-memory list immediately
         sharedCalendars.removeAll { $0.id == id }
-        print("✅ Removed shared calendar from in-memory list")
+
+        // Remove from CoreData immediately
+        if let context = managedObjectContext {
+            let fetchRequest = SharedCalendar.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            if let calendar = try context.fetch(fetchRequest).first {
+                context.delete(calendar)
+                try context.save()
+            }
+        }
+
+        print("✅ Removed shared calendar from Supabase and CoreData")
     }
 
     @MainActor
@@ -532,7 +542,18 @@ class SupabaseDataManager: ObservableObject {
 
         // Remove from in-memory list immediately
         personalCalendars.removeAll { $0.id == id }
-        print("✅ Removed personal calendar from in-memory list")
+
+        // Remove from CoreData immediately
+        if let context = managedObjectContext {
+            let fetchRequest = PersonalCalendar.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            if let calendar = try context.fetch(fetchRequest).first {
+                context.delete(calendar)
+                try context.save()
+            }
+        }
+
+        print("✅ Removed personal calendar from Supabase and CoreData")
     }
 
     /// Delete shared calendar locally only (for guest mode - no Supabase sync)
