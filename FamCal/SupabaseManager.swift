@@ -28,7 +28,8 @@ class SupabaseManager: @unchecked Sendable {
         queryItems: [URLQueryItem] = [],
         body: Encodable? = nil,
         userToken: String? = nil,
-        extraHeaders: [String: String] = [:]
+        extraHeaders: [String: String] = [:],
+        isRetry: Bool = false
     ) async throws -> (data: Data, statusCode: Int) {
         let url = supabaseURL.appendingPathComponent(path)
 
@@ -57,6 +58,32 @@ class SupabaseManager: @unchecked Sendable {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "InvalidResponse", code: -1)
+        }
+
+        // Handle 401 Unauthorized - attempt token refresh and retry
+        if httpResponse.statusCode == 401 && !isRetry && userToken != nil {
+            do {
+                print("🔄 Attempting to refresh expired token...")
+                try await authManager.refreshAccessToken()
+                print("✅ Token refreshed, retrying request...")
+
+                // Get the new access token from the main actor
+                let newToken = await authManager.accessToken
+
+                // Retry the request with the new token
+                return try await makeRequest(
+                    method,
+                    path: path,
+                    queryItems: queryItems,
+                    body: body,
+                    userToken: newToken,
+                    extraHeaders: extraHeaders,
+                    isRetry: true
+                )
+            } catch {
+                print("❌ Token refresh failed: \(error)")
+                // Fall through to return the original 401 error
+            }
         }
 
         return (data, httpResponse.statusCode)

@@ -28,11 +28,13 @@ class SupabaseAuthManager: ObservableObject {
 
     // Access token for authenticated API calls
     var accessToken: String?
+    private var refreshToken: String?
 
     // UserDefaults keys for session persistence
     private let userDefaultsKeyUserId = "com.famcal.auth.userId"
     private let userDefaultsKeyEmail = "com.famcal.auth.userEmail"
     private let userDefaultsKeyAccessToken = "com.famcal.auth.accessToken"
+    private let userDefaultsKeyRefreshToken = "com.famcal.auth.refreshToken"
     private let userDefaultsKeyIsAuthenticated = "com.famcal.auth.isAuthenticated"
     private let userDefaultsKeyIsGuest = "com.famcal.auth.isGuest"
 
@@ -81,11 +83,14 @@ class SupabaseAuthManager: ObservableObject {
 
             print("✅ Found existing session for: \(savedEmail)")
 
+            let savedRefreshToken = defaults.string(forKey: userDefaultsKeyRefreshToken)
+
             // Restore the session
             await MainActor.run {
                 self.userId = savedUserId
                 self.userEmail = savedEmail
                 self.accessToken = savedAccessToken
+                self.refreshToken = savedRefreshToken
                 self.isAuthenticated = true
 
                 print("✅ Session restored successfully")
@@ -103,6 +108,9 @@ class SupabaseAuthManager: ObservableObject {
             defaults.set(userId, forKey: userDefaultsKeyUserId)
             defaults.set(email, forKey: userDefaultsKeyEmail)
             defaults.set(token, forKey: userDefaultsKeyAccessToken)
+            if let refreshToken = refreshToken {
+                defaults.set(refreshToken, forKey: userDefaultsKeyRefreshToken)
+            }
             defaults.set(true, forKey: userDefaultsKeyIsAuthenticated)
 
             // Also save to app group for widget access
@@ -122,6 +130,7 @@ class SupabaseAuthManager: ObservableObject {
         defaults.removeObject(forKey: userDefaultsKeyUserId)
         defaults.removeObject(forKey: userDefaultsKeyEmail)
         defaults.removeObject(forKey: userDefaultsKeyAccessToken)
+        defaults.removeObject(forKey: userDefaultsKeyRefreshToken)
         defaults.removeObject(forKey: userDefaultsKeyIsAuthenticated)
         defaults.removeObject(forKey: userDefaultsKeyIsGuest)
 
@@ -132,6 +141,50 @@ class SupabaseAuthManager: ObservableObject {
         }
 
         print("ℹ️ Session cleared from persistent storage")
+    }
+
+    /// Refresh the access token using the refresh token
+    /// Called when a 401 Unauthorized error is received
+    func refreshAccessToken() async throws {
+        guard let refreshToken = self.refreshToken else {
+            throw NSError(domain: "NoRefreshToken", code: -1, userInfo: [NSLocalizedDescriptionKey: "No refresh token available"])
+        }
+
+        let url = supabaseURL.appendingPathComponent("auth/v1/token")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+
+        let body: [String: String] = [
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken
+        ]
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "InvalidResponse", code: -1)
+        }
+
+        if httpResponse.statusCode == 200 {
+            do {
+                let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
+                self.accessToken = tokenResponse.access_token
+                self.refreshToken = tokenResponse.refresh_token
+                self.saveSession()
+                print("✅ Access token refreshed successfully")
+            } catch {
+                print("❌ Failed to decode token response: \(error)")
+                throw error
+            }
+        } else {
+            // 401 on refresh means refresh token is invalid - need to re-authenticate
+            self.clearSession()
+            self.isAuthenticated = false
+            throw NSError(domain: "TokenRefreshFailed", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Session expired. Please log in again."])
+        }
     }
 
     // MARK: - Authentication Methods
@@ -302,6 +355,7 @@ class SupabaseAuthManager: ObservableObject {
                     self.userId = response.user.id
                     self.userEmail = response.user.email
                     self.accessToken = response.access_token
+                    self.refreshToken = response.refresh_token
                     self.isAuthenticated = true
                     self.saveSession()  // Persist session
                     print("✅ User signed in successfully: \(email)")
@@ -463,6 +517,7 @@ class SupabaseAuthManager: ObservableObject {
                 self.userId = response.user.id
                 self.userEmail = response.user.email ?? emailHint
                 self.accessToken = response.access_token
+                self.refreshToken = response.refresh_token
                 self.isAuthenticated = true
                 self.saveSession()
                 print("✅ User signed in with Google")
