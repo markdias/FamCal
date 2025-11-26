@@ -6,6 +6,7 @@
 
 import Foundation
 import Combine
+import WidgetKit
 
 class AppSettingsManager: ObservableObject {
     static let shared = AppSettingsManager()
@@ -20,6 +21,7 @@ class AppSettingsManager: ObservableObject {
     @Published var eventsPastDays: Int = 90
     @Published var eventsFutureDays: Int = 180
     @Published var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
+    @Published var isProUser: Bool = UserDefaults.standard.bool(forKey: "com.famcal.pro.enabled")
 
     // Notification Settings
     @Published var notificationsEnabled: Bool = false
@@ -30,9 +32,15 @@ class AppSettingsManager: ObservableObject {
     // Widget Settings
     @Published var widgetShowEventsCount: Int = 3
     @Published var widgetShowOwnCalendarsOnly: Bool = false
+    @Published var widgetShowTime: Bool = true
+    @Published var widgetShowLocation: Bool = true
+    @Published var widgetShowAttendees: Bool = true
 
     // Account Link
     @Published var linkedFamilyMemberId: String?
+    
+    // Family Member Order
+    @Published var familyMemberOrder: [String] = []
 
     let supabaseManager: SupabaseManager
     let authManager: SupabaseAuthManager
@@ -46,13 +54,18 @@ class AppSettingsManager: ObservableObject {
         "eventsPastDays",
         "eventsFutureDays",
         "defaultAlertOptionRawValue",
+        "isProUser",
         "notificationsEnabled",
         "morningBriefEnabled",
         "morningBriefTimeHour",
         "morningBriefTimeMinute",
         "widgetShowEventsCount",
         "widgetShowOwnCalendarsOnly",
-        "linkedFamilyMemberId"
+        "widgetShowTime",
+        "widgetShowLocation",
+        "widgetShowAttendees",
+        "linkedFamilyMemberId",
+        "familyMemberOrder"
     ]
     private var settingsId: String?
     private var cancellables = Set<AnyCancellable>()
@@ -88,7 +101,11 @@ class AppSettingsManager: ObservableObject {
 
         // Skip cloud sync for guests - use local defaults only
         if authManager.isGuest {
-            print("ℹ️ Guest mode detected - using local settings only")
+            print("ℹ️ Guest mode detected - loading local settings only")
+            loadSettingsLocally()
+            enforcePlanConstraints()
+            persistProFlag()
+            syncWidgetPreferencesToAppGroup()
             return
         }
 
@@ -105,7 +122,10 @@ class AppSettingsManager: ObservableObject {
             let settingsDTO = try await supabaseManager.getAppSettings(userId: userId)
             self.settingsId = settingsDTO.id
             applySettings(from: settingsDTO.settings)
+            enforcePlanConstraints()
+            persistProFlag()
             await syncMissingSettingsIfNeeded(remoteSettings: settingsDTO.settings)
+            syncWidgetPreferencesToAppGroup()
             print("✅ App settings loaded from Supabase")
             self.hasLoadedForUserId = userId
         } catch {
@@ -122,7 +142,10 @@ class AppSettingsManager: ObservableObject {
                 let settingsDTO = try await supabaseManager.getAppSettings(userId: userId)
                 self.settingsId = settingsDTO.id
                 applySettings(from: settingsDTO.settings)
+                enforcePlanConstraints()
+                persistProFlag()
                 await syncMissingSettingsIfNeeded(remoteSettings: settingsDTO.settings)
+                syncWidgetPreferencesToAppGroup()
                 print("✅ App settings loaded from Supabase (post-create)")
                 self.hasLoadedForUserId = userId
             } catch {
@@ -130,22 +153,141 @@ class AppSettingsManager: ObservableObject {
                 // Continue with default settings if creation also fails
                 self.hasLoadedForUserId = nil
             }
+            enforcePlanConstraints()
+            persistProFlag()
+            syncWidgetPreferencesToAppGroup()
         }
+    }
+
+    private func enforcePlanConstraints() {
+        let spotlightLimit = currentSpotlightLimit
+        if spotlightEventsPerPerson > spotlightLimit {
+            spotlightEventsPerPerson = spotlightLimit
+        }
+    }
+
+    private func loadSettingsLocally() {
+        let defaults = UserDefaults.standard
+
+        // Load all settings from UserDefaults
+        if defaults.object(forKey: "autoRefreshInterval") != nil {
+            autoRefreshInterval = defaults.integer(forKey: "autoRefreshInterval")
+        }
+        if let value = defaults.string(forKey: "defaultMapsApp") {
+            defaultMapsApp = value
+        }
+        if let value = defaults.string(forKey: "defaultHomeScreenRawValue") {
+            defaultHomeScreenRawValue = value
+        }
+        if defaults.object(forKey: "eventsPerPerson") != nil {
+            eventsPerPerson = defaults.integer(forKey: "eventsPerPerson")
+        }
+        if defaults.object(forKey: "spotlightEventsPerPerson") != nil {
+            spotlightEventsPerPerson = defaults.integer(forKey: "spotlightEventsPerPerson")
+        }
+        if defaults.object(forKey: "nextEventColumns") != nil {
+            nextEventColumns = defaults.integer(forKey: "nextEventColumns")
+        }
+        if defaults.object(forKey: "eventsPastDays") != nil {
+            eventsPastDays = defaults.integer(forKey: "eventsPastDays")
+        }
+        if defaults.object(forKey: "eventsFutureDays") != nil {
+            eventsFutureDays = defaults.integer(forKey: "eventsFutureDays")
+        }
+        if let value = defaults.string(forKey: "defaultAlertOptionRawValue") {
+            defaultAlertOptionRawValue = value
+        }
+        if defaults.object(forKey: "notificationsEnabled") != nil {
+            notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
+        }
+        if defaults.object(forKey: "morningBriefEnabled") != nil {
+            morningBriefEnabled = defaults.bool(forKey: "morningBriefEnabled")
+        }
+        if defaults.object(forKey: "morningBriefTimeHour") != nil {
+            morningBriefTimeHour = defaults.integer(forKey: "morningBriefTimeHour")
+        }
+        if defaults.object(forKey: "morningBriefTimeMinute") != nil {
+            morningBriefTimeMinute = defaults.integer(forKey: "morningBriefTimeMinute")
+        }
+        if defaults.object(forKey: "widgetShowEventsCount") != nil {
+            widgetShowEventsCount = defaults.integer(forKey: "widgetShowEventsCount")
+        }
+        if defaults.object(forKey: "widgetShowOwnCalendarsOnly") != nil {
+            widgetShowOwnCalendarsOnly = defaults.bool(forKey: "widgetShowOwnCalendarsOnly")
+        }
+        if defaults.object(forKey: "widgetShowTime") != nil {
+            widgetShowTime = defaults.bool(forKey: "widgetShowTime")
+        }
+        if defaults.object(forKey: "widgetShowLocation") != nil {
+            widgetShowLocation = defaults.bool(forKey: "widgetShowLocation")
+        }
+        if defaults.object(forKey: "widgetShowAttendees") != nil {
+            widgetShowAttendees = defaults.bool(forKey: "widgetShowAttendees")
+        }
+        if let value = defaults.string(forKey: "linkedFamilyMemberId") {
+            linkedFamilyMemberId = value
+        }
+        if let value = defaults.array(forKey: "familyMemberOrder") as? [String] {
+            familyMemberOrder = value
+        }
+    }
+
+    private func persistProFlag() {
+        UserDefaults.standard.set(isProUser, forKey: "com.famcal.pro.enabled")
+    }
+
+    private func persistSettingsLocally() {
+        let defaults = UserDefaults.standard
+
+        // Persist all settings to UserDefaults for local access
+        defaults.set(autoRefreshInterval, forKey: "autoRefreshInterval")
+        defaults.set(defaultMapsApp, forKey: "defaultMapsApp")
+        defaults.set(defaultHomeScreenRawValue, forKey: "defaultHomeScreenRawValue")
+        defaults.set(eventsPerPerson, forKey: "eventsPerPerson")
+        defaults.set(spotlightEventsPerPerson, forKey: "spotlightEventsPerPerson")
+        defaults.set(nextEventColumns, forKey: "nextEventColumns")
+        defaults.set(eventsPastDays, forKey: "eventsPastDays")
+        defaults.set(eventsFutureDays, forKey: "eventsFutureDays")
+        defaults.set(defaultAlertOptionRawValue, forKey: "defaultAlertOptionRawValue")
+        defaults.set(notificationsEnabled, forKey: "notificationsEnabled")
+        defaults.set(morningBriefEnabled, forKey: "morningBriefEnabled")
+        defaults.set(morningBriefTimeHour, forKey: "morningBriefTimeHour")
+        defaults.set(morningBriefTimeMinute, forKey: "morningBriefTimeMinute")
+        defaults.set(widgetShowEventsCount, forKey: "widgetShowEventsCount")
+        defaults.set(widgetShowOwnCalendarsOnly, forKey: "widgetShowOwnCalendarsOnly")
+        defaults.set(widgetShowTime, forKey: "widgetShowTime")
+        defaults.set(widgetShowLocation, forKey: "widgetShowLocation")
+        defaults.set(widgetShowAttendees, forKey: "widgetShowAttendees")
+
+        if let linkedId = linkedFamilyMemberId {
+            defaults.set(linkedId, forKey: "linkedFamilyMemberId")
+        } else {
+            defaults.removeObject(forKey: "linkedFamilyMemberId")
+        }
+
+        defaults.set(familyMemberOrder, forKey: "familyMemberOrder")
     }
 
     @MainActor
     func saveSettings() async {
+        enforcePlanConstraints()
+        persistProFlag()
+
         // Skip cloud sync for guests - settings stay local only
         if authManager.isGuest {
             print("ℹ️ Guest mode: settings saved locally only (not synced to cloud)")
+            persistSettingsLocally()
+            syncWidgetPreferencesToAppGroup()
             return
         }
 
         guard let userId = authManager.userId else {
             print("❌ User ID not available for saving settings")
+            syncWidgetPreferencesToAppGroup()
             return
         }
 
+        syncWidgetPreferencesToAppGroup()
         let settingsDict = buildSettingsDictionary()
 
         do {
@@ -168,6 +310,9 @@ class AppSettingsManager: ObservableObject {
                 let settingsDTO = try await supabaseManager.getAppSettings(userId: userId)
                 self.settingsId = settingsDTO.id
             }
+
+            // Persist to local UserDefaults for offline access and reliability
+            persistSettingsLocally()
         } catch {
             print("❌ Error saving app settings: \(error)")
         }
@@ -204,6 +349,9 @@ class AppSettingsManager: ObservableObject {
         if case .string(let value) = dict["defaultAlertOptionRawValue"] {
             defaultAlertOptionRawValue = value
         }
+        if case .bool(let value) = dict["isProUser"] {
+            isProUser = value
+        }
 
         // Notification Settings
         if case .bool(let value) = dict["notificationsEnabled"] {
@@ -226,10 +374,27 @@ class AppSettingsManager: ObservableObject {
         if case .bool(let value) = dict["widgetShowOwnCalendarsOnly"] {
             widgetShowOwnCalendarsOnly = value
         }
+        if case .bool(let value) = dict["widgetShowTime"] {
+            widgetShowTime = value
+        }
+        if case .bool(let value) = dict["widgetShowLocation"] {
+            widgetShowLocation = value
+        }
+        if case .bool(let value) = dict["widgetShowAttendees"] {
+            widgetShowAttendees = value
+        }
         
         // Account Link
         if case .string(let value) = dict["linkedFamilyMemberId"] {
             linkedFamilyMemberId = value
+        }
+        
+        // Family Member Order
+        if case .array(let value) = dict["familyMemberOrder"] {
+            familyMemberOrder = value.compactMap { item in
+                if case .string(let str) = item { return str }
+                return nil
+            }
         }
     }
 
@@ -271,6 +436,7 @@ class AppSettingsManager: ObservableObject {
         eventsPastDays = 90
         eventsFutureDays = 180
         defaultAlertOptionRawValue = AlertOption.none.rawValue
+        isProUser = false
 
         notificationsEnabled = false
         morningBriefEnabled = false
@@ -279,11 +445,18 @@ class AppSettingsManager: ObservableObject {
 
         widgetShowEventsCount = 3
         widgetShowOwnCalendarsOnly = false
-        
+        widgetShowTime = true
+        widgetShowLocation = true
+        widgetShowAttendees = true
+
         linkedFamilyMemberId = nil
+        familyMemberOrder = []
 
         settingsId = nil
         hasLoadedForUserId = nil
+        enforcePlanConstraints()
+        persistProFlag()
+        syncWidgetPreferencesToAppGroup()
 
         print("✅ App settings reset to defaults")
     }
@@ -297,11 +470,12 @@ class AppSettingsManager: ObservableObject {
 
             // Event Settings
             "eventsPerPerson": .int(eventsPerPerson),
-            "spotlightEventsPerPerson": .int(spotlightEventsPerPerson),
+            "spotlightEventsPerPerson": .int(min(spotlightEventsPerPerson, currentSpotlightLimit)),
             "nextEventColumns": .int(nextEventColumns),
             "eventsPastDays": .int(eventsPastDays),
             "eventsFutureDays": .int(eventsFutureDays),
             "defaultAlertOptionRawValue": .string(defaultAlertOptionRawValue),
+            "isProUser": .bool(isProUser),
 
             // Notification Settings
             "notificationsEnabled": .bool(notificationsEnabled),
@@ -312,9 +486,47 @@ class AppSettingsManager: ObservableObject {
             // Widget Settings
             "widgetShowEventsCount": .int(widgetShowEventsCount),
             "widgetShowOwnCalendarsOnly": .bool(widgetShowOwnCalendarsOnly),
+            "widgetShowTime": .bool(widgetShowTime),
+            "widgetShowLocation": .bool(widgetShowLocation),
+            "widgetShowAttendees": .bool(widgetShowAttendees),
             
             // Account Link
-            "linkedFamilyMemberId": linkedFamilyMemberId != nil ? .string(linkedFamilyMemberId!) : .null
+            // Account Link
+            "linkedFamilyMemberId": linkedFamilyMemberId != nil ? .string(linkedFamilyMemberId!) : .null,
+            
+            // Family Member Order
+            "familyMemberOrder": .array(familyMemberOrder.map { .string($0) })
         ]
+    }
+
+    private func syncWidgetPreferencesToAppGroup() {
+        let defaults = AppGroupDefaults.shared
+        let clampedEvents = isProUser ? min(max(widgetShowEventsCount, 1), 5) : 0
+        defaults.set(clampedEvents, forKey: "widgetMaxEvents")
+        defaults.set(false, forKey: "widgetShowOwnCalendarsOnly")
+        defaults.set(widgetShowTime, forKey: "widgetShowTime")
+        defaults.set(widgetShowLocation, forKey: "widgetShowLocation")
+        defaults.set(widgetShowAttendees, forKey: "widgetShowAttendees")
+        defaults.set(eventsPastDays, forKey: "eventsPastDays")
+        defaults.set(eventsFutureDays, forKey: "eventsFutureDays")
+        defaults.set(isProUser, forKey: "proEnabled")
+        defaults.set(isProUser, forKey: "widgetsEnabled")
+        defaults.synchronize()
+
+        DispatchQueue.main.async {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    var currentSpotlightLimit: Int {
+        isProUser ? 15 : 5
+    }
+
+    var maxFamilyMembersAllowed: Int {
+        isProUser ? Int.max : 2
+    }
+
+    var maxSharedCalendarsAllowed: Int {
+        isProUser ? Int.max : 1
     }
 }

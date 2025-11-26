@@ -258,6 +258,16 @@ struct CalendarView: View {
                 dailyView
                     .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
             }
+
+            // AdMob Banner - only show for free users in month view
+            if calendarDisplayMode == .month && !appSettingsManager.isProUser {
+                AdBannerContainer(
+                    adUnitID: "ca-app-pub-6842193682076971/5907724370",
+                    isProUser: appSettingsManager.isProUser,
+                    theme: theme
+                )
+                .padding(.horizontal, 16)
+            }
         }
         .padding(.horizontal, 0)
         .padding(.top, fullScreenDay ? 0 : 16)

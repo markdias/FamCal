@@ -14,6 +14,7 @@ struct AddSharedCalendarView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
         entity: SharedCalendar.entity(),
@@ -33,6 +34,9 @@ struct AddSharedCalendarView: View {
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
+    private var isAtSharedCalendarLimit: Bool {
+        !appSettingsManager.isProUser && sharedCalendars.count >= appSettingsManager.maxSharedCalendarsAllowed
+    }
 
     var calendarsBySource: [String: [AvailableCalendar]] {
         Dictionary(grouping: availableCalendars) { $0.sourceTitle }
@@ -167,6 +171,20 @@ struct AddSharedCalendarView: View {
                             .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                         }
                         .padding(.horizontal, 16)
+                        .disabled(isAtSharedCalendarLimit)
+                        .opacity(isAtSharedCalendarLimit ? 0.6 : 1.0)
+                        .overlay(alignment: .trailing) {
+                            if isAtSharedCalendarLimit {
+                                Text("Pro")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(theme.accentColor)
+                                    .clipShape(Capsule())
+                                    .offset(x: -6)
+                            }
+                        }
                     }
                     .padding(.bottom, 24)
                 }
@@ -195,6 +213,10 @@ struct AddSharedCalendarView: View {
     }
 
     private func addSharedCalendar(_ calendar: AvailableCalendar) {
+        guard !isAtSharedCalendarLimit else {
+            print("❌ Shared calendar limit reached for Free plan. Enable Pro to add more.")
+            return
+        }
         // Save to Supabase first
         Task {
             do {

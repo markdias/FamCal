@@ -16,7 +16,7 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
     
-    @State private var showingAddMemberSheet = false
+    @State private var showingFamilySettings = false
     
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -59,73 +59,87 @@ struct AccountSettingsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 10)
                     
-                    // "Who are you?" Section
+                    .padding(.bottom, 10)
+                    
+                    // Name Field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("WHO ARE YOU?")
+                        settingsContainer {
+                            HStack {
+                                Text("Name")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(secondaryTextColor)
+                                
+                                Spacer()
+                                
+                                Text(getDisplayName())
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(primaryTextColor)
+                            }
+                            .padding()
+                        }
+                    }
+                    
+                    // "Which family member are you?" Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Which family member are you?")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(secondaryTextColor)
                             .padding(.horizontal, 16)
                         
                         settingsContainer {
-                            if familyMembers.isEmpty {
-                                Button(action: { showingAddMemberSheet = true }) {
-                                    HStack {
-                                        Text("Create a Profile")
-                                            .foregroundColor(primaryTextColor)
-                                        Spacer()
-                                        Image(systemName: "plus.circle.fill")
-                                            .foregroundColor(theme.accentColor)
-                                    }
-                                    .padding()
-                                }
-                            } else {
-                                ForEach(Array(familyMembers.enumerated()), id: \.element.id) { index, member in
+                            Menu {
+                                ForEach(familyMembers, id: \.id) { member in
                                     Button(action: { selectMember(member) }) {
                                         HStack {
-                                            // Avatar/Color
-                                            Circle()
-                                                .fill(Color.fromHex(member.colorHex ?? "#808080"))
-                                                .frame(width: 32, height: 32)
-                                                .overlay(
-                                                    Text(member.avatarInitials ?? "")
-                                                        .font(.system(size: 12, weight: .bold))
-                                                        .foregroundColor(.white)
-                                                )
-                                            
                                             Text(member.name ?? "Unknown")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            
-                                            Spacer()
-                                            
                                             if isSelected(member) {
                                                 Image(systemName: "checkmark")
-                                                    .font(.system(size: 14, weight: .bold))
-                                                    .foregroundColor(theme.accentColor)
                                             }
                                         }
-                                        .padding()
                                     }
+                                }
+                            } label: {
+                                HStack {
+                                    Text(getDisplayName())
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(primaryTextColor)
                                     
-                                    if index < familyMembers.count - 1 {
-                                        Divider().padding(.leading, 64)
-                                    }
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(secondaryTextColor)
                                 }
-                                
-                                Divider().padding(.leading, 16)
-                                
-                                Button(action: { showingAddMemberSheet = true }) {
-                                    HStack {
-                                        Text("Add Another Person")
-                                            .font(.system(size: 16))
-                                            .foregroundColor(theme.accentColor)
-                                        Spacer()
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(theme.accentColor)
-                                    }
-                                    .padding()
+                                .padding()
+                            }
+                        }
+                    }
+                    
+                    // Family Management Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Family Management")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                            .padding(.horizontal, 16)
+                        
+                        settingsContainer {
+                            Button(action: { showingFamilySettings = true }) {
+                                HStack {
+                                    Image(systemName: "person.3.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(theme.accentColor)
+                                    
+                                    Text("My Family")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(primaryTextColor)
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(secondaryTextColor.opacity(0.6))
                                 }
+                                .padding()
                             }
                         }
                     }
@@ -162,10 +176,18 @@ struct AccountSettingsView: View {
         }
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingAddMemberSheet) {
-            AddFamilyMemberView()
+        .sheet(isPresented: $showingFamilySettings) {
+            FamilySettingsView()
                 .environment(\.managedObjectContext, viewContext)
         }
+    }
+    
+    private func getDisplayName() -> String {
+        if let linkedId = appSettingsManager.linkedFamilyMemberId,
+           let member = familyMembers.first(where: { $0.id?.uuidString == linkedId }) {
+            return member.name ?? "Unknown"
+        }
+        return "Select a member"
     }
     
     private func isSelected(_ member: FamilyMember) -> Bool {

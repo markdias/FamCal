@@ -112,6 +112,7 @@ struct SavedAddressesSettingsView: View {
                             .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                         }
                         .padding(.horizontal, 16)
+                        // Pro gating handled in App Settings; data layer still enforces access
                     }
 
                     Spacer()

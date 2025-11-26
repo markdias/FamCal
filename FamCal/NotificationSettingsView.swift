@@ -21,17 +21,28 @@ struct NotificationSettingsView: View {
     private var notificationsEnabledBinding: Binding<Bool> {
         Binding(
             get: { appSettingsManager.notificationsEnabled },
-            set: {
-                appSettingsManager.notificationsEnabled = $0
-                Task { await appSettingsManager.saveSettings() }
-                notificationManager.notificationsEnabled = $0
-                notificationManager.saveSettings()
-                if $0 {
-                    Task {
-                        _ = await notificationManager.requestNotificationPermission()
+            set: { isOn in
+                Task {
+                    if isOn {
+                        let granted = await notificationManager.requestNotificationPermission()
+                        await MainActor.run {
+                            appSettingsManager.notificationsEnabled = granted
+                            notificationManager.notificationsEnabled = granted
+                            notificationManager.saveSettings()
+                        }
+                        await appSettingsManager.saveSettings()
+                        if !granted {
+                            print("❌ Notifications permission denied - keeping toggle off")
+                        }
+                    } else {
+                        await MainActor.run {
+                            appSettingsManager.notificationsEnabled = false
+                            notificationManager.notificationsEnabled = false
+                            notificationManager.saveSettings()
+                        }
+                        await appSettingsManager.saveSettings()
+                        notificationManager.cancelMorningBrief()
                     }
-                } else {
-                    notificationManager.cancelMorningBrief()
                 }
             }
         )

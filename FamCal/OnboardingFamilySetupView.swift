@@ -10,6 +10,7 @@ import CoreData
 
 struct OnboardingFamilySetupView: View {
     @Environment(\.managedObjectContext) private var viewContext
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -20,6 +21,9 @@ struct OnboardingFamilySetupView: View {
     var onNext: () -> Void
 
     @State private var showingAddMember = false
+    private var isAtFamilyLimit: Bool {
+        !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
+    }
 
     var body: some View {
         ZStack {
@@ -105,6 +109,16 @@ struct OnboardingFamilySetupView: View {
                     OnboardingPrimaryButton(title: "Add Family Member") {
                         showingAddMember = true
                     }
+                    .disabled(isAtFamilyLimit)
+                    .opacity(isAtFamilyLimit ? 0.6 : 1.0)
+
+                    if isAtFamilyLimit {
+                        Text("Add up to 2 family members on Free. Enable FamCal Pro to add more.")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 16)
+                    }
 
                     OnboardingSecondaryButton(
                         title: familyMembers.isEmpty ? "Skip for now" : "Continue",
@@ -127,4 +141,5 @@ struct OnboardingFamilySetupView: View {
 #Preview {
     OnboardingFamilySetupView(onNext: {})
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environmentObject(AppSettingsManager())
 }

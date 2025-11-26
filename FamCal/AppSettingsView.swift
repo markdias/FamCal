@@ -115,6 +115,9 @@ struct AppSettingsView: View {
             set: { themeManager.setDarkMode($0) }
         )
     }
+    private var spotlightOptions: [Int] {
+        Array(1...appSettingsManager.currentSpotlightLimit)
+    }
     
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -195,28 +198,6 @@ struct AppSettingsView: View {
                                 .padding(.horizontal, 16)
 
                             settingsContainer {
-                                NavigationLink(destination: ThemeSettingsView()) {
-                                    HStack(spacing: 16) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Theme")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-
-                                            Text(themeManager.selectedTheme.displayName)
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor.opacity(0.6))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
-                                
-                                Divider().padding(.leading, 16)
-                                
                                 HStack(spacing: 16) {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text("Dark mode")
@@ -267,7 +248,7 @@ struct AppSettingsView: View {
                                     subtitle: "Events to show in spotlight view",
                                     picker: AnyView(
                                         Picker("Spotlight", selection: spotlightEventsBinding) {
-                                            ForEach(1...15, id: \.self) { number in
+                                            ForEach(spotlightOptions, id: \.self) { number in
                                                 Text("\(number)").tag(number)
                                             }
                                         }
@@ -275,6 +256,13 @@ struct AppSettingsView: View {
                                         .tint(theme.accentColor)
                                     )
                                 )
+                                if !appSettingsManager.isProUser {
+                                    Text("FamCal Pro unlocks up to 15 spotlight events.")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(theme.accentColor)
+                                        .padding(.horizontal, 16)
+                                        .padding(.bottom, 6)
+                                }
 
                                 Divider().padding(.leading, 16)
 
@@ -347,80 +335,6 @@ struct AppSettingsView: View {
                             }
                         }
 
-                        // MARK: - Calendar Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Calendar")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .padding(.horizontal, 16)
-
-                            settingsContainer {
-                                NavigationLink(destination: SharedCalendarsView().environment(\.managedObjectContext, viewContext)) {
-                                    HStack(spacing: 16) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Shared calendars")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-
-                                            Text("Calendars shared with all members")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor.opacity(0.6))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
-
-                                Divider().padding(.leading, 16)
-
-                                NavigationLink(destination: SavedAddressesSettingsView().environment(\.managedObjectContext, viewContext)) {
-                                    HStack(spacing: 16) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Saved places")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-
-                                            Text("Manage favorite locations")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor.opacity(0.6))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
-
-                                Divider().padding(.leading, 16)
-
-                                NavigationLink(destination: DriversListView().environment(\.managedObjectContext, viewContext)) {
-                                    HStack(spacing: 16) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Drivers")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-
-                                            Text("Manage drivers for events")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor.opacity(0.6))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
-                            }
-                        }
-
                         // MARK: - Data Management Section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Data Management")
@@ -436,7 +350,7 @@ struct AppSettingsView: View {
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(.red)
 
-                                            Text("Delete all local family members and calendars")
+                                            Text("Delete all local family members and calendar links")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(secondaryTextColor)
                                         }
@@ -522,5 +436,6 @@ struct AppSettingsView: View {
 #Preview {
     AppSettingsView()
         .environmentObject(ThemeManager())
+        .environmentObject(AppSettingsManager())
         .environmentObject(SupabaseDataManager.shared)
 }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3B6E4AFF3B6F8037FAC5DA06 /* libPods-FamCal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 70AD09E189CDD4488F8BE030 /* libPods-FamCal.a */; };
 		3a0192659a8a4bfcb239d9d3 /* NextEventWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 248EE1941C8C48C19FF54ED3 /* NextEventWidget.appex */; };
 		FD05CD302ED3830B003A2662 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD2F2ED3830B003A2662 /* Auth */; };
 		FD05CD322ED3830B003A2662 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD312ED3830B003A2662 /* PostgREST */; };
@@ -55,6 +56,9 @@
 
 /* Begin PBXFileReference section */
 		248EE1941C8C48C19FF54ED3 /* NextEventWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NextEventWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		363D1C58560F637A3316330C /* Pods-FamCal.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FamCal.release.xcconfig"; path = "Target Support Files/Pods-FamCal/Pods-FamCal.release.xcconfig"; sourceTree = "<group>"; };
+		4422D0B07B993B90E48CF99D /* Pods-FamCal.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FamCal.debug.xcconfig"; path = "Target Support Files/Pods-FamCal/Pods-FamCal.debug.xcconfig"; sourceTree = "<group>"; };
+		70AD09E189CDD4488F8BE030 /* libPods-FamCal.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-FamCal.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A6D2ECB1ED700B8C72E /* FamCal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FamCal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A8B2ECB1ED800B8C72E /* FamCalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -123,6 +127,7 @@
 				FD05CD322ED3830B003A2662 /* PostgREST in Frameworks */,
 				FD05CD302ED3830B003A2662 /* Auth in Frameworks */,
 				FD9B4E002F0E5C3100A1B2C3 /* GoogleSignIn in Frameworks */,
+				3B6E4AFF3B6F8037FAC5DA06 /* libPods-FamCal.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -143,6 +148,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		542C5B6D3C6C41F71F39F0DC /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				4422D0B07B993B90E48CF99D /* Pods-FamCal.debug.xcconfig */,
+				363D1C58560F637A3316330C /* Pods-FamCal.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		CCCD6678C5D573A98699691D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				70AD09E189CDD4488F8BE030 /* libPods-FamCal.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		FD1B9A642ECB1ED700B8C72E = {
 			isa = PBXGroup;
 			children = (
@@ -151,6 +173,8 @@
 				FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */,
 				F0F30C8E0DC64E818BFD20CC /* NextEventWidget */,
 				FD1B9A6E2ECB1ED700B8C72E /* Products */,
+				542C5B6D3C6C41F71F39F0DC /* Pods */,
+				CCCD6678C5D573A98699691D /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -184,8 +208,6 @@
 				F0F30C8E0DC64E818BFD20CC /* NextEventWidget */,
 			);
 			name = NextEventWidget;
-			packageProductDependencies = (
-			);
 			productName = NextEventWidget;
 			productReference = 248EE1941C8C48C19FF54ED3 /* NextEventWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -194,6 +216,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = FD1B9A942ECB1ED800B8C72E /* Build configuration list for PBXNativeTarget "FamCal" */;
 			buildPhases = (
+				162AFEB2E9A0738BDD3A67F0 /* [CP] Check Pods Manifest.lock */,
 				FD1B9A692ECB1ED700B8C72E /* Sources */,
 				FD1B9A6A2ECB1ED700B8C72E /* Frameworks */,
 				FD1B9A6B2ECB1ED700B8C72E /* Resources */,
@@ -236,8 +259,6 @@
 				FD1B9A842ECB1ED800B8C72E /* FamCalTests */,
 			);
 			name = FamCalTests;
-			packageProductDependencies = (
-			);
 			productName = FamCalTests;
 			productReference = FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -259,8 +280,6 @@
 				FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */,
 			);
 			name = FamCalUITests;
-			packageProductDependencies = (
-			);
 			productName = FamCalUITests;
 			productReference = FD1B9A8B2ECB1ED800B8C72E /* FamCalUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -344,6 +363,31 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		162AFEB2E9A0738BDD3A67F0 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-FamCal-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0EBC59C2AA394B9D927FDF59 /* Sources */ = {
@@ -459,6 +503,7 @@
 		};
 		FD1B9A952ECB1ED800B8C72E /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4422D0B07B993B90E48CF99D /* Pods-FamCal.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]" = AppIcon;
@@ -481,6 +526,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -501,6 +547,7 @@
 		};
 		FD1B9A962ECB1ED800B8C72E /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 363D1C58560F637A3316330C /* Pods-FamCal.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				"ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]" = AppIcon;
@@ -523,6 +570,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

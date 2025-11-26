@@ -60,6 +60,7 @@ class NotificationManager: NSObject, ObservableObject {
             let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
             await MainActor.run {
                 self.notificationsEnabled = granted
+                AppSettingsManager.shared.notificationsEnabled = granted
                 if granted {
                     saveSettings()
                 }
@@ -83,6 +84,7 @@ class NotificationManager: NSObject, ObservableObject {
         let settings = await notificationCenter.notificationSettings()
         if settings.authorizationStatus == .authorized && notificationsEnabled == false {
             notificationsEnabled = true
+            AppSettingsManager.shared.notificationsEnabled = true
             saveSettings()
         }
     }
@@ -138,51 +140,73 @@ class NotificationManager: NSObject, ObservableObject {
         location: String? = nil,
         isSharedCalendarEvent: Bool = false
     ) {
-        guard notificationsEnabled else {
-            Task {
-                print("🔔 Notifications disabled in app settings, checking system permission...")
-                let granted = await self.checkNotificationPermission()
-                if granted {
-                    print("✅ System permission already granted, enabling in app...")
-                    await MainActor.run {
-                        self.notificationsEnabled = true
-                        self.saveSettings()
-                    }
-                    // After enabling, schedule again
-                    self.scheduleEventNotification(
-                        event: event,
-                        alertOption: alertOption,
-                        familyMembers: familyMembers,
-                        drivers: drivers,
-                        location: location,
-                        isSharedCalendarEvent: isSharedCalendarEvent
-                    )
-                } else {
-                    print("⚠️ System permission not granted, requesting...")
-                    let granted = await self.requestNotificationPermission()
-                    if granted {
-                        print("✅ Permission granted by user")
-                        await MainActor.run {
-                            self.notificationsEnabled = true
-                            self.saveSettings()
-                        }
-                        // After enabling, schedule again
-                        self.scheduleEventNotification(
-                            event: event,
-                            alertOption: alertOption,
-                            familyMembers: familyMembers,
-                            drivers: drivers,
-                            location: location,
-                            isSharedCalendarEvent: isSharedCalendarEvent
-                        )
-                    } else {
-                        print("❌ Permission denied by user")
-                    }
+        Task {
+            guard await ensureNotificationPermission() else { return }
+            scheduleEventNotificationNow(
+                event: event,
+                alertOption: alertOption,
+                familyMembers: familyMembers,
+                drivers: drivers,
+                location: location,
+                isSharedCalendarEvent: isSharedCalendarEvent
+            )
+        }
+    }
+
+    @discardableResult
+    private func ensureNotificationPermission() async -> Bool {
+        let settings = await notificationCenter.notificationSettings()
+        let isAuthorized = settings.authorizationStatus == .authorized
+            || settings.authorizationStatus == .provisional
+            || settings.authorizationStatus == .ephemeral
+
+        if !notificationsEnabled {
+            if isAuthorized {
+                print("✅ System permission already granted, enabling notifications in app...")
+                await MainActor.run {
+                    self.notificationsEnabled = true
+                    AppSettingsManager.shared.notificationsEnabled = true
+                    self.saveSettings()
+                }
+                return true
+            }
+
+            print("🔔 Notifications disabled in app settings, requesting permission...")
+            let granted = await self.requestNotificationPermission()
+            if !granted {
+                await MainActor.run {
+                    self.notificationsEnabled = false
+                    AppSettingsManager.shared.notificationsEnabled = false
+                    self.saveSettings()
                 }
             }
-            return
+            return granted
         }
 
+        if !isAuthorized {
+            print("⚠️ Notifications enabled in app but denied at system level. Prompting again...")
+            let granted = await self.requestNotificationPermission()
+            if !granted {
+                await MainActor.run {
+                    self.notificationsEnabled = false
+                    AppSettingsManager.shared.notificationsEnabled = false
+                    self.saveSettings()
+                }
+            }
+            return granted
+        }
+
+        return true
+    }
+
+    private func scheduleEventNotificationNow(
+        event: EKEvent,
+        alertOption: AlertOption,
+        familyMembers: [String],
+        drivers: String?,
+        location: String?,
+        isSharedCalendarEvent: Bool
+    ) {
         // Schedule a local notification for immediate feedback
         let triggerDate = calculateTriggerDate(from: event.startDate, alertOption: alertOption)
 
@@ -332,7 +356,7 @@ class NotificationManager: NSObject, ObservableObject {
         let calendarStatus = EKEventStore.authorizationStatus(for: .event)
         let hasReadAccess: Bool
         if #available(iOS 17.0, *) {
-            hasReadAccess = (calendarStatus == .fullAccess) || (calendarStatus == .authorized)
+            hasReadAccess = (calendarStatus == .fullAccess) || (calendarStatus == .writeOnly)
         } else {
             hasReadAccess = (calendarStatus == .authorized)
         }
@@ -398,85 +422,88 @@ class NotificationManager: NSObject, ObservableObject {
     // MARK: - Morning Brief
 
     func scheduleMorningBrief(withEvents events: [MorningBriefEvent] = []) {
-        // Sync with app settings so toggles in UI take effect here
-        let appSettings = AppSettingsManager.shared
-        notificationsEnabled = appSettings.notificationsEnabled
-        morningBriefEnabled = appSettings.morningBriefEnabled
-        morningBriefTime = TimeComponents(hour: appSettings.morningBriefTimeHour, minute: appSettings.morningBriefTimeMinute)
-        saveSettings()
-
-        guard notificationsEnabled && morningBriefEnabled else {
-            cancelMorningBrief()
-            return
-        }
-
-        // Cancel existing morning brief first
-        notificationCenter.removePendingNotificationRequests(withIdentifiers: ["morningBrief"])
-
-        var components = DateComponents()
-        components.hour = morningBriefTime.hour
-        components.minute = morningBriefTime.minute
-
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-
-        let content = UNMutableNotificationContent()
-        content.title = "Good Morning"
-
-        // Build body based on events
-        let briefEvents = events.isEmpty ? fetchMorningBriefEvents() : events
-
-        if briefEvents.isEmpty {
-            content.body = "No events scheduled for today. Open FamCal to add one."
-        } else {
-            var bodyLines = ["\(briefEvents.count) event\(briefEvents.count == 1 ? "" : "s") today:"]
-
-            for (index, event) in briefEvents.prefix(5).enumerated() {
-                let timeStr = event.isAllDay ? "All day" : Self.briefTimeFormatter.string(from: event.startTime)
-                let member = event.attendees.first ?? "Family"
-                let locationText = (event.location?.isEmpty ?? true) ? "" : " @ \(event.location!)"
-                bodyLines.append("\(index + 1). \(event.title) — \(member) · \(timeStr)\(locationText)")
+        Task {
+            // Sync with app settings so toggles in UI take effect here
+            let appSettings = AppSettingsManager.shared
+            await MainActor.run {
+                notificationsEnabled = appSettings.notificationsEnabled
+                morningBriefEnabled = appSettings.morningBriefEnabled
+                morningBriefTime = TimeComponents(hour: appSettings.morningBriefTimeHour, minute: appSettings.morningBriefTimeMinute)
+                saveSettings()
             }
 
-            if briefEvents.count > 5 {
-                bodyLines.append("...and \(briefEvents.count - 5) more")
+            guard await ensureNotificationPermission(), notificationsEnabled && morningBriefEnabled else {
+                cancelMorningBrief()
+                return
             }
 
-            content.body = bodyLines.joined(separator: "\n")
-        }
+            // Cancel existing morning brief first
+            notificationCenter.removePendingNotificationRequests(withIdentifiers: ["morningBrief"])
 
-        content.sound = .default
+            var components = DateComponents()
+            components.hour = morningBriefTime.hour
+            components.minute = morningBriefTime.minute
 
-        // Store events info for notification handling
-        if !briefEvents.isEmpty {
-            var userInfoDict: [AnyHashable: Any] = [
-                "eventCount": briefEvents.count,
-                "isMorningBrief": true
-            ]
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
 
-            for (index, event) in briefEvents.enumerated() {
-                userInfoDict["event_\(index)_title"] = event.title
-                userInfoDict["event_\(index)_member"] = event.attendees.first ?? "Family"
-                userInfoDict["event_\(index)_time"] = event.isAllDay ? "All day" : event.startTimeString
-                if let location = event.location {
-                    userInfoDict["event_\(index)_location"] = location
-                }
-                if let driver = event.driver {
-                    userInfoDict["event_\(index)_driver"] = driver
-                }
-            }
+            let content = UNMutableNotificationContent()
+            content.title = "Good Morning"
 
-            content.userInfo = userInfoDict
-        }
+            // Build body based on events
+            let briefEvents = events.isEmpty ? fetchMorningBriefEvents() : events
 
-        content.categoryIdentifier = "MORNING_BRIEF"
-        content.interruptionLevel = .timeSensitive
-
-        let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
-        notificationCenter.add(request) { error in
-            if let error = error {
-                print("Error scheduling morning brief: \(error)")
+            if briefEvents.isEmpty {
+                content.body = "No events scheduled for today. Open FamCal to add one."
             } else {
+                var bodyLines = ["\(briefEvents.count) event\(briefEvents.count == 1 ? "" : "s") today:"]
+
+                for (index, event) in briefEvents.prefix(5).enumerated() {
+                    let timeStr = event.isAllDay ? "All day" : Self.briefTimeFormatter.string(from: event.startTime)
+                    let member = event.attendees.first ?? "Family"
+                    let locationText = (event.location?.isEmpty ?? true) ? "" : " @ \(event.location!)"
+                    bodyLines.append("\(index + 1). \(event.title) — \(member) · \(timeStr)\(locationText)")
+                }
+
+                if briefEvents.count > 5 {
+                    bodyLines.append("...and \(briefEvents.count - 5) more")
+                }
+
+                content.body = bodyLines.joined(separator: "\n")
+            }
+
+            content.sound = .default
+
+            // Store events info for notification handling
+            if !briefEvents.isEmpty {
+                var userInfoDict: [AnyHashable: Any] = [
+                    "eventCount": briefEvents.count,
+                    "isMorningBrief": true
+                ]
+
+                for (index, event) in briefEvents.enumerated() {
+                    userInfoDict["event_\(index)_title"] = event.title
+                    userInfoDict["event_\(index)_member"] = event.attendees.first ?? "Family"
+                    userInfoDict["event_\(index)_time"] = event.isAllDay ? "All day" : event.startTimeString
+                    if let location = event.location {
+                        userInfoDict["event_\(index)_location"] = location
+                    }
+                    if let driver = event.driver {
+                        userInfoDict["event_\(index)_driver"] = driver
+                    }
+                }
+
+                content.userInfo = userInfoDict
+            }
+
+            content.categoryIdentifier = "MORNING_BRIEF"
+            content.interruptionLevel = .timeSensitive
+
+            let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
+            do {
+                try await notificationCenter.add(request)
                 print("✅ Morning brief scheduled for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
+            } catch {
+                print("Error scheduling morning brief: \(error)")
             }
         }
     }

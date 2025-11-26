@@ -58,21 +58,34 @@ class SupabaseDataSync {
                     syncedCount += 1
                 }
 
-                // Sync calendars - delete old ones and add new ones
-                if let existingCalendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
-                    for calendar in existingCalendars {
+                // Sync calendars - diff approach to avoid deleting objects that are still valid
+                let existingCalendars = member.memberCalendars as? Set<FamilyMemberCalendar> ?? []
+                let supabaseMemberCalendars = supabaseCalendars.filter { $0.family_member_id == supabaseDTO.id }
+                let supabaseCalendarIds = Set(supabaseMemberCalendars.map { $0.id })
+                
+                // 1. Delete calendars that are no longer in Supabase
+                for calendar in existingCalendars {
+                    if let calendarId = calendar.id?.uuidString, !supabaseCalendarIds.contains(calendarId) {
                         context.delete(calendar)
                     }
                 }
-
-                for calendar in supabaseCalendars where calendar.family_member_id == supabaseDTO.id {
-                    let memberCalendar = FamilyMemberCalendar(context: context)
-                    memberCalendar.id = UUID(uuidString: calendar.id) ?? UUID()
-                    memberCalendar.calendarID = calendar.calendar_id
-                    memberCalendar.calendarName = calendar.calendar_name
-                    memberCalendar.calendarColorHex = calendar.calendar_color_hex
-                    memberCalendar.isAutoLinked = calendar.is_auto_linked
-                    memberCalendar.familyMember = member
+                
+                // 2. Update existing or create new calendars
+                for calendarDTO in supabaseMemberCalendars {
+                    let memberCalendar: FamilyMemberCalendar
+                    
+                    if let existing = existingCalendars.first(where: { $0.id?.uuidString == calendarDTO.id }) {
+                        memberCalendar = existing
+                    } else {
+                        memberCalendar = FamilyMemberCalendar(context: context)
+                        memberCalendar.id = UUID(uuidString: calendarDTO.id) ?? UUID()
+                        memberCalendar.familyMember = member
+                    }
+                    
+                    memberCalendar.calendarID = calendarDTO.calendar_id
+                    memberCalendar.calendarName = calendarDTO.calendar_name
+                    memberCalendar.calendarColorHex = calendarDTO.calendar_color_hex
+                    memberCalendar.isAutoLinked = calendarDTO.is_auto_linked
                 }
             }
 

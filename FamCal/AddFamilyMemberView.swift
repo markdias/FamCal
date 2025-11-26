@@ -13,6 +13,7 @@ struct AddFamilyMemberView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var dataManager: SupabaseDataManager
     @EnvironmentObject private var authManager: SupabaseAuthManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @State private var name = ""
     @State private var isDriver = false
@@ -24,6 +25,16 @@ struct AddFamilyMemberView: View {
     @State private var pendingCalendarName: String?
     @State private var saveError: String?
     @State private var showSaveError = false
+    
+    @FetchRequest(
+        entity: FamilyMember.entity(),
+        sortDescriptors: []
+    )
+    private var familyMembers: FetchedResults<FamilyMember>
+
+    private var isAtFamilyLimit: Bool {
+        !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
+    }
 
     private var calendarLinkingBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -54,6 +65,10 @@ struct AddFamilyMemberView: View {
         NavigationView {
             VStack(spacing: 0) {
                 calendarLinkingBanner
+
+                if isAtFamilyLimit {
+                    limitBanner
+                }
 
                 // Form content
                 VStack(spacing: 24) {
@@ -119,6 +134,8 @@ struct AddFamilyMemberView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(8)
                     } else if let matched = matchedCalendar {
+                        let memberExists = familyMembers.contains(where: { $0.name?.lowercased() == name.lowercased() })
+
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Calendar Match")
                                 .font(.system(size: 14, weight: .semibold, design: .default))
@@ -134,7 +151,7 @@ struct AddFamilyMemberView: View {
                                         .font(.system(size: 15, weight: .semibold, design: .default))
                                         .foregroundColor(.primary)
 
-                                    Text("This calendar will be linked to \(name)")
+                                    Text(memberExists ? "Will be linked to \(name) if not already added" : "This calendar will be linked to \(name)")
                                         .font(.system(size: 13, weight: .regular, design: .default))
                                         .foregroundColor(.gray)
                                 }
@@ -151,32 +168,37 @@ struct AddFamilyMemberView: View {
                             .cornerRadius(8)
                         }
                     } else if !name.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Calendar Match")
-                                .font(.system(size: 14, weight: .semibold, design: .default))
-                                .foregroundColor(.gray)
+                        let memberExists = familyMembers.contains(where: { $0.name?.lowercased() == name.lowercased() })
 
-                            HStack(spacing: 12) {
-                                Image(systemName: "calendar.badge.exclamationmark")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.orange)
+                        // Only show "no calendar found" if member doesn't already exist
+                        if !memberExists {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Calendar Match")
+                                    .font(.system(size: 14, weight: .semibold, design: .default))
+                                    .foregroundColor(.gray)
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("No calendar found")
-                                        .font(.system(size: 15, weight: .semibold, design: .default))
-                                        .foregroundColor(.primary)
+                                HStack(spacing: 12) {
+                                    Image(systemName: "calendar.badge.exclamationmark")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.orange)
 
-                                    Text("No calendar matches '\(name)'")
-                                        .font(.system(size: 13, weight: .regular, design: .default))
-                                        .foregroundColor(.gray)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("No calendar found")
+                                            .font(.system(size: 15, weight: .semibold, design: .default))
+                                            .foregroundColor(.primary)
+
+                                        Text("No calendar matches '\(name)'")
+                                            .font(.system(size: 13, weight: .regular, design: .default))
+                                            .foregroundColor(.gray)
+                                    }
+
+                                    Spacer()
                                 }
-
-                                Spacer()
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
                         }
                     }
                 }
@@ -188,15 +210,18 @@ struct AddFamilyMemberView: View {
                 // Action buttons
                 VStack(spacing: 12) {
                     Button(action: saveMember) {
-                        Text("Add Member")
+                        let memberExists = familyMembers.contains(where: { $0.name?.lowercased() == name.lowercased() })
+                        let buttonText = memberExists && matchedCalendar != nil ? "Link Calendar" : "Add Member"
+
+                        Text(buttonText)
                             .font(.system(size: 16, weight: .semibold, design: .default))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .background(name.isEmpty ? Color.gray : Color(red: 0.33, green: 0.33, blue: 0.33))
+                            .background((name.isEmpty || isAtFamilyLimit) ? Color.gray : Color(red: 0.33, green: 0.33, blue: 0.33))
                             .cornerRadius(12)
                     }
-                    .disabled(name.isEmpty)
+                    .disabled(name.isEmpty || isAtFamilyLimit)
 
                     Button(action: { dismiss() }) {
                         Text("Cancel")
@@ -258,15 +283,18 @@ struct AddFamilyMemberView: View {
 
         matchedCalendar = CalendarManager.shared.findMatchingCalendar(for: name, in: availableCalendars)
 
-        // Start timer only when no calendar is found
-        if matchedCalendar == nil {
+        // Check if member already exists - if so, skip calendar creation flow
+        let memberExists = familyMembers.contains(where: { $0.name?.lowercased() == name.lowercased() })
+
+        // Start timer only when no calendar is found AND member doesn't exist
+        if matchedCalendar == nil && !memberExists {
             noCalendarTimer?.invalidate()
             pendingCalendarName = name
             noCalendarTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
                 showCreateCalendarAlert = true
             }
         } else {
-            // Calendar found, cancel any pending timer
+            // Calendar found or member exists, cancel any pending timer
             noCalendarTimer?.invalidate()
             noCalendarTimer = nil
             pendingCalendarName = nil
@@ -276,10 +304,53 @@ struct AddFamilyMemberView: View {
     private func saveMember() {
         Task {
             do {
-                // Check if member already exists
-                if dataManager.familyMembers.contains(where: { $0.name.lowercased() == name.lowercased() }) {
-                    saveError = "A family member named '\(name)' already exists"
+                guard !isAtFamilyLimit else {
+                    saveError = "FamCal Free supports up to 2 family members. Enable Pro in Settings > Test Only to add more."
                     showSaveError = true
+                    return
+                }
+
+                // Check if member already exists
+                if let existingMember = familyMembers.first(where: { $0.name?.lowercased() == name.lowercased() }) {
+                    // Member exists - only add calendar if matched and not already linked
+                    if let matched = matchedCalendar {
+                        // Check if this calendar is already linked to the member
+                        let existingCalendarIds = (existingMember.memberCalendars as? Set<FamilyMemberCalendar> ?? [])
+                            .compactMap { $0.calendarID }
+
+                        if !existingCalendarIds.contains(matched.id) {
+                            // Calendar not linked yet - add it silently
+                            if authManager.isGuest {
+                                let calendar = FamilyMemberCalendar(context: viewContext)
+                                calendar.id = UUID()
+                                calendar.calendarID = matched.id
+                                calendar.calendarName = matched.title
+                                calendar.calendarColorHex = matched.color.hex()
+                                calendar.isAutoLinked = true
+                                existingMember.addToMemberCalendars(calendar)
+
+                                try viewContext.save()
+                                print("✅ New calendar linked to existing family member (guest mode)")
+                            } else {
+                                try await dataManager.supabaseManager.addFamilyMemberCalendar(
+                                    memberId: existingMember.id?.uuidString ?? "",
+                                    calendarId: matched.id,
+                                    calendarName: matched.title,
+                                    calendarColorHex: matched.color.hex(),
+                                    isAutoLinked: true
+                                )
+                                print("✅ New calendar linked to existing family member")
+
+                                // Refresh data to sync the newly added calendar
+                                await dataManager.fetchUserData()
+                            }
+                        } else {
+                            print("ℹ️ Calendar already linked to family member")
+                        }
+                    }
+                    // No error message - silently complete for existing members
+                    print("✅ Family member '\(name)' already exists (calendar updated if needed)")
+                    dismiss()
                     return
                 }
 
@@ -344,6 +415,28 @@ struct AddFamilyMemberView: View {
             return String(name.prefix(2)).uppercased()
         }
     }
+    
+    private var limitBanner: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("FamCal Free limit reached")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+
+                Text("Add up to 2 family members on Free. Enable Pro in Settings > Test Only to keep adding.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(red: 0.16, green: 0.5, blue: 0.95))
+    }
 
     private func createCalendar() {
         guard let calendarName = pendingCalendarName else { return }
@@ -370,4 +463,7 @@ struct AddFamilyMemberView: View {
 #Preview {
     AddFamilyMemberView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        .environmentObject(AppSettingsManager())
+        .environmentObject(SupabaseDataManager.shared)
+        .environmentObject(SupabaseAuthManager.shared)
 }

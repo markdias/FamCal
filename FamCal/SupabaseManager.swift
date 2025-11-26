@@ -126,6 +126,24 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    func updateFamilyMemberCalendarId(memberId: String, calendarName: String, newCalendarId: String, token: String? = nil) async throws {
+        struct CalendarUpdateBody: Encodable {
+            let calendar_id: String
+        }
+
+        let body = CalendarUpdateBody(calendar_id: newCalendarId)
+        let queryItems = [
+            URLQueryItem(name: "family_member_id", value: "eq.\(memberId)"),
+            URLQueryItem(name: "calendar_name", value: "eq.\(calendarName)")
+        ]
+        let userToken = token ?? authManager.accessToken
+        let (_, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_member_calendars", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard statusCode == 200 else {
+            throw NSError(domain: "UpdateFamilyMemberCalendarId", code: statusCode, userInfo: ["message": "Failed to update calendar ID for \(calendarName)"])
+        }
+    }
+
     func deleteFamilyMember(id: String, token: String? = nil) async throws {
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
         let userToken = token ?? authManager.accessToken

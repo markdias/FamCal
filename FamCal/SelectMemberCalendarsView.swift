@@ -24,7 +24,7 @@ struct SelectMemberCalendarsView: View {
 
     @State private var availableCalendars: [AvailableCalendar] = []
     @State private var isLoading = false
-    @State private var memberWasDeleted = false
+
 
     init(member: FamilyMember) {
         self.member = member
@@ -61,25 +61,7 @@ struct SelectMemberCalendarsView: View {
     var body: some View {
         NavigationView {
             Group {
-                if memberWasDeleted || member.isDeleted || member.managedObjectContext == nil {
-                    VStack(spacing: 16) {
-                        Image(systemName: "person.crop.circle.badge.exclam")
-                            .font(.system(size: 36))
-                            .foregroundColor(.gray)
-
-                        Text("This family member was removed.")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.primary)
-
-                        Button("Done") {
-                            dismiss()
-                        }
-                        .font(.system(size: 15, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    contentView
-                }
+                contentView
             }
             .background(Color(.systemBackground))
             .navigationBarTitleDisplayMode(.inline)
@@ -100,16 +82,7 @@ struct SelectMemberCalendarsView: View {
         .onAppear {
             loadAvailableCalendars()
         }
-        .onChange(of: member.isDeleted) { _, isDeleted in
-            if isDeleted {
-                memberWasDeleted = true
-            }
-        }
-        .onChange(of: member.managedObjectContext == nil) { _, isNil in
-            if isNil {
-                memberWasDeleted = true
-            }
-        }
+
     }
 
     private var contentView: some View {
@@ -400,10 +373,7 @@ struct SelectMemberCalendarsView: View {
     }
 
     private func addCalendar(_ calendar: AvailableCalendar) {
-        guard !member.isDeleted else {
-            memberWasDeleted = true
-            return
-        }
+
 
         // Create in CoreData first
         let newMemberCalendar = FamilyMemberCalendar(context: viewContext)
@@ -435,8 +405,7 @@ struct SelectMemberCalendarsView: View {
                     )
                     print("✅ Calendar added to Supabase")
 
-                    // Refresh data to ensure sync
-                    await dataManager.fetchUserData()
+
                 } catch {
                     print("❌ Error syncing calendar to Supabase: \(error)")
                 }
@@ -448,10 +417,7 @@ struct SelectMemberCalendarsView: View {
     }
 
     private func removeCalendar(_ calendar: FamilyMemberCalendar) {
-        guard !member.isDeleted else {
-            memberWasDeleted = true
-            return
-        }
+
 
         guard let memberCalendarId = calendar.id?.uuidString else {
             print("❌ Member calendar ID not available for deletion")
@@ -473,8 +439,7 @@ struct SelectMemberCalendarsView: View {
                     )
                     print("✅ Calendar removed from Supabase")
 
-                    // Refresh data to ensure sync
-                    await dataManager.fetchUserData()
+
                 } catch {
                     print("❌ Error removing calendar from Supabase: \(error)")
                 }

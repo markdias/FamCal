@@ -13,6 +13,7 @@ struct SharedCalendarsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
         entity: SharedCalendar.entity(),
@@ -27,6 +28,9 @@ struct SharedCalendarsView: View {
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
+    private var reachedFreeLimit: Bool {
+        !appSettingsManager.isProUser && sharedCalendars.count >= appSettingsManager.maxSharedCalendarsAllowed
+    }
 
     var body: some View {
         ZStack {
@@ -99,11 +103,11 @@ struct SharedCalendarsView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 20))
-                                    .foregroundColor(theme.accentColor)
+                                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
 
                                 Text("Add Shared Calendar")
                                     .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(theme.accentColor)
+                                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
 
                                 Spacer()
                             }
@@ -116,8 +120,22 @@ struct SharedCalendarsView: View {
                             )
                             .cornerRadius(12)
                             .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
+                            .overlay(alignment: .trailing) {
+                                if reachedFreeLimit {
+                                    Text("Pro")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(theme.accentColor)
+                                        .clipShape(Capsule())
+                                        .offset(x: -6)
+                                }
+                            }
                         }
                         .padding(.horizontal, 16)
+                        .disabled(reachedFreeLimit)
+                        .opacity(reachedFreeLimit ? 0.6 : 1.0)
                     }
 
                     Spacer()
@@ -131,6 +149,7 @@ struct SharedCalendarsView: View {
             AddSharedCalendarView()
                 .environment(\.managedObjectContext, viewContext)
                 .environmentObject(dataManager)
+                .environmentObject(appSettingsManager)
         }
         .alert("Delete Shared Calendar?", isPresented: $showingDeleteConfirmation, presenting: calendarPendingDelete) { calendar in
             Button("Cancel", role: .cancel) { }

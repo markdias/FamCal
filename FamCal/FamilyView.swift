@@ -197,6 +197,15 @@ struct FamilyView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 contentView
+
+                // AdMob Banner - only show for free users
+                if !appSettingsManager.isProUser {
+                    AdBannerContainer(
+                        adUnitID: "ca-app-pub-6842193682076971/5907724370",
+                        isProUser: appSettingsManager.isProUser,
+                        theme: theme
+                    )
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 32)
@@ -213,6 +222,9 @@ struct FamilyView: View {
         .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents() }
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: currentTime) { _, _ in /* Trigger re-render for status updates */ }
+        .onChange(of: appSettingsManager.familyMemberOrder) { _, newOrder in
+            applyOrderFromSettings(newOrder)
+        }
         .onDisappear(perform: cleanupView)
     }
 
@@ -860,6 +872,11 @@ struct FamilyView: View {
     private func setupView() {
         loadNextEvents()
         loadAvailableCalendars()
+        
+        // Apply initial order from settings if available
+        if !appSettingsManager.familyMemberOrder.isEmpty {
+            applyOrderFromSettings(appSettingsManager.familyMemberOrder)
+        }
 
         // Set up notification observer for calendar changes
         NotificationCenter.default.addObserver(
@@ -1517,6 +1534,19 @@ struct FamilyView: View {
             reorderedEvents = []
             print("❌ Failed to save member order: \(error.localizedDescription)")
         }
+        
+        // Sync to AppSettings
+        let orderedIDs = finalOrder.compactMap { group -> String? in
+            if let member = familyMembers.first(where: { $0.objectID == group.id }) {
+                return member.id?.uuidString
+            }
+            return nil
+        }
+        
+        Task { @MainActor in
+            appSettingsManager.familyMemberOrder = orderedIDs
+            await appSettingsManager.saveSettings()
+        }
     }
 
     private func objectID(from uriString: String) -> NSManagedObjectID? {
@@ -1541,6 +1571,30 @@ struct FamilyView: View {
         }
     }
 
+    private func applyOrderFromSettings(_ order: [String]) {
+        guard !order.isEmpty else { return }
+        
+        var hasChanges = false
+        
+        for (index, idString) in order.enumerated() {
+            if let member = familyMembers.first(where: { $0.id?.uuidString == idString }) {
+                if member.sortOrder != Int16(index) {
+                    member.sortOrder = Int16(index)
+                    hasChanges = true
+                }
+            }
+        }
+        
+        if hasChanges {
+            do {
+                try viewContext.save()
+                print("✅ Applied family member order from settings")
+                loadNextEvents() // Reload to reflect new order
+            } catch {
+                print("❌ Failed to apply order from settings: \(error)")
+            }
+        }
+    }
 }
 
 // MARK: - Data Models

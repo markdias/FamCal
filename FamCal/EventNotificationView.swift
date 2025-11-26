@@ -146,8 +146,8 @@ struct EventNotificationView: View {
     private func openMaps() {
         guard let coordinate = locationCoordinate else { return }
 
-        let clLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        let mapItem = MKMapItem(location: clLocation, address: nil)
+        let placemark = MKPlacemark(coordinate: coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
         mapItem.name = location
 
         let launchOptions: [String: Any] = [

@@ -20,9 +20,26 @@ struct SettingsView: View {
     @State private var showingNotifications = false
     @State private var showingPermissions = false
     @State private var showingWidgetSettings = false
+    @State private var showingThemeSettings = false
+    @State private var showingSharedCalendars = false
+    @State private var showingSavedPlaces = false
+    @State private var showingDrivers = false
     @State private var showingHelp = false
     @State private var showingOnboarding = false
     @State private var onboardingCompletedInSettings = false
+    @State private var showingProSheet = false
+    private var proToggleBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.isProUser },
+            set: {
+                appSettingsManager.isProUser = $0
+                if !$0 {
+                    themeManager.select(theme: .classic)
+                }
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
     
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -44,12 +61,13 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(spacing: 24) {
                         // Premium Banner
-                        PremiumBannerView()
+                        PremiumBannerView(isPro: appSettingsManager.isProUser) {
+                            showingProSheet = true
+                        }
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
                         
-                            .padding(.vertical, 8)
-                        }
+
                         
                         // Account Section
                         VStack(alignment: .leading, spacing: 8) {
@@ -98,30 +116,190 @@ struct SettingsView: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(secondaryTextColor)
                                 .padding(.horizontal, 16)
-                            
+
                             settingsContainer {
-                                Button(action: { showingFamilySettings = true }) {
-                                    SettingsRowView(iconName: "person.circle", title: "My Family")
-                                }
-                                Divider().padding(.leading, 56)
-                                
-                                Button(action: { showingPermissions = true }) {
-                                    SettingsRowView(iconName: "lock", title: "Permissions")
-                                }
-                                Divider().padding(.leading, 56)
-                                
                                 Button(action: { showingNotifications = true }) {
                                     SettingsRowView(iconName: "bell", title: "Notifications", showChevron: true)
                                 }
                                 Divider().padding(.leading, 56)
-                                
+
                                 Button(action: { showingAppSettings = true }) {
-                                    SettingsRowView(iconName: "gearshape", title: "App Settings")
+                                    SettingsRowView(iconName: "gearshape", title: "App Settings", showChevron: true)
                                 }
                                 Divider().padding(.leading, 56)
 
-                                Button(action: { showingWidgetSettings = true }) {
-                                    SettingsRowView(iconName: "square.grid.2x2", title: "Widgets")
+                                if appSettingsManager.isProUser {
+                                    Button(action: { showingThemeSettings = true }) {
+                                        SettingsRowView(iconName: "paintpalette", title: "Themes", showChevron: true)
+                                    }
+                                } else {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "paintpalette")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(theme.accentColor)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Themes")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Unlock all themes with FamCal Pro")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Text("Pro")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(theme.accentColor)
+                                            .clipShape(Capsule())
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                Divider().padding(.leading, 56)
+
+                                if appSettingsManager.isProUser {
+                                    Button(action: { showingSharedCalendars = true }) {
+                                        SettingsRowView(iconName: "calendar.badge.plus", title: "Shared Calendars", showChevron: true)
+                                    }
+                                } else {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "calendar.badge.plus")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(theme.accentColor)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Shared Calendars")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Pro unlocks unlimited shared calendars")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Text("Pro")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(theme.accentColor)
+                                            .clipShape(Capsule())
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                Divider().padding(.leading, 56)
+
+                                if appSettingsManager.isProUser {
+                                    Button(action: { showingSavedPlaces = true }) {
+                                        SettingsRowView(iconName: "mappin.circle", title: "Saved Places", showChevron: true)
+                                    }
+                                } else {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "mappin.circle")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(theme.accentColor)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Saved Places")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Pro unlocks Saved Places for quick access")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Text("Pro")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(theme.accentColor)
+                                            .clipShape(Capsule())
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                Divider().padding(.leading, 56)
+
+                                if appSettingsManager.isProUser {
+                                    Button(action: { showingDrivers = true }) {
+                                        SettingsRowView(iconName: "car.fill", title: "Drivers", showChevron: true)
+                                    }
+                                } else {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "car.fill")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(theme.accentColor)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Drivers")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Pro unlocks Drivers to coordinate pickups")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Text("Pro")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(theme.accentColor)
+                                            .clipShape(Capsule())
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                Divider().padding(.leading, 56)
+
+                                if appSettingsManager.isProUser {
+                                    Button(action: { showingWidgetSettings = true }) {
+                                        SettingsRowView(iconName: "sparkles", title: "Widgets", showChevron: true)
+                                    }
+                                } else {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "square.grid.2x2")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(theme.accentColor)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Widgets")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Pro unlocks Widgets for home screen")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Text("Pro")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(theme.accentColor)
+                                            .clipShape(Capsule())
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
                                 }
                             }
                             .padding(.vertical, 8)
@@ -140,6 +318,11 @@ struct SettingsView: View {
                                 }
                                 Divider().padding(.leading, 56)
 
+                                Button(action: { showingPermissions = true }) {
+                                    SettingsRowView(iconName: "lock", title: "Permissions")
+                                }
+                                Divider().padding(.leading, 56)
+
                                 Button(action: { showingHelp = true }) {
                                     SettingsRowView(iconName: "questionmark.circle", title: "Help")
                                 }
@@ -149,12 +332,38 @@ struct SettingsView: View {
 
                         // Testing Section
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Testing")
+                            Text("Test Only")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(secondaryTextColor)
                                 .padding(.horizontal, 16)
 
                             settingsContainer {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(theme.accentColor)
+                                        .frame(width: 24, height: 24)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Enable FamCal Pro")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(primaryTextColor)
+                                        Text("Test unlocks for membership-only features")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+
+                                    Spacer()
+
+                                    Toggle("", isOn: proToggleBinding)
+                                        .labelsHidden()
+                                        .tint(theme.accentColor)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+
+                                Divider().padding(.leading, 56)
+
                                 Button(action: {
                                     onboardingCompletedInSettings = false
                                     showingOnboarding = true
@@ -211,6 +420,36 @@ struct SettingsView: View {
                 PermissionsView()
             }
         }
+        .sheet(isPresented: $showingThemeSettings) {
+            NavigationView {
+                ThemeSettingsView()
+                    .environmentObject(themeManager)
+                    .environmentObject(appSettingsManager)
+            }
+        }
+        .sheet(isPresented: $showingSharedCalendars) {
+            NavigationView {
+                SharedCalendarsView()
+                    .environment(\.managedObjectContext, viewContext)
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
+                    .environmentObject(dataManager)
+            }
+        }
+        .sheet(isPresented: $showingSavedPlaces) {
+            NavigationView {
+                SavedAddressesSettingsView()
+                    .environment(\.managedObjectContext, viewContext)
+                    .environmentObject(themeManager)
+                    .environmentObject(dataManager)
+            }
+        }
+        .sheet(isPresented: $showingDrivers) {
+            DriversListView()
+                .environment(\.managedObjectContext, viewContext)
+                .environmentObject(themeManager)
+                .environmentObject(dataManager)
+        }
         .sheet(isPresented: $showingWidgetSettings) {
             NavigationView {
                 WidgetSettingsView()
@@ -220,6 +459,12 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingHelp) {
             HelpView()
+        }
+        .fullScreenCover(isPresented: $showingProSheet) {
+            FamCalProView()
+                .environmentObject(appSettingsManager)
+                .environmentObject(themeManager)
+                .environmentObject(authManager)
         }
         .fullScreenCover(isPresented: $showingOnboarding) {
             OnboardingView(hasCompletedOnboarding: $onboardingCompletedInSettings)
@@ -263,4 +508,7 @@ struct SettingsView: View {
     SettingsView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(ThemeManager())
+        .environmentObject(AppSettingsManager())
+        .environmentObject(SupabaseAuthManager.shared)
+        .environmentObject(SupabaseDataManager.shared)
 }

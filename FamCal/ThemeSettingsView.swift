@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ThemeSettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @Environment(\.dismiss) private var dismiss
     
     private var theme: AppTheme { themeManager.selectedTheme }
@@ -25,17 +26,21 @@ struct ThemeSettingsView: View {
 
                     VStack(spacing: 18) {
                         ForEach(AppTheme.allThemes) { theme in
+                            let isLocked = !appSettingsManager.isProUser && theme.id != AppTheme.classic.id
                             Button(action: {
+                                guard !isLocked else { return }
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                                     themeManager.select(theme: theme)
                                 }
                             }) {
-                                ThemeOptionCard(theme: theme, isSelected: themeManager.selectedTheme.id == theme.id)
+                                ThemeOptionCard(theme: theme, isSelected: themeManager.selectedTheme.id == theme.id, isLocked: isLocked)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Select \(theme.displayName) theme")
                             .accessibilityHint(theme.description)
                             .accessibilityAddTraits(themeManager.selectedTheme.id == theme.id ? .isSelected : [])
+                            .disabled(isLocked)
+                            .opacity(isLocked ? 0.65 : 1.0)
                         }
                     }
                 }
@@ -53,6 +58,7 @@ private struct ThemeOptionCard: View {
     @EnvironmentObject private var themeManager: ThemeManager
     let theme: AppTheme
     let isSelected: Bool
+    let isLocked: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -70,7 +76,15 @@ private struct ThemeOptionCard: View {
 
                 Spacer()
 
-                if theme.id == AppTheme.launchFlow.id {
+                if isLocked {
+                    Text("Pro")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.gray.opacity(0.25))
+                        .foregroundColor(theme.textPrimary)
+                        .clipShape(Capsule())
+                } else if theme.id == AppTheme.launchFlow.id {
                     Text("New")
                         .font(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 8)
@@ -170,4 +184,5 @@ private struct ThemePreviewCanvas: View {
 #Preview {
     ThemeSettingsView()
         .environmentObject(ThemeManager())
+        .environmentObject(AppSettingsManager())
 }

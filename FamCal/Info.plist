@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-6842193682076971~7907201759</string>
 	<key>GIDClientID</key>
 	<string>555073180680-eku35n9vu7rgvr8nohtc0l5dai0fi5av.apps.googleusercontent.com</string>
 	<key>NSCalendarsUsageDescription</key>

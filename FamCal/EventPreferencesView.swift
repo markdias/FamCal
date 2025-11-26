@@ -62,6 +62,9 @@ struct EventPreferencesView: View {
             }
         )
     }
+    private var spotlightOptions: [Int] {
+        Array(1...appSettingsManager.currentSpotlightLimit)
+    }
 
     var body: some View {
         GlassyBackground {
@@ -117,7 +120,7 @@ struct EventPreferencesView: View {
                                 Spacer()
 
                                 Picker("Spotlight", selection: spotlightEventsBinding) {
-                                    ForEach(1...15, id: \.self) { number in
+                                    ForEach(spotlightOptions, id: \.self) { number in
                                         Text("\(number)").tag(number)
                                     }
                                 }
@@ -126,6 +129,14 @@ struct EventPreferencesView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
+
+                            if !appSettingsManager.isProUser {
+                                Text("FamCal Pro unlocks up to 15 spotlight events.")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(themeManager.selectedTheme.accentColor)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 10)
+                            }
                         }
                         .glassyCard(padding: 0)
                         .padding(.horizontal, 16)

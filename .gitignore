@@ -8,3 +8,4 @@ build/*
 Build/
 .env.example
 .DS_Store
+Pods/

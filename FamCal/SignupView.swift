@@ -77,7 +77,7 @@ struct SignupView: View {
                         // Password Field
                         GlassySecureField(
                             icon: "lock.fill",
-                            placeholder: "Password (min 6 characters)",
+                            placeholder: "Password (min 10 characters)",
                             text: $password,
                             showPassword: $showPassword,
                             theme: themeManager.selectedTheme
@@ -95,14 +95,12 @@ struct SignupView: View {
                         // Password Requirements
                         if !password.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                PasswordRequirement(
-                                    text: "At least 6 characters",
-                                    isMet: password.count >= 6
-                                )
-                                PasswordRequirement(
-                                    text: "Passwords match",
-                                    isMet: !confirmPassword.isEmpty && password == confirmPassword
-                                )
+                                PasswordRequirement(text: "At least 10 characters", isMet: hasMinLength, theme: themeManager.selectedTheme)
+                                PasswordRequirement(text: "One lowercase letter", isMet: hasLowercase, theme: themeManager.selectedTheme)
+                                PasswordRequirement(text: "One uppercase letter", isMet: hasUppercase, theme: themeManager.selectedTheme)
+                                PasswordRequirement(text: "One digit", isMet: hasDigit, theme: themeManager.selectedTheme)
+                                PasswordRequirement(text: "One symbol", isMet: hasSymbol, theme: themeManager.selectedTheme)
+                                PasswordRequirement(text: "Passwords match", isMet: passwordsMatch, theme: themeManager.selectedTheme)
                             }
                             .padding(.horizontal, 4)
                         }
@@ -202,11 +200,22 @@ struct SignupView: View {
     
     // MARK: - Helpers
     
+    private var hasMinLength: Bool { password.count >= 10 }
+    private var hasLowercase: Bool { password.range(of: "[a-z]", options: .regularExpression) != nil }
+    private var hasUppercase: Bool { password.range(of: "[A-Z]", options: .regularExpression) != nil }
+    private var hasDigit: Bool { password.range(of: "[0-9]", options: .regularExpression) != nil }
+    private var hasSymbol: Bool { password.range(of: "[^a-zA-Z0-9]", options: .regularExpression) != nil }
+    private var passwordsMatch: Bool { !confirmPassword.isEmpty && password == confirmPassword }
+
     private var isValidInput: Bool {
         !email.isEmpty &&
         email.contains("@") &&
-        password.count >= 6 &&
-        password == confirmPassword
+        hasMinLength &&
+        hasLowercase &&
+        hasUppercase &&
+        hasDigit &&
+        hasSymbol &&
+        passwordsMatch
     }
     
     private func performSignup() async {
@@ -244,16 +253,17 @@ struct SignupView: View {
 struct PasswordRequirement: View {
     let text: String
     let isMet: Bool
+    let theme: AppTheme
     
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(isMet ? .green : .white.opacity(0.5))
+                .foregroundStyle(isMet ? .green : theme.textSecondary)
                 .font(.caption)
             
             Text(text)
                 .font(.caption)
-                .foregroundStyle(.white.opacity(isMet ? 0.9 : 0.6))
+                .foregroundStyle(theme.textPrimary.opacity(isMet ? 1.0 : 0.7))
         }
     }
 }

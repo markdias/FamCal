@@ -13,6 +13,7 @@ struct FamilyAndEventsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -36,6 +37,9 @@ struct FamilyAndEventsView: View {
 
     private var linkedCalendars: [FamilyMember] {
         familyMembers.filter { ($0.memberCalendars?.count ?? 0) > 0 }
+    }
+    private var isAtFamilyLimit: Bool {
+        !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
     }
 
     var body: some View {
@@ -100,6 +104,7 @@ struct FamilyAndEventsView: View {
             AddSharedCalendarView()
                 .environment(\.managedObjectContext, viewContext)
                 .environmentObject(dataManager)
+                .environmentObject(appSettingsManager)
         }
         .sheet(item: $selectedMember) { member in
             SelectMemberCalendarsView(member: member)
@@ -316,6 +321,14 @@ struct FamilyAndEventsView: View {
                     .shadow(color: themeManager.selectedTheme.id == AppTheme.launchFlow.id ? themeManager.selectedTheme.accentColor.opacity(0.3) : Color.clear, radius: 8, x: 0, y: 4)
             }
             .padding(.horizontal, 16)
+            .disabled(isAtFamilyLimit)
+            .opacity(isAtFamilyLimit ? 0.6 : 1.0)
+            if isAtFamilyLimit {
+                Text("Add up to 2 family members on Free. Enable FamCal Pro in Settings to keep adding.")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(themeManager.selectedTheme.accentColor)
+                    .padding(.horizontal, 16)
+            }
         }
     }
 }
@@ -361,4 +374,6 @@ private struct SettingsMenuRow: View {
     FamilyAndEventsView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(ThemeManager())
+        .environmentObject(AppSettingsManager())
+        .environmentObject(SupabaseDataManager.shared)
 }

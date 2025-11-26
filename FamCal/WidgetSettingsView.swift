@@ -16,6 +16,7 @@ struct WidgetSettingsView: View {
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
     private var toggleColor: Color { theme.accentGradient?.colors.first ?? theme.accentColor }
+    private var isLocked: Bool { !appSettingsManager.isProUser }
 
     private var widgetShowEventsBinding: Binding<Int> {
         Binding(
@@ -27,11 +28,31 @@ struct WidgetSettingsView: View {
         )
     }
 
-    private var widgetOwnCalendarsBinding: Binding<Bool> {
+    private var widgetShowTimeBinding: Binding<Bool> {
         Binding(
-            get: { appSettingsManager.widgetShowOwnCalendarsOnly },
+            get: { appSettingsManager.widgetShowTime },
             set: {
-                appSettingsManager.widgetShowOwnCalendarsOnly = $0
+                appSettingsManager.widgetShowTime = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var widgetShowMembersBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.widgetShowAttendees },
+            set: {
+                appSettingsManager.widgetShowAttendees = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var widgetShowLocationBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.widgetShowLocation },
+            set: {
+                appSettingsManager.widgetShowLocation = $0
                 Task { await appSettingsManager.saveSettings() }
             }
         )
@@ -43,12 +64,24 @@ struct WidgetSettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // MARK: - Family Events Widget Settings
+                    // MARK: - Family View Widget Settings
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Family Events Widget")
+                        Text("Family View Widget")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(secondaryTextColor)
                             .padding(.horizontal, 16)
+                            .overlay(alignment: .topTrailing) {
+                                if isLocked {
+                                    Text("Pro")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(theme.accentColor)
+                                        .clipShape(Capsule())
+                                        .offset(x: -6, y: 0)
+                                }
+                            }
 
                         settingsContainer {
                             HStack(spacing: 16) {
@@ -65,7 +98,7 @@ struct WidgetSettingsView: View {
                                 Spacer()
 
                                 Picker("", selection: widgetShowEventsBinding) {
-                                    ForEach(1...10, id: \.self) { count in
+                                    ForEach(1...5, id: \.self) { count in
                                         Text("\(count)").tag(count)
                                     }
                                 }
@@ -78,23 +111,82 @@ struct WidgetSettingsView: View {
 
                             HStack(spacing: 16) {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Own Calendars Only")
+                                    Text("Show Time")
                                         .font(.system(size: 16, weight: .medium))
                                         .foregroundColor(primaryTextColor)
 
-                                    Text("Show only your calendars")
+                                    Text("Display start and end times")
                                         .font(.system(size: 13))
                                         .foregroundColor(secondaryTextColor)
                                 }
 
                                 Spacer()
 
-                                Toggle("", isOn: widgetOwnCalendarsBinding)
+                                Toggle("", isOn: widgetShowTimeBinding)
+                                    .tint(toggleColor)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+
+                            Divider().padding(.leading, 16)
+
+                            HStack(spacing: 16) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Show Member Name")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(primaryTextColor)
+
+                                    Text("Include the member on each event")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(secondaryTextColor)
+                                }
+
+                                Spacer()
+
+                                Toggle("", isOn: widgetShowMembersBinding)
+                                    .tint(toggleColor)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+
+                            Divider().padding(.leading, 16)
+
+                            HStack(spacing: 16) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Show Location")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(primaryTextColor)
+
+                                    Text("Show event locations when available")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(secondaryTextColor)
+                                }
+
+                                Spacer()
+
+                                Toggle("", isOn: widgetShowLocationBinding)
                                     .tint(toggleColor)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                         }
+                        .overlay {
+                            if isLocked {
+                                ZStack {
+                                    theme.cardBackground.opacity(theme.prefersDarkInterface ? 0.55 : 0.75)
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "lock.fill")
+                                            .foregroundColor(theme.accentColor)
+                                        Text("Widgets are a FamCal Pro feature.\nEnable Pro in Settings > Test Only.")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .multilineTextAlignment(.center)
+                                            .foregroundColor(primaryTextColor)
+                                            .padding(.horizontal, 12)
+                                    }
+                                }
+                            }
+                        }
+                        .disabled(isLocked)
                     }
 
                     Spacer()
@@ -140,4 +232,5 @@ private extension WidgetSettingsView {
 #Preview {
     WidgetSettingsView()
         .environmentObject(ThemeManager())
+        .environmentObject(AppSettingsManager())
 }

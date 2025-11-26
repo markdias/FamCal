@@ -14,6 +14,7 @@ struct FamilySettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var authManager: SupabaseAuthManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -31,6 +32,9 @@ struct FamilySettingsView: View {
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
+    private var isAtFamilyLimit: Bool {
+        !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
+    }
 
     private enum ActiveSheet: Identifiable {
         case addMember
@@ -86,11 +90,11 @@ struct FamilySettingsView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 20))
-                                    .foregroundColor(theme.accentColor)
+                                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor : theme.accentColor)
 
                                 Text("Add Family Member")
                                     .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(theme.accentColor)
+                                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor : theme.accentColor)
 
                                 Spacer()
                             }
@@ -103,8 +107,27 @@ struct FamilySettingsView: View {
                             )
                             .cornerRadius(12)
                             .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
+                            .overlay(alignment: .trailing) {
+                                if isAtFamilyLimit {
+                                    Text("Pro")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(theme.accentColor)
+                                        .clipShape(Capsule())
+                                }
+                            }
                         }
                         .padding(.horizontal, 16)
+                        .disabled(isAtFamilyLimit)
+                        .opacity(isAtFamilyLimit ? 0.7 : 1.0)
+                        if isAtFamilyLimit {
+                            Text("Add up to 2 family members on Free. Enable FamCal Pro in Settings to keep adding.")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(theme.accentColor)
+                                .padding(.horizontal, 16)
+                        }
 
                         Spacer()
                             .frame(height: 24)
@@ -118,13 +141,6 @@ struct FamilySettingsView: View {
                     Text("My Family")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(primaryTextColor)
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(primaryTextColor)
-                    }
                 }
             }
         }
@@ -277,4 +293,7 @@ struct FamilySettingsView: View {
     FamilySettingsView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(ThemeManager())
+        .environmentObject(AppSettingsManager())
+        .environmentObject(SupabaseDataManager.shared)
+        .environmentObject(SupabaseAuthManager.shared)
 }

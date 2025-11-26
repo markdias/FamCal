@@ -103,15 +103,16 @@ struct DriversListView: View {
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
                                 .background(theme.cardBackground)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(theme.cardStroke, lineWidth: 1)
-                                )
-                                .cornerRadius(12)
-                                .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            }
-                            .padding(.horizontal, 16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(theme.cardStroke, lineWidth: 1)
+                            )
+                            .cornerRadius(12)
+                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                         }
+                        .padding(.horizontal, 16)
+                        // Pro gating handled in App Settings; data layer still enforces access
+                    }
 
                         Spacer()
                             .frame(height: 24)

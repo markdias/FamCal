@@ -783,7 +783,14 @@ struct EventDetailView: View {
                         request.naturalLanguageQuery = trimmedLocation
                         let search = MKLocalSearch(request: request)
                         let response = try await search.start()
-                        return response.mapItems.first?.location.coordinate
+                        if #available(iOS 26.0, *) {
+                            return response.mapItems.first?.location.coordinate
+                        } else {
+                            // Fallback on earlier versions - use CLGeocoder
+                            let geocoder = CLGeocoder()
+                            let placemarks = try await geocoder.geocodeAddressString(trimmedLocation)
+                            return placemarks.first?.location?.coordinate
+                        }
                     } else {
                         let geocoder = CLGeocoder()
                         let placemarks = try await geocoder.geocodeAddressString(trimmedLocation)
