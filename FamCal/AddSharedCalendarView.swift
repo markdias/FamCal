@@ -85,7 +85,7 @@ struct AddSharedCalendarView: View {
 
                                         VStack(spacing: 0) {
                                             ForEach(Array((calendarsBySource[sourceTitle] ?? []).enumerated()), id: \.element.id) { index, calendar in
-                                                let isAlreadyAdded = sharedCalendars.contains { $0.calendarID == calendar.id }
+                                                let isAlreadyAdded = sharedCalendars.contains { $0.calendarName == calendar.title }
 
                                                 Button(action: {
                                                     if isAlreadyAdded {
