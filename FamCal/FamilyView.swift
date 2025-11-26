@@ -17,6 +17,7 @@ struct FamilyView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private var eventsPerPerson: Int { appSettingsManager.eventsPerPerson }
@@ -213,7 +214,7 @@ struct FamilyView: View {
         }
         .background(Color.clear)
         .refreshable {
-            await reloadEvents()
+            await refreshAllData()
         }
         .onAppear(perform: setupView)
         .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }
@@ -898,17 +899,18 @@ struct FamilyView: View {
         stopRefreshTimer()
     }
 
+    @MainActor
     private func startRefreshTimer() {
         stopRefreshTimer()
-        // Update current time every minute for status indicators
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-            currentTime = Date()
-            // Reload events less frequently (at the auto-refresh interval)
-            if Int(Date().timeIntervalSinceReferenceDate) % (autoRefreshInterval * 60) == 0 {
+        // Refresh data on interval and keep current time updated for status indicators
+        let interval = TimeInterval(max(autoRefreshInterval, 1) * 60)
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            Task { @MainActor in
+                currentTime = Date()
+                await dataManager.fetchUserData()
                 loadNextEvents()
             }
         }
-        // Set initial current time
         currentTime = Date()
     }
 
@@ -1191,6 +1193,11 @@ struct FamilyView: View {
         loadNextEvents()
         // Wait for the task to complete with a brief delay to show refresh indicator
         try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+
+    private func refreshAllData() async {
+        await dataManager.fetchUserData()
+        loadNextEvents()
     }
     
     private func formatRelativeDate(_ date: Date) -> String {

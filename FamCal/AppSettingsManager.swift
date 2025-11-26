@@ -71,6 +71,7 @@ class AppSettingsManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var hasLoadedForUserId: String?
     private var isLoading = false
+    private var refreshCancellable: AnyCancellable?
 
     init(supabaseManager: SupabaseManager? = nil, authManager: SupabaseAuthManager? = nil) {
         self.supabaseManager = supabaseManager ?? SupabaseManager.shared
@@ -91,6 +92,23 @@ class AppSettingsManager: ObservableObject {
                     self.settingsId = nil
                     self.hasLoadedForUserId = nil
                 }
+            }
+            .store(in: &cancellables)
+
+        // Auto-save on local changes (debounced)
+        self.objectWillChange
+            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                Task { await self.saveSettings() }
+            }
+            .store(in: &cancellables)
+
+        // Restart auto-refresh timer when interval changes
+        $autoRefreshInterval
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.startAutoRefreshTimer()
             }
             .store(in: &cancellables)
     }
@@ -128,6 +146,7 @@ class AppSettingsManager: ObservableObject {
             syncWidgetPreferencesToAppGroup()
             print("✅ App settings loaded from Supabase")
             self.hasLoadedForUserId = userId
+            startAutoRefreshTimer()
         } catch {
             print("⚠️ Error loading app settings: \(error)")
             print("ℹ️ Creating initial settings record for user...")
@@ -148,6 +167,7 @@ class AppSettingsManager: ObservableObject {
                 syncWidgetPreferencesToAppGroup()
                 print("✅ App settings loaded from Supabase (post-create)")
                 self.hasLoadedForUserId = userId
+                startAutoRefreshTimer()
             } catch {
                 print("⚠️ Error creating initial settings: \(error)")
                 // Continue with default settings if creation also fails
@@ -266,6 +286,17 @@ class AppSettingsManager: ObservableObject {
         }
 
         defaults.set(familyMemberOrder, forKey: "familyMemberOrder")
+    }
+
+    private func startAutoRefreshTimer() {
+        refreshCancellable?.cancel()
+        guard authManager.isAuthenticated, !authManager.isGuest else { return }
+        let intervalMinutes = max(autoRefreshInterval, 1)
+        refreshCancellable = Timer.publish(every: TimeInterval(intervalMinutes * 60), on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { await self?.loadSettings() }
+            }
     }
 
     @MainActor

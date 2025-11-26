@@ -15,6 +15,7 @@ struct FamilySettingsView: View {
     @EnvironmentObject private var authManager: SupabaseAuthManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
+    private let supabaseManager = SupabaseManager.shared
 
     @FetchRequest(
         entity: FamilyMember.entity(),
@@ -28,6 +29,15 @@ struct FamilySettingsView: View {
     @State private var activeSheet: ActiveSheet? = nil
     @State private var memberPendingDelete: FamilyMember? = nil
     @State private var showingDeleteConfirmation = false
+    @State private var inviteEmail: String = ""
+    @State private var selectedInviteMember: FamilyMember?
+    @State private var isSendingInvite = false
+    @State private var inviteMessage: String?
+    @State private var familyName: String = ""
+    @State private var isUpdatingFamilyName = false
+    @State private var familyNameMessage: String?
+    @State private var isOwner: Bool = false
+    @State private var familyId: String?
     
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -129,6 +139,101 @@ struct FamilySettingsView: View {
                                 .padding(.horizontal, 16)
                         }
 
+                        // MARK: - Family Name Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Family Name")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .padding(.horizontal, 16)
+
+                            settingsContainer {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    TextField("e.g. The Dias Family", text: $familyName)
+                                        .padding(12)
+                                        .background(theme.cardBackground)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .stroke(theme.cardStroke, lineWidth: 1)
+                                        )
+                                        .cornerRadius(10)
+                                        .disabled(!isOwner)
+
+                                    if let familyNameMessage {
+                                        Text(familyNameMessage)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(theme.accentColor)
+                                    }
+
+                                    Button(action: saveFamilyName) {
+                                        HStack {
+                                            if isUpdatingFamilyName { ProgressView() }
+                                            Text("Save Family Name")
+                                                .font(.system(size: 15, weight: .semibold))
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(theme.accentColor)
+                                    .disabled(!isOwner || isUpdatingFamilyName || familyName.isEmpty)
+                                }
+                                .padding(12)
+                            }
+                        }
+
+                        // MARK: - Invite Section
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Invite to FamCal")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .padding(.horizontal, 16)
+
+                            settingsContainer {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Picker("Select member", selection: $selectedInviteMember) {
+                                        Text("Choose a member").tag(Optional<FamilyMember>.none)
+                                        ForEach(familyMembers, id: \.self) { member in
+                                            Text(member.name ?? "Member").tag(Optional(member))
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+
+                                    TextField("Invitee email", text: $inviteEmail)
+                                        .textContentType(.emailAddress)
+                                        .keyboardType(.emailAddress)
+                                        .autocapitalization(.none)
+                                        .padding(12)
+                                        .background(theme.cardBackground)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .stroke(theme.cardStroke, lineWidth: 1)
+                                        )
+                                        .cornerRadius(10)
+
+                                    if let inviteMessage {
+                                        Text(inviteMessage)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(theme.accentColor)
+                                    }
+
+                                    Button(action: sendInvite) {
+                                        HStack {
+                                            if isSendingInvite {
+                                                ProgressView()
+                                                    .progressViewStyle(.circular)
+                                            }
+                                            Text("Send Invite")
+                                                .font(.system(size: 15, weight: .semibold))
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(theme.accentColor)
+                                    .disabled(isSendingInvite || selectedInviteMember == nil || inviteEmail.isEmpty)
+                                }
+                                .padding(12)
+                            }
+                        }
+
                         Spacer()
                             .frame(height: 24)
                     }
@@ -168,6 +273,9 @@ struct FamilySettingsView: View {
         } message: { member in
             Text("Are you sure you want to delete \(member.name ?? "this member")? This cannot be undone.")
         }
+        .onAppear {
+            loadFamilyName()
+        }
     }
 
     private func deleteMember(_ member: FamilyMember) {
@@ -195,7 +303,76 @@ struct FamilySettingsView: View {
             }
         }
     }
-    
+
+    private func saveFamilyName() {
+        guard let familyId else {
+            familyNameMessage = "Family not found."
+            return
+        }
+        guard isOwner else {
+            familyNameMessage = "Only the owner can update the family name."
+            return
+        }
+        isUpdatingFamilyName = true
+        familyNameMessage = nil
+        Task {
+            do {
+                try await supabaseManager.updateFamilyName(familyId: familyId, name: familyName)
+                familyNameMessage = "Saved"
+            } catch {
+                familyNameMessage = "Failed to save: \(error.localizedDescription)"
+            }
+            isUpdatingFamilyName = false
+        }
+    }
+
+    private func linkedEmail(for member: FamilyMember) -> String? {
+        guard let id = member.id else { return nil }
+        return dataManager.memberLinkedEmails[id]
+    }
+
+    private func loadFamilyName() {
+        Task {
+            do {
+                if let family = try await supabaseManager.getCurrentFamily() {
+                    familyId = family.id
+                    familyName = family.family_name ?? ""
+                    isOwner = (family.owner_user_id == authManager.userId)
+                } else {
+                    familyNameMessage = "Family not found."
+                }
+            } catch {
+                familyNameMessage = "Failed to load family name: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func sendInvite() {
+        guard !isSendingInvite else { return }
+        guard let member = selectedInviteMember, let memberId = member.id else {
+            inviteMessage = "Select a member to invite."
+            return
+        }
+        guard !inviteEmail.isEmpty else {
+            inviteMessage = "Enter an email address."
+            return
+        }
+        inviteMessage = nil
+        isSendingInvite = true
+
+        Task {
+            do {
+                try await supabaseManager.createFamilyInvitation(familyMemberId: memberId, inviteeEmail: inviteEmail)
+                inviteMessage = "Invite sent to \(inviteEmail)"
+                inviteEmail = ""
+                selectedInviteMember = nil
+            } catch {
+                inviteMessage = "Failed to send invite: \(error.localizedDescription)"
+            }
+            isSendingInvite = false
+        }
+    }
+
     private var emptyStateView: some View {
         VStack(spacing: 16) {
             Image(systemName: "person.2.circle")
@@ -260,6 +437,15 @@ struct FamilySettingsView: View {
                     Text("\((member.memberCalendars?.count) ?? 0) calendar\((member.memberCalendars?.count) ?? 0 != 1 ? "s" : "")")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(secondaryTextColor)
+                    if let email = linkedEmail(for: member) {
+                        Text(email)
+                            .font(.system(size: 12))
+                            .foregroundColor(secondaryTextColor)
+                    } else {
+                        Text("Not linked")
+                            .font(.system(size: 12))
+                            .foregroundColor(secondaryTextColor)
+                    }
                 }
 
                 Spacer()

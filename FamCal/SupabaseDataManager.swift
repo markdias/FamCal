@@ -16,8 +16,10 @@ class SupabaseDataManager: ObservableObject {
     @MainActor @Published var familyMembers: [FamilyMemberDTO] = []
     @MainActor @Published var familyMemberCalendars: [FamilyMemberCalendarDTO] = []
     @MainActor @Published var sharedCalendars: [SharedCalendarDTO] = []
+    @MainActor @Published var personalCalendars: [PersonalCalendarDTO] = []
     @MainActor @Published var drivers: [DriverDTO] = []
     @MainActor @Published var savedAddresses: [SavedAddressDTO] = []
+    @MainActor @Published var memberLinkedEmails: [UUID: String] = [:]
     @MainActor @Published var isLoading = false
     @MainActor @Published var errorMessage: String?
 
@@ -87,31 +89,33 @@ class SupabaseDataManager: ObservableObject {
                 print("ℹ️ Fetching family members from Supabase...")
             async let familyMembers = supabaseManager.getFamilyMembers(userId: userId)
             async let sharedCalendars = supabaseManager.getSharedCalendars(userId: userId)
+            async let personalCalendars = supabaseManager.getPersonalCalendars(userId: userId)
             async let drivers = supabaseManager.getDrivers(userId: userId)
             async let savedAddresses = supabaseManager.getSavedAddresses(userId: userId)
             async let eventMetadata = supabaseManager.getCalendarEventMetadata(userId: userId)
 
             self.familyMembers = try await familyMembers
             print("✅ Fetched \(self.familyMembers.count) family members from Supabase")
+            await populateMemberEmails(from: self.familyMembers)
 
             print("ℹ️ Fetching family member calendars from Supabase...")
             var calendarDTOs = try await fetchAllFamilyMemberCalendars()
             self.familyMemberCalendars = calendarDTOs
             print("✅ Fetched \(calendarDTOs.count) family member calendars from Supabase")
 
-            // Attempt to remap missing calendar IDs to this device and persist new links
-            if await remapMissingCalendarsToDevice(
-                familyMembers: self.familyMembers,
-                memberCalendars: calendarDTOs
-            ) {
-                print("ℹ️ Refreshing family member calendars after remapping...")
+            // If no calendars are linked yet, attempt an auto-link pass by matching calendar names on device
+            if calendarDTOs.isEmpty, await autoLinkCalendarsIfEmpty(familyMembers: self.familyMembers) {
+                print("ℹ️ Refetching calendars after auto-link...")
                 calendarDTOs = try await fetchAllFamilyMemberCalendars()
                 self.familyMemberCalendars = calendarDTOs
-                print("✅ Refetched \(calendarDTOs.count) family member calendars after remap")
+                print("✅ Fetched \(calendarDTOs.count) family member calendars after auto-link")
             }
 
             self.sharedCalendars = try await sharedCalendars
             print("✅ Fetched \(self.sharedCalendars.count) shared calendars from Supabase")
+
+            self.personalCalendars = try await personalCalendars
+            print("✅ Fetched \(self.personalCalendars.count) personal calendars from Supabase")
 
             if let fetchedDrivers = try? await drivers {
                 self.drivers = fetchedDrivers
@@ -148,6 +152,10 @@ class SupabaseDataManager: ObservableObject {
                     supabaseCalendars: self.sharedCalendars,
                     to: context
                 )
+                SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
+                    supabaseCalendars: self.personalCalendars,
+                    to: context
+                )
                 SupabaseDataSync.shared.syncDriversFromSupabase(
                     supabaseDrivers: self.drivers,
                     to: context
@@ -167,6 +175,10 @@ class SupabaseDataManager: ObservableObject {
 
             print("✅ Data fetch complete: \(self.familyMembers.count) family members and \(self.sharedCalendars.count) shared calendars")
         } catch {
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                print("ℹ️ Data fetch cancelled (likely superseded by a newer request)")
+                return
+            }
             errorMessage = "Failed to fetch data: \(error.localizedDescription)"
             print("❌ Error fetching user data: \(error)")
         }
@@ -183,85 +195,84 @@ class SupabaseDataManager: ObservableObject {
         return allCalendars
     }
 
-    private func remapMissingCalendarsToDevice(
-        familyMembers: [FamilyMemberDTO],
-        memberCalendars: [FamilyMemberCalendarDTO]
-    ) async -> Bool {
+    private func autoLinkCalendarsIfEmpty(familyMembers: [FamilyMemberDTO]) async -> Bool {
         // Only attempt if the app can see calendars
         let calendarStatus = EKEventStore.authorizationStatus(for: .event)
         if #available(iOS 17.0, *) {
             guard calendarStatus == .fullAccess || calendarStatus == .writeOnly else {
-                print("ℹ️ Skipping calendar remap: calendar permission not granted")
+                print("ℹ️ Skipping auto-link: calendar permission not granted")
                 return false
             }
         } else {
             guard calendarStatus == .authorized else {
-                print("ℹ️ Skipping calendar remap: calendar permission not granted")
+                print("ℹ️ Skipping auto-link: calendar permission not granted")
                 return false
             }
         }
 
         let availableCalendars = CalendarManager.shared.fetchAvailableCalendars()
         guard !availableCalendars.isEmpty else {
-            print("ℹ️ Skipping calendar remap: no local calendars available")
+            print("ℹ️ Skipping auto-link: no local calendars available")
             return false
         }
 
-        let availableCalendarsById = Dictionary(uniqueKeysWithValues: availableCalendars.map { ($0.id, $0) })
-        var addedLinks = false
+        var usedIds = Set<String>()
+        var linked = false
 
         for member in familyMembers {
-            let memberCalendars = memberCalendars.filter { $0.family_member_id == member.id }
-            var knownIds = Set(memberCalendars.map { $0.calendar_id })
+            let targetName = member.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !targetName.isEmpty else { continue }
+            // Exact match first, then contains
+            let match = availableCalendars.first(where: { cal in
+                !usedIds.contains(cal.id) && cal.title.lowercased() == targetName
+            }) ?? availableCalendars.first(where: { cal in
+                !usedIds.contains(cal.id) && cal.title.lowercased().contains(targetName)
+            })
+            guard let match else { continue }
 
-            for link in memberCalendars where availableCalendarsById[link.calendar_id] == nil {
-                guard let match = matchCalendar(
-                    named: link.calendar_name,
-                    in: availableCalendars,
-                    excluding: knownIds
-                ) else {
-                    continue
-                }
-
-                do {
-                    try await supabaseManager.addFamilyMemberCalendar(
-                        memberId: member.id,
-                        calendarId: match.id,
-                        calendarName: match.title,
-                        calendarColorHex: match.color.hex(),
-                        isAutoLinked: true
-                    )
-                    knownIds.insert(match.id)
-                    addedLinks = true
-                    print("✅ Auto-remapped calendar '\(link.calendar_name)' for \(member.name) to local ID \(match.id)")
-                } catch {
-                    print("⚠️ Failed to auto-remap calendar '\(link.calendar_name)' for \(member.name): \(error.localizedDescription)")
-                }
+            do {
+                try await supabaseManager.addFamilyMemberCalendar(
+                    memberId: member.id,
+                    calendarName: match.title,
+                    calendarColorHex: match.color.hex(),
+                    isAutoLinked: true,
+                    familyId: member.family_id
+                )
+                usedIds.insert(match.id)
+                linked = true
+                print("✅ Auto-linked calendar '\(match.title)' to member \(member.name)")
+            } catch {
+                print("⚠️ Failed to auto-link calendar '\(match.title)' for \(member.name): \(error.localizedDescription)")
             }
         }
 
-        return addedLinks
+        return linked
     }
 
-    private func matchCalendar(
-        named calendarName: String,
-        in availableCalendars: [AvailableCalendar],
-        excluding existingIds: Set<String>
-    ) -> AvailableCalendar? {
-        let targetName = calendarName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !targetName.isEmpty else { return nil }
-
-        // Exact title match first
-        if let exact = availableCalendars.first(where: {
-            $0.title.lowercased() == targetName && !existingIds.contains($0.id)
-        }) {
-            return exact
+    @MainActor
+    private func populateMemberEmails(from members: [FamilyMemberDTO]) async {
+        let linkedIds = members.compactMap { $0.linked_user_id }
+        guard !linkedIds.isEmpty else {
+            memberLinkedEmails = [:]
+            return
         }
 
-        // Fallback: contains match (to handle suffixes like "(Family)")
-        return availableCalendars.first(where: {
-            $0.title.lowercased().contains(targetName) && !existingIds.contains($0.id)
-        })
+        do {
+            let profiles = try await supabaseManager.getProfiles(userIds: linkedIds)
+            var map: [UUID: String] = [:]
+            for member in members {
+                if let linked = member.linked_user_id,
+                   let email = profiles.first(where: { $0.id == linked })?.email,
+                   let memberUUID = UUID(uuidString: member.id) {
+                    map[memberUUID] = email
+                }
+            }
+            memberLinkedEmails = map
+            print("✅ Populated linked emails for \(map.count) members")
+        } catch {
+            print("⚠️ Failed to populate member emails: \(error.localizedDescription)")
+            memberLinkedEmails = [:]
+        }
     }
 
     @MainActor
@@ -330,20 +341,6 @@ class SupabaseDataManager: ObservableObject {
 
         // Refresh family members list
         await fetchUserData()
-    }
-
-    /// Update a family member's calendar ID when matched on a new device
-    func updateFamilyMemberCalendarId(memberId: String, calendarName: String, newCalendarId: String) async {
-        do {
-            print("📱 Updating calendar ID for member \(memberId): '\(calendarName)' → \(newCalendarId)")
-            try await supabaseManager.updateFamilyMemberCalendarId(memberId: memberId, calendarName: calendarName, newCalendarId: newCalendarId)
-
-            // Refresh to get the updated calendar data
-            await fetchUserData()
-            print("✅ Successfully updated calendar ID in Supabase")
-        } catch {
-            print("❌ Error updating calendar ID: \(error)")
-        }
     }
 
     /// Update family member locally only (for guest mode - no Supabase sync)
@@ -415,7 +412,7 @@ class SupabaseDataManager: ObservableObject {
     }
 
     @MainActor
-    func addSharedCalendar(calendarId: String, calendarName: String, calendarColorHex: String) async throws -> SharedCalendarDTO {
+    func addSharedCalendar(calendarName: String, calendarColorHex: String) async throws -> SharedCalendarDTO {
         if !appSettingsManager.isProUser && sharedCalendars.count >= appSettingsManager.maxSharedCalendarsAllowed {
             print("❌ Shared calendar limit reached for Free plan. Enable Pro to add more.")
             throw NSError(domain: "ProLimit", code: -1, userInfo: [NSLocalizedDescriptionKey: "Free plan allows 1 shared calendar. Enable Pro to add more."])
@@ -423,21 +420,21 @@ class SupabaseDataManager: ObservableObject {
 
         if authManager.isGuest {
             // For guests, create shared calendar locally
-            return try addSharedCalendarLocal(calendarId: calendarId, calendarName: calendarName, calendarColorHex: calendarColorHex)
+            return try addSharedCalendarLocal(calendarName: calendarName, calendarColorHex: calendarColorHex)
         }
 
         guard let userId = authManager.userId else {
             throw NSError(domain: "NoUserID", code: -1)
         }
 
-        let createdCalendar = try await supabaseManager.addSharedCalendar(userId: userId, calendarId: calendarId, calendarName: calendarName, calendarColorHex: calendarColorHex)
+        let createdCalendar = try await supabaseManager.addSharedCalendar(userId: userId, calendarName: calendarName, calendarColorHex: calendarColorHex)
         print("✅ Shared calendar created in Supabase (ID: \(createdCalendar.id))")
 
         // Refresh shared calendars list
         await fetchUserData()
 
         // Return the newly created shared calendar
-        guard let newCalendar = sharedCalendars.first(where: { $0.calendar_id == calendarId }) else {
+        guard let newCalendar = sharedCalendars.first(where: { $0.calendar_name == calendarName }) else {
             throw NSError(domain: "CalendarNotFound", code: -1)
         }
         return newCalendar
@@ -445,7 +442,7 @@ class SupabaseDataManager: ObservableObject {
 
     /// Add shared calendar locally only (for guest mode - no Supabase sync)
     @MainActor
-    private func addSharedCalendarLocal(calendarId: String, calendarName: String, calendarColorHex: String) throws -> SharedCalendarDTO {
+    private func addSharedCalendarLocal(calendarName: String, calendarColorHex: String) throws -> SharedCalendarDTO {
         guard authManager.isGuest else {
             throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use addSharedCalendar for authenticated users"])
         }
@@ -456,7 +453,6 @@ class SupabaseDataManager: ObservableObject {
 
         let sharedCalendar = SharedCalendar(context: context)
         sharedCalendar.id = UUID()
-        sharedCalendar.calendarID = calendarId
         sharedCalendar.calendarName = calendarName
         sharedCalendar.calendarColorHex = calendarColorHex
 
@@ -474,7 +470,6 @@ class SupabaseDataManager: ObservableObject {
             return SharedCalendarDTO(
                 id: sharedCalendar.id?.uuidString ?? "",
                 user_id: "",
-                calendar_id: calendarId,
                 calendar_name: calendarName,
                 calendar_color_hex: calendarColorHex,
                 created_at: nil
@@ -496,8 +491,48 @@ class SupabaseDataManager: ObservableObject {
         let userId = authManager.userId ?? ""
         try await supabaseManager.deleteSharedCalendar(id: id, userId: userId)
 
-        // Refresh shared calendars list
-        await fetchUserData()
+        // Remove from in-memory list immediately without full refresh
+        // (fetchUserData would re-fetch and re-add if not fully deleted yet)
+        sharedCalendars.removeAll { $0.id == id }
+        print("✅ Removed shared calendar from in-memory list")
+    }
+
+    @MainActor
+    func addPersonalCalendar(calendarName: String, calendarColorHex: String) async throws -> PersonalCalendarDTO {
+        guard let userId = authManager.userId else {
+            throw NSError(domain: "NoUserID", code: -1)
+        }
+
+        let createdCalendar = try await supabaseManager.addPersonalCalendar(userId: userId, calendarName: calendarName, calendarColorHex: calendarColorHex)
+        print("✅ Personal calendar created in Supabase (ID: \(createdCalendar.id))")
+
+        // Add to in-memory list immediately
+        personalCalendars.append(createdCalendar)
+
+        // Sync to CoreData
+        if let context = managedObjectContext {
+            SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
+                supabaseCalendars: personalCalendars,
+                to: context
+            )
+        }
+
+        return createdCalendar
+    }
+
+    @MainActor
+    func deletePersonalCalendar(id: String) async throws {
+        if authManager.isGuest {
+            try deletePersonalCalendarLocal(id: id)
+            return
+        }
+
+        let userId = authManager.userId ?? ""
+        try await supabaseManager.deletePersonalCalendar(id: id, userId: userId)
+
+        // Remove from in-memory list immediately
+        personalCalendars.removeAll { $0.id == id }
+        print("✅ Removed personal calendar from in-memory list")
     }
 
     /// Delete shared calendar locally only (for guest mode - no Supabase sync)
@@ -649,10 +684,40 @@ class SupabaseDataManager: ObservableObject {
 
     // MARK: - Data Management
 
+    /// Delete personal calendar locally only (for guest mode - no Supabase sync)
+    @MainActor
+    private func deletePersonalCalendarLocal(id: String) throws {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use deletePersonalCalendar for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let fetchRequest = PersonalCalendar.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+
+        guard let personalCalendar = try context.fetch(fetchRequest).first else {
+            throw NSError(domain: "CalendarNotFound", code: -1, userInfo: ["message": "Personal calendar not found"])
+        }
+
+        context.delete(personalCalendar)
+
+        do {
+            try context.save()
+            print("✅ Personal calendar '\(personalCalendar.calendarName ?? "Unknown")' deleted locally (guest mode)")
+        } catch {
+            print("❌ Error deleting personal calendar locally: \(error)")
+            throw error
+        }
+    }
+
     @MainActor
     func clearData() {
         familyMembers = []
         sharedCalendars = []
+        personalCalendars = []
         drivers = []
         savedAddresses = []
         errorMessage = nil
@@ -683,6 +748,13 @@ class SupabaseDataManager: ObservableObject {
             let sharedCalendarFetch = SharedCalendar.fetchRequest()
             let sharedCalendars = try context.fetch(sharedCalendarFetch)
             for calendar in sharedCalendars {
+                context.delete(calendar)
+            }
+
+            // Delete all personal calendars
+            let personalCalendarFetch = PersonalCalendar.fetchRequest()
+            let personalCalendars = try context.fetch(personalCalendarFetch)
+            for calendar in personalCalendars {
                 context.delete(calendar)
             }
 

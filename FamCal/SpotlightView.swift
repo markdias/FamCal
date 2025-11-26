@@ -240,8 +240,8 @@ struct SpotlightView: View {
                         if !event.isAllDay, let timeRange = event.timeRange {
                             let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                             Text(startTime)
-                                .font(.system(size: 14, design: .monospaced))
-                                .fontWeight(.semibold)
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(.gray)
                                 .lineLimit(1)
                                 .frame(width: 36, alignment: .trailing)
@@ -269,8 +269,8 @@ struct SpotlightView: View {
                                 if !event.isAllDay, let timeRange = event.timeRange {
                                     let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                                     Text(endTime)
-                                        .font(.system(size: 14, design: .monospaced))
-                                        .fontWeight(.semibold)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .monospacedDigit()
                                         .foregroundColor(.gray)
                                         .lineLimit(1)
                                         .frame(width: 36, alignment: .trailing)
@@ -283,8 +283,8 @@ struct SpotlightView: View {
                         HStack(spacing: 0) {
                             Spacer()
                             Text(endTime)
-                                .font(.system(size: 14, design: .monospaced))
-                                .fontWeight(.semibold)
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundColor(.gray)
                                 .lineLimit(1)
                                 .frame(width: 36, alignment: .trailing)

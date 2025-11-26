@@ -334,7 +334,6 @@ struct AddFamilyMemberView: View {
                             } else {
                                 try await dataManager.supabaseManager.addFamilyMemberCalendar(
                                     memberId: existingMember.id?.uuidString ?? "",
-                                    calendarId: matched.id,
                                     calendarName: matched.title,
                                     calendarColorHex: matched.color.hex(),
                                     isAutoLinked: true
@@ -381,7 +380,6 @@ struct AddFamilyMemberView: View {
                        let newMember = dataManager.familyMembers.first(where: { $0.name == name }) {
                         try await dataManager.supabaseManager.addFamilyMemberCalendar(
                             memberId: newMember.id,
-                            calendarId: matched.id,
                             calendarName: matched.title,
                             calendarColorHex: matched.color.hex(),
                             isAutoLinked: true

@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var showingWidgetSettings = false
     @State private var showingThemeSettings = false
     @State private var showingSharedCalendars = false
+    @State private var showingPersonalCalendars = false
     @State private var showingSavedPlaces = false
     @State private var showingDrivers = false
     @State private var showingHelp = false
@@ -195,6 +196,11 @@ struct SettingsView: View {
                                     }
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
+                                }
+                                Divider().padding(.leading, 56)
+
+                                Button(action: { showingPersonalCalendars = true }) {
+                                    SettingsRowView(iconName: "calendar", title: "Personal Calendars", showChevron: true)
                                 }
                                 Divider().padding(.leading, 56)
 
@@ -430,6 +436,15 @@ struct SettingsView: View {
         .sheet(isPresented: $showingSharedCalendars) {
             NavigationView {
                 SharedCalendarsView()
+                    .environment(\.managedObjectContext, viewContext)
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
+                    .environmentObject(dataManager)
+            }
+        }
+        .sheet(isPresented: $showingPersonalCalendars) {
+            NavigationView {
+                PersonalCalendarsView()
                     .environment(\.managedObjectContext, viewContext)
                     .environmentObject(appSettingsManager)
                     .environmentObject(themeManager)

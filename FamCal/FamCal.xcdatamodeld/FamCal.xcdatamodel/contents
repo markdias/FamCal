@@ -68,6 +68,11 @@
         <attribute name="latitude" optional="YES" attributeType="Double" usesScalarValueType="YES" defaultValue="0.0"/>
         <attribute name="longitude" optional="YES" attributeType="Double" usesScalarValueType="YES" defaultValue="0.0"/>
     </entity>
+    <entity name="PersonalCalendar" representedClassName="PersonalCalendar" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="calendarName" optional="YES" attributeType="String"/>
+        <attribute name="calendarColorHex" optional="YES" attributeType="String"/>
+    </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
         <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="134"/>
@@ -77,5 +82,6 @@
         <element name="Driver" positionX="396" positionY="-18" width="128" height="119"/>
         <element name="SavedAddress" positionX="486" positionY="-18" width="128" height="103"/>
         <element name="RecentSearch" positionX="576" positionY="-18" width="128" height="103"/>
+        <element name="PersonalCalendar" positionX="666" positionY="-18" width="128" height="103"/>
     </elements>
 </model>

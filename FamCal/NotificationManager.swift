@@ -321,18 +321,18 @@ class NotificationManager: NSObject, ObservableObject {
 
                     if let calendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
                         for calendar in calendars {
-                            if let calendarID = calendar.calendarID, !calendarID.isEmpty {
-                                lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                            if let calendarName = calendar.calendarName, !calendarName.isEmpty {
+                                lookup[calendarName] = CalendarOwnerInfo(memberId: memberId, displayName: name)
                             }
                         }
                     }
 
                     if let sharedCalendars = member.sharedCalendars as? Set<SharedCalendar> {
                         for shared in sharedCalendars {
-                            if let calendarID = shared.calendarID, !calendarID.isEmpty {
-                                if lookup[calendarID] == nil {
+                            if let calendarName = shared.calendarName, !calendarName.isEmpty {
+                                if lookup[calendarName] == nil {
                                     let displayName = shared.calendarName ?? "Shared Calendar"
-                                    lookup[calendarID] = CalendarOwnerInfo(memberId: nil, displayName: displayName)
+                                    lookup[calendarName] = CalendarOwnerInfo(memberId: nil, displayName: displayName)
                                 }
                             }
                         }

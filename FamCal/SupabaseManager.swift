@@ -68,16 +68,42 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    // MARK: - DTOs
+
+    struct ProfileDTO: Codable {
+        let id: String
+        let email: String?
+        let family_id: String?
+    }
+
+    struct FamilyDTO: Codable {
+        let id: String
+        let owner_user_id: String
+        let family_name: String?
+    }
+
     // MARK: - Family Members
 
     func createFamilyMember(userId: String, name: String, colorHex: String, token: String? = nil) async throws {
+        let userToken = token ?? authManager.accessToken
+
+        // Fetch profile to get family_id so the row is visible under family-scoped RLS
+        let familyId: String
+        if let profile = try? await getProfile(userId: userId, token: userToken), let fid = profile.family_id {
+            familyId = fid
+        } else if let family = try? await getFamilyForOwner(userId: userId, token: userToken) {
+            familyId = family.id
+        } else {
+            throw NSError(domain: "CreateFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id (no profile/family found). Please ensure profiles.family_id is set for the owner."])
+        }
+
         let body: [String: String] = [
             "user_id": userId,
+            "family_id": familyId,
             "name": name,
             "color_hex": colorHex
         ]
 
-        let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("POST", path: "rest/v1/family_members", body: body, userToken: userToken)
 
         guard statusCode == 201 else {
@@ -98,10 +124,100 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
-    func getFamilyMembers(userId: String, token: String? = nil) async throws -> [FamilyMemberDTO] {
-        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+    func getFamilyMember(id: String, token: String? = nil) async throws -> FamilyMemberDTO? {
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
         let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getFamilyMember")
+            throw NSError(domain: "GetFamilyMember", code: statusCode)
+        }
+
+        let members = try JSONDecoder().decode([FamilyMemberDTO].self, from: data)
+        return members.first
+    }
+
+    func getProfile(userId: String, token: String? = nil) async throws -> ProfileDTO {
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(userId)")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/profiles", queryItems: queryItems, userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getProfile")
+            throw NSError(domain: "GetProfile", code: statusCode)
+        }
+
+        let profiles = try JSONDecoder().decode([ProfileDTO].self, from: data)
+        guard let profile = profiles.first else {
+            throw NSError(domain: "GetProfile", code: -1, userInfo: [NSLocalizedDescriptionKey: "Profile not found"])
+        }
+        return profile
+    }
+
+    /// Fetch multiple profiles by user ids
+    func getProfiles(userIds: [String], token: String? = nil) async throws -> [ProfileDTO] {
+        guard !userIds.isEmpty else { return [] }
+        let ids = userIds.joined(separator: ",")
+        let queryItems = [URLQueryItem(name: "id", value: "in.(\(ids))")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/profiles", queryItems: queryItems, userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getProfiles")
+            throw NSError(domain: "GetProfiles", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([ProfileDTO].self, from: data)
+    }
+
+    private func getFamilyForOwner(userId: String, token: String? = nil) async throws -> FamilyDTO? {
+        let queryItems = [URLQueryItem(name: "owner_user_id", value: "eq.\(userId)")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/families", queryItems: queryItems, userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getFamilyForOwner")
+            throw NSError(domain: "GetFamilyForOwner", code: statusCode)
+        }
+
+        let families = try JSONDecoder().decode([FamilyDTO].self, from: data)
+        return families.first
+    }
+
+    /// Fetch the current family (first accessible row)
+    func getCurrentFamily(token: String? = nil) async throws -> FamilyDTO? {
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/families", userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getCurrentFamily")
+            throw NSError(domain: "GetFamily", code: statusCode)
+        }
+
+        let families = try JSONDecoder().decode([FamilyDTO].self, from: data)
+        return families.first
+    }
+
+    /// Update family name (owner only)
+    func updateFamilyName(familyId: String, name: String, token: String? = nil) async throws {
+        struct UpdateBody: Encodable { let family_name: String }
+        let userToken = token ?? authManager.accessToken
+        let body = UpdateBody(family_name: name)
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(familyId)")]
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/families", queryItems: queryItems, body: body, userToken: userToken)
+
+        // Supabase may return 200 with row or 204 with empty body on PATCH
+        guard statusCode == 200 || statusCode == 204 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "updateFamilyName")
+            throw NSError(domain: "UpdateFamily", code: statusCode)
+        }
+    }
+
+    func getFamilyMembers(userId: String, token: String? = nil) async throws -> [FamilyMemberDTO] {
+        // Fetch all family members visible to this user (RLS scopes to family)
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/family_members", userToken: userToken)
 
         guard statusCode == 200 else {
             logErrorResponse(data, statusCode: statusCode, operation: "getFamilyMembers")
@@ -126,24 +242,6 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
-    func updateFamilyMemberCalendarId(memberId: String, calendarName: String, newCalendarId: String, token: String? = nil) async throws {
-        struct CalendarUpdateBody: Encodable {
-            let calendar_id: String
-        }
-
-        let body = CalendarUpdateBody(calendar_id: newCalendarId)
-        let queryItems = [
-            URLQueryItem(name: "family_member_id", value: "eq.\(memberId)"),
-            URLQueryItem(name: "calendar_name", value: "eq.\(calendarName)")
-        ]
-        let userToken = token ?? authManager.accessToken
-        let (_, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_member_calendars", queryItems: queryItems, body: body, userToken: userToken)
-
-        guard statusCode == 200 else {
-            throw NSError(domain: "UpdateFamilyMemberCalendarId", code: statusCode, userInfo: ["message": "Failed to update calendar ID for \(calendarName)"])
-        }
-    }
-
     func deleteFamilyMember(id: String, token: String? = nil) async throws {
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
         let userToken = token ?? authManager.accessToken
@@ -154,20 +252,86 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    // MARK: - Invitations
+
+    /// Call Edge Function to create an invitation and send email.
+    func createFamilyInvitation(familyMemberId: UUID, inviteeEmail: String) async throws {
+        struct InviteBody: Encodable {
+            let family_member_id: UUID
+            let invitee_email: String
+        }
+
+        guard let userToken = authManager.accessToken else {
+            throw NSError(domain: "CreateInvitation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        let body = InviteBody(family_member_id: familyMemberId, invitee_email: inviteeEmail)
+        var headers: [String: String] = [:]
+        if !SupabaseConfig.inviteFunctionKey.isEmpty {
+            headers["x-invite-fn-key"] = SupabaseConfig.inviteFunctionKey
+        }
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "functions/v1/invite-email",
+            body: body,
+            userToken: userToken,
+            extraHeaders: headers
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "createFamilyInvitation")
+            throw NSError(domain: "CreateInvitation", code: statusCode)
+        }
+    }
+
+    /// Accept an invitation token via RPC.
+    func acceptInvitation(token: String) async throws {
+        struct AcceptBody: Encodable {
+            let invite_token: String
+        }
+
+        guard let userToken = authManager.accessToken else {
+            throw NSError(domain: "AcceptInvitation", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        let body = AcceptBody(invite_token: token)
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "rest/v1/rpc/accept_family_invitation",
+            body: body,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "acceptInvitation")
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "AcceptInvitation", code: statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+    }
+
     // MARK: - Family Member Calendars
 
-    func addFamilyMemberCalendar(memberId: String, calendarId: String, calendarName: String, calendarColorHex: String, isAutoLinked: Bool, token: String? = nil) async throws {
+    func addFamilyMemberCalendar(memberId: String, calendarName: String, calendarColorHex: String, isAutoLinked: Bool, familyId: String? = nil, token: String? = nil) async throws {
         struct CalendarBody: Encodable {
             let family_member_id: String
-            let calendar_id: String
+            let family_id: String
             let calendar_name: String
             let calendar_color_hex: String
             let is_auto_linked: Bool
         }
 
+        let resolvedFamilyId: String
+        if let familyId {
+            resolvedFamilyId = familyId
+        } else if let member = try await getFamilyMember(id: memberId, token: token), let fid = member.family_id {
+            resolvedFamilyId = fid
+        } else {
+            throw NSError(domain: "AddFamilyMemberCalendar", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id for member \(memberId)"])
+        }
+
         let body = CalendarBody(
             family_member_id: memberId,
-            calendar_id: calendarId,
+            family_id: resolvedFamilyId,
             calendar_name: calendarName,
             calendar_color_hex: calendarColorHex,
             is_auto_linked: isAutoLinked
@@ -205,10 +369,20 @@ class SupabaseManager: @unchecked Sendable {
 
     // MARK: - Shared Calendars
 
-    func addSharedCalendar(userId: String, calendarId: String, calendarName: String, calendarColorHex: String, token: String? = nil) async throws -> SharedCalendarDTO {
+    func addSharedCalendar(userId: String, calendarName: String, calendarColorHex: String, token: String? = nil) async throws -> SharedCalendarDTO {
+        // Resolve family_id for shared visibility
+        let familyId: String
+        if let profile = try? await getProfile(userId: userId, token: token), let fid = profile.family_id {
+            familyId = fid
+        } else if let family = try? await getCurrentFamily(token: token) {
+            familyId = family.id
+        } else {
+            throw NSError(domain: "AddSharedCalendar", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id on profile or current family"])
+        }
+
         let body: [String: String] = [
             "user_id": userId,
-            "calendar_id": calendarId,
+            "family_id": familyId,
             "calendar_name": calendarName,
             "calendar_color_hex": calendarColorHex
         ]
@@ -229,7 +403,7 @@ class SupabaseManager: @unchecked Sendable {
             print("ℹ️ Supabase returned empty body (201), calendar will be loaded on next sync")
             // Fetch shared calendars to get the newly created one
             let sharedCals = try await getSharedCalendars(userId: userId, token: userToken)
-            guard let newCalendar = sharedCals.first(where: { $0.calendar_id == calendarId }) else {
+            guard let newCalendar = sharedCals.first(where: { $0.calendar_name == calendarName }) else {
                 throw NSError(domain: "CalendarNotFound", code: -1)
             }
             return newCalendar
@@ -242,9 +416,9 @@ class SupabaseManager: @unchecked Sendable {
     }
 
     func getSharedCalendars(userId: String, token: String? = nil) async throws -> [SharedCalendarDTO] {
-        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        // RLS scopes to family_id; no explicit filter needed
         let userToken = token ?? authManager.accessToken
-        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/shared_calendars", queryItems: queryItems, userToken: userToken)
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/shared_calendars", userToken: userToken)
 
         guard statusCode == 200 else {
             throw NSError(domain: "GetSharedCalendars", code: statusCode)
@@ -268,6 +442,84 @@ class SupabaseManager: @unchecked Sendable {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("⚠️ Supabase delete response (status: \(statusCode)): \(errorMessage)")
             throw NSError(domain: "DeleteSharedCalendar", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+        }
+    }
+
+    func updateSharedCalendar(id: String, calendarName: String, calendarColorHex: String, token: String? = nil) async throws {
+        struct UpdateBody: Encodable {
+            let calendar_name: String
+            let calendar_color_hex: String
+        }
+
+        let body = UpdateBody(calendar_name: calendarName, calendar_color_hex: calendarColorHex)
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/shared_calendars", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard statusCode == 200 || statusCode == 204 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "updateSharedCalendar")
+            throw NSError(domain: "UpdateSharedCalendar", code: statusCode)
+        }
+    }
+
+    // MARK: - Personal Calendars
+
+    func addPersonalCalendar(userId: String, calendarName: String, calendarColorHex: String, token: String? = nil) async throws -> PersonalCalendarDTO {
+        let body: [String: String] = [
+            "user_id": userId,
+            "calendar_name": calendarName,
+            "calendar_color_hex": calendarColorHex
+        ]
+
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("POST", path: "rest/v1/personal_calendars", body: body, userToken: userToken)
+
+        guard statusCode == 201 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("⚠️ Supabase add response (status: \(statusCode)): \(errorMessage)")
+            throw NSError(domain: "AddPersonalCalendar", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+        }
+
+        // Try to parse the response, but handle empty body
+        if data.isEmpty {
+            print("ℹ️ Supabase returned empty body (201), calendar will be loaded on next sync")
+            let personalCals = try await getPersonalCalendars(userId: userId, token: userToken)
+            guard let newCalendar = personalCals.first(where: { $0.calendar_name == calendarName }) else {
+                throw NSError(domain: "CalendarNotFound", code: -1)
+            }
+            return newCalendar
+        }
+
+        let decoder = JSONDecoder()
+        let createdCalendar = try decoder.decode(PersonalCalendarDTO.self, from: data)
+        return createdCalendar
+    }
+
+    func getPersonalCalendars(userId: String, token: String? = nil) async throws -> [PersonalCalendarDTO] {
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/personal_calendars", userToken: userToken)
+
+        guard statusCode == 200 else {
+            throw NSError(domain: "GetPersonalCalendars", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([PersonalCalendarDTO].self, from: data)
+    }
+
+    func deletePersonalCalendar(id: String, userId: String? = nil, token: String? = nil) async throws {
+        var queryItems: [URLQueryItem] = [URLQueryItem(name: "id", value: "eq.\(id)")]
+
+        if let userId = userId {
+            queryItems.append(URLQueryItem(name: "user_id", value: "eq.\(userId)"))
+        }
+
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("DELETE", path: "rest/v1/personal_calendars", queryItems: queryItems, userToken: userToken)
+
+        guard statusCode == 204 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("⚠️ Supabase delete response (status: \(statusCode)): \(errorMessage)")
+            throw NSError(domain: "DeletePersonalCalendar", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorMessage])
         }
     }
 
@@ -419,9 +671,9 @@ class SupabaseManager: @unchecked Sendable {
     // MARK: - Saved Addresses
 
     func getSavedAddresses(userId: String, token: String? = nil) async throws -> [SavedAddressDTO] {
-        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        // RLS scopes to family_id; no explicit filter needed
         let userToken = token ?? authManager.accessToken
-        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/saved_addresses", queryItems: queryItems, userToken: userToken)
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/saved_addresses", userToken: userToken)
 
         guard statusCode == 200 else {
             logErrorResponse(data, statusCode: statusCode, operation: "getSavedAddresses")
@@ -441,14 +693,26 @@ class SupabaseManager: @unchecked Sendable {
     ) async throws {
         struct CreateSavedAddressBody: Encodable {
             let user_id: String
+            let family_id: String
             let name: String
             let address: String
             let latitude: Double
             let longitude: Double
         }
 
+        // Resolve family_id for shared visibility
+        let familyId: String
+        if let profile = try? await getProfile(userId: userId, token: token), let fid = profile.family_id {
+            familyId = fid
+        } else if let family = try? await getCurrentFamily(token: token) {
+            familyId = family.id
+        } else {
+            throw NSError(domain: "CreateSavedAddress", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id on profile"])
+        }
+
         let body = CreateSavedAddressBody(
             user_id: userId,
+            family_id: familyId,
             name: name,
             address: address,
             latitude: latitude,
@@ -478,9 +742,9 @@ class SupabaseManager: @unchecked Sendable {
     // MARK: - Calendar Event Metadata (app-only fields)
 
     func getCalendarEventMetadata(userId: String, token: String? = nil) async throws -> [CalendarEventMetadataDTO] {
-        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        // RLS scopes to family_id; no explicit filter needed
         let userToken = token ?? authManager.accessToken
-        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/calendar_event_metadata", queryItems: queryItems, userToken: userToken)
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/calendar_event_metadata", userToken: userToken)
 
         guard statusCode == 200 else {
             logErrorResponse(data, statusCode: statusCode, operation: "getCalendarEventMetadata")
@@ -494,7 +758,6 @@ class SupabaseManager: @unchecked Sendable {
 
     func upsertCalendarEventMetadata(
         userId: String,
-        calendarId: String,
         eventIdentifier: String,
         driverFamilyMemberId: String?,
         notes: String? = nil,
@@ -503,21 +766,19 @@ class SupabaseManager: @unchecked Sendable {
     ) async throws {
         struct MetadataBody: Encodable {
             let user_id: String
-            let calendar_id: String
             let event_identifier: String
             let driver_family_member_id: String?
             let notes: String?
             let extra: [String: AnyCodable]?
 
             enum CodingKeys: String, CodingKey {
-                case user_id, calendar_id, event_identifier, driver_family_member_id, notes, extra
+                case user_id, event_identifier, driver_family_member_id, notes, extra
             }
 
             // Encode nils explicitly so Supabase columns are cleared when a driver is removed
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
                 try container.encode(user_id, forKey: .user_id)
-                try container.encode(calendar_id, forKey: .calendar_id)
                 try container.encode(event_identifier, forKey: .event_identifier)
                 if let driver_family_member_id {
                     try container.encode(driver_family_member_id, forKey: .driver_family_member_id)
@@ -539,7 +800,6 @@ class SupabaseManager: @unchecked Sendable {
 
         let body = MetadataBody(
             user_id: userId,
-            calendar_id: calendarId,
             event_identifier: eventIdentifier,
             driver_family_member_id: driverFamilyMemberId,
             notes: notes,
@@ -566,7 +826,6 @@ class SupabaseManager: @unchecked Sendable {
             print("⚠️ UpsertCalendarEventMetadata hit 409, retrying with PATCH")
             let queryItems = [
                 URLQueryItem(name: "user_id", value: "eq.\(userId)"),
-                URLQueryItem(name: "calendar_id", value: "eq.\(calendarId)"),
                 URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)")
             ]
 
@@ -595,7 +854,6 @@ class SupabaseManager: @unchecked Sendable {
         if isClearingDriver {
             let deleteQuery = [
                 URLQueryItem(name: "user_id", value: "eq.\(userId)"),
-                URLQueryItem(name: "calendar_id", value: "eq.\(calendarId)"),
                 URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)")
             ]
             let (deleteData, deleteStatus) = try await makeRequest(
@@ -623,39 +881,51 @@ class SupabaseManager: @unchecked Sendable {
 struct FamilyMemberDTO: Codable {
     let id: String
     let user_id: String
+    let family_id: String?
+    let linked_user_id: String?
     let name: String
     let color_hex: String
     let created_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, name, color_hex, created_at
+        case id, user_id, family_id, linked_user_id, name, color_hex, created_at
     }
 }
 
 struct FamilyMemberCalendarDTO: Codable {
     let id: String
     let family_member_id: String
-    let calendar_id: String
     let calendar_name: String
     let calendar_color_hex: String
     let is_auto_linked: Bool
     let created_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, family_member_id, calendar_id, calendar_name, calendar_color_hex, is_auto_linked, created_at
+        case id, family_member_id, calendar_name, calendar_color_hex, is_auto_linked, created_at
     }
 }
 
 struct SharedCalendarDTO: Codable {
     let id: String
     let user_id: String
-    let calendar_id: String
     let calendar_name: String
     let calendar_color_hex: String
     let created_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, calendar_id, calendar_name, calendar_color_hex, created_at
+        case id, user_id, calendar_name, calendar_color_hex, created_at
+    }
+}
+
+struct PersonalCalendarDTO: Codable {
+    let id: String
+    let user_id: String
+    let calendar_name: String
+    let calendar_color_hex: String
+    let created_at: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, user_id, calendar_name, calendar_color_hex, created_at
     }
 }
 
@@ -691,7 +961,6 @@ struct AppSettingsUpdateRequest: Codable {
 struct CalendarEventMetadataDTO: Codable {
     let id: String
     let user_id: String
-    let calendar_id: String
     let event_identifier: String
     let driver_family_member_id: String?
     let notes: String?
@@ -700,7 +969,7 @@ struct CalendarEventMetadataDTO: Codable {
     let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, calendar_id, event_identifier, driver_family_member_id, notes, extra, created_at, updated_at
+        case id, user_id, event_identifier, driver_family_member_id, notes, extra, created_at, updated_at
     }
 }
 

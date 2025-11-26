@@ -811,7 +811,6 @@ struct EditEventView: View {
         do {
             try await SupabaseManager.shared.upsertCalendarEventMetadata(
                 userId: userId,
-                calendarId: calId,
                 eventIdentifier: upcomingEvent.id,
                 driverFamilyMemberId: driverFamilyMemberId,
                 extra: extra.isEmpty ? nil : extra
@@ -856,7 +855,6 @@ struct EditEventView: View {
             do {
                 try await SupabaseManager.shared.upsertCalendarEventMetadata(
                     userId: userId,
-                    calendarId: target.calendarId,
                     eventIdentifier: target.eventId,
                     driverFamilyMemberId: driverFamilyMemberId,
                     extra: extra.isEmpty ? nil : extra

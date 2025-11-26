@@ -398,7 +398,6 @@ struct SelectMemberCalendarsView: View {
                 do {
                     try await dataManager.supabaseManager.addFamilyMemberCalendar(
                         memberId: memberId,
-                        calendarId: calendar.id,
                         calendarName: calendar.title,
                         calendarColorHex: calendar.color.hex(),
                         isAutoLinked: false

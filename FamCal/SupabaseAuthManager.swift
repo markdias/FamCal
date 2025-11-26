@@ -614,6 +614,39 @@ class SupabaseAuthManager: ObservableObject {
             throw error
         }
     }
+
+    /// Update password using current authenticated session (used after recovery deep link)
+    func updatePassword(newPassword: String) async throws {
+        guard let accessToken = accessToken else {
+            throw NSError(domain: "AuthError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No access token available"])
+        }
+
+        let url = supabaseURL.appendingPathComponent("auth/v1/user")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        struct UpdatePasswordBody: Encodable {
+            let password: String
+        }
+
+        request.httpBody = try JSONEncoder().encode(UpdatePasswordBody(password: newPassword))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "InvalidResponse", code: -1)
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("❌ Failed to update password: \(message)")
+            throw NSError(domain: "AuthError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+
+        print("✅ Password updated successfully")
+    }
 }
 
 // MARK: - Response Models

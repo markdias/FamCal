@@ -692,7 +692,6 @@ struct EventDetailView: View {
         do {
             try await SupabaseManager.shared.upsertCalendarEventMetadata(
                 userId: userId,
-                calendarId: event.calendarID,
                 eventIdentifier: event.id,
                 driverFamilyMemberId: driverFamilyMemberId,
                 extra: extra.isEmpty ? nil : extra

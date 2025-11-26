@@ -22,22 +22,22 @@ struct NotificationCalendarSelectionView: View {
         for member in familyMembers {
             if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
                 for calendar in memberCalendars {
-                    guard let calendarID = calendar.calendarID, !seen.contains(calendarID) else { continue }
-                    seen.insert(calendarID)
+                    guard let calendarName = calendar.calendarName, !seen.contains(calendarName) else { continue }
+                    seen.insert(calendarName)
 
                     let color = Color.fromHex(calendar.calendarColorHex ?? "#007AFF")
-                    calendars.append((calendarID, calendar.calendarName ?? "Unknown", color))
+                    calendars.append((calendarName, calendarName, color))
                 }
             }
         }
 
         if let sharedCalendars = familyMembers.first?.sharedCalendars as? Set<SharedCalendar> {
             for calendar in sharedCalendars {
-                guard let calendarID = calendar.calendarID, !seen.contains(calendarID) else { continue }
-                seen.insert(calendarID)
+                guard let calendarName = calendar.calendarName, !seen.contains(calendarName) else { continue }
+                seen.insert(calendarName)
 
                 let color = Color.fromHex(calendar.calendarColorHex ?? "#007AFF")
-                calendars.append((calendarID, calendar.calendarName ?? "Unknown", color))
+                calendars.append((calendarName, calendarName, color))
             }
         }
 

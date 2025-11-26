@@ -1,15 +1,15 @@
 //
-//  AddSharedCalendarView.swift
+//  AddPersonalCalendarView.swift
 //  FamCal
 //
-//  Created by Mark Dias on 17/11/2025.
+//  Created by Mark Dias on 26/11/2025.
 //
 
 import SwiftUI
 import CoreData
 import EventKit
 
-struct AddSharedCalendarView: View {
+struct AddPersonalCalendarView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
@@ -17,26 +17,17 @@ struct AddSharedCalendarView: View {
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
-        entity: SharedCalendar.entity(),
+        entity: PersonalCalendar.entity(),
         sortDescriptors: []
     )
-    private var sharedCalendars: FetchedResults<SharedCalendar>
-
-    @FetchRequest(
-        entity: FamilyMember.entity(),
-        sortDescriptors: [NSSortDescriptor(keyPath: \FamilyMember.name, ascending: true)]
-    )
-    private var familyMembers: FetchedResults<FamilyMember>
+    private var personalCalendars: FetchedResults<PersonalCalendar>
 
     @State private var availableCalendars: [AvailableCalendar] = []
     @State private var isLoading = false
-    
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
-    private var isAtSharedCalendarLimit: Bool {
-        !appSettingsManager.isProUser && sharedCalendars.count >= appSettingsManager.maxSharedCalendarsAllowed
-    }
 
     var calendarsBySource: [String: [AvailableCalendar]] {
         Dictionary(grouping: availableCalendars) { $0.sourceTitle }
@@ -85,13 +76,13 @@ struct AddSharedCalendarView: View {
 
                                         VStack(spacing: 0) {
                                             ForEach(Array((calendarsBySource[sourceTitle] ?? []).enumerated()), id: \.element.id) { index, calendar in
-                                                let isAlreadyAdded = sharedCalendars.contains { $0.calendarID == calendar.id }
+                                                let isAlreadyAdded = personalCalendars.contains { $0.calendarName == calendar.title }
 
                                                 Button(action: {
                                                     if isAlreadyAdded {
-                                                        removeSharedCalendar(calendar)
+                                                        removePersonalCalendar(calendar)
                                                     } else {
-                                                        addSharedCalendar(calendar)
+                                                        addPersonalCalendar(calendar)
                                                     }
                                                 }) {
                                                     HStack(spacing: 12) {
@@ -171,20 +162,6 @@ struct AddSharedCalendarView: View {
                             .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                         }
                         .padding(.horizontal, 16)
-                        .disabled(isAtSharedCalendarLimit)
-                        .opacity(isAtSharedCalendarLimit ? 0.6 : 1.0)
-                        .overlay(alignment: .trailing) {
-                            if isAtSharedCalendarLimit {
-                                Text("Pro")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(theme.accentColor)
-                                    .clipShape(Capsule())
-                                    .offset(x: -6)
-                            }
-                        }
                     }
                     .padding(.bottom, 24)
                 }
@@ -192,7 +169,7 @@ struct AddSharedCalendarView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Add Shared Calendar")
+                    Text("Add Personal Calendar")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(primaryTextColor)
                 }
@@ -212,34 +189,27 @@ struct AddSharedCalendarView: View {
         }
     }
 
-    private func addSharedCalendar(_ calendar: AvailableCalendar) {
-        guard !isAtSharedCalendarLimit else {
-            print("❌ Shared calendar limit reached for Free plan. Enable Pro to add more.")
-            return
-        }
+    private func addPersonalCalendar(_ calendar: AvailableCalendar) {
         // Save to Supabase first
         Task {
             do {
-                _ = try await dataManager.addSharedCalendar(
+                _ = try await dataManager.addPersonalCalendar(
                     calendarName: calendar.title,
                     calendarColorHex: calendar.color.hex()
                 )
-                print("✅ Shared calendar saved to Supabase")
-
-                // Refresh data to sync shared calendars
-                await dataManager.fetchUserData()
+                print("✅ Personal calendar saved to Supabase")
             } catch {
-                print("❌ Error saving shared calendar: \(error)")
+                print("❌ Error saving personal calendar: \(error)")
             }
         }
     }
 
-    private func removeSharedCalendar(_ calendar: AvailableCalendar) {
-        print("🔍 removeSharedCalendar called for: \(calendar.title)")
+    private func removePersonalCalendar(_ calendar: AvailableCalendar) {
+        print("🔍 removePersonalCalendar called for: \(calendar.title)")
 
-        // Find the shared calendar in CoreData
-        if let sharedCalendar = sharedCalendars.first(where: { $0.calendarID == calendar.id }) {
-            guard let calendarId = sharedCalendar.id?.uuidString else {
+        // Find the personal calendar in CoreData
+        if let personalCalendar = personalCalendars.first(where: { $0.calendarName == calendar.title }) {
+            guard let calendarId = personalCalendar.id?.uuidString else {
                 print("❌ Cannot delete: calendar ID not available")
                 return
             }
@@ -247,10 +217,10 @@ struct AddSharedCalendarView: View {
             print("📱 Calendar ID: \(calendarId)")
 
             // Delete from CoreData first (immediate UI update)
-            viewContext.delete(sharedCalendar)
+            viewContext.delete(personalCalendar)
             do {
                 try viewContext.save()
-                print("✅ Shared calendar deleted from CoreData")
+                print("✅ Personal calendar deleted from CoreData")
             } catch {
                 let nsError = error as NSError
                 print("❌ Error deleting from CoreData: \(nsError), \(nsError.userInfo)")
@@ -264,8 +234,8 @@ struct AddSharedCalendarView: View {
                     let userId = dataManager.authManager.userId ?? "unknown"
                     print("📧 User ID for deletion: \(userId)")
 
-                    try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
-                    print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
+                    try await dataManager.deletePersonalCalendar(id: calendarId)
+                    print("✅ Personal calendar deleted from Supabase (ID: \(calendarId))")
                 } catch {
                     print("❌ Error deleting from Supabase: \(error)")
                     // Note: Calendar is already deleted from CoreData locally
@@ -273,12 +243,12 @@ struct AddSharedCalendarView: View {
                 }
             }
         } else {
-            print("⚠️ Could not find shared calendar in CoreData for ID: \(calendar.id)")
+            print("⚠️ Could not find personal calendar in CoreData for ID: \(calendar.id)")
         }
     }
 }
 
 #Preview {
-    AddSharedCalendarView()
+    AddPersonalCalendarView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
 }

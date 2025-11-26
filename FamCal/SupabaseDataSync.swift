@@ -82,7 +82,6 @@ class SupabaseDataSync {
                         memberCalendar.familyMember = member
                     }
                     
-                    memberCalendar.calendarID = calendarDTO.calendar_id
                     memberCalendar.calendarName = calendarDTO.calendar_name
                     memberCalendar.calendarColorHex = calendarDTO.calendar_color_hex
                     memberCalendar.isAutoLinked = calendarDTO.is_auto_linked
@@ -128,14 +127,12 @@ class SupabaseDataSync {
                 if let existingCalendar = matches.first {
                     // Update existing calendar
                     calendar = existingCalendar
-                    calendar.calendarID = supabaseDTO.calendar_id
                     calendar.calendarName = supabaseDTO.calendar_name
                     calendar.calendarColorHex = supabaseDTO.calendar_color_hex
                 } else {
                     // Create new calendar
                     calendar = SharedCalendar(context: context)
                     calendar.id = UUID(uuidString: supabaseDTO.id) ?? UUID()
-                    calendar.calendarID = supabaseDTO.calendar_id
                     calendar.calendarName = supabaseDTO.calendar_name
                     calendar.calendarColorHex = supabaseDTO.calendar_color_hex
                 }
@@ -150,6 +147,55 @@ class SupabaseDataSync {
             print("✅ Synced shared calendars from Supabase to CoreData")
         } catch {
             print("❌ Error syncing shared calendars: \(error)")
+        }
+    }
+
+    /// Syncs Supabase personal calendars to local CoreData
+    func syncPersonalCalendarsFromSupabase(
+        supabaseCalendars: [PersonalCalendarDTO],
+        to context: NSManagedObjectContext
+    ) {
+        do {
+            // Build a set of Supabase calendar IDs for quick lookup
+            let supabaseIds = Set(supabaseCalendars.map { $0.id })
+
+            // Fetch existing personal calendars
+            let fetchRequest: NSFetchRequest<PersonalCalendar> = PersonalCalendar.fetchRequest()
+            let existingCalendars = try context.fetch(fetchRequest)
+
+            // Delete calendars that no longer exist in Supabase
+            for existingCalendar in existingCalendars {
+                if let calendarId = existingCalendar.id?.uuidString, !supabaseIds.contains(calendarId) {
+                    context.delete(existingCalendar)
+                }
+            }
+
+            // Sync or update calendars from Supabase
+            for supabaseDTO in supabaseCalendars {
+                // Check if calendar already exists
+                let existingFetch: NSFetchRequest<PersonalCalendar> = PersonalCalendar.fetchRequest()
+                existingFetch.predicate = NSPredicate(format: "id == %@", supabaseDTO.id as CVarArg)
+                let matches = try context.fetch(existingFetch)
+
+                let calendar: PersonalCalendar
+                if let existingCalendar = matches.first {
+                    // Update existing calendar
+                    calendar = existingCalendar
+                    calendar.calendarName = supabaseDTO.calendar_name
+                    calendar.calendarColorHex = supabaseDTO.calendar_color_hex
+                } else {
+                    // Create new calendar
+                    calendar = PersonalCalendar(context: context)
+                    calendar.id = UUID(uuidString: supabaseDTO.id) ?? UUID()
+                    calendar.calendarName = supabaseDTO.calendar_name
+                    calendar.calendarColorHex = supabaseDTO.calendar_color_hex
+                }
+            }
+
+            try context.save()
+            print("✅ Synced personal calendars from Supabase to CoreData")
+        } catch {
+            print("❌ Error syncing personal calendars: \(error)")
         }
     }
 
@@ -278,8 +324,6 @@ class SupabaseDataSync {
                     familyEvent.eventIdentifier = meta.event_identifier
                     familyEvent.createdAt = Date()
                 }
-
-                familyEvent.calendarId = meta.calendar_id
 
                 // Driver: prefer driver_family_member_id, otherwise fall back to driver_id in extra
                 if let famIdString = meta.driver_family_member_id, let famId = UUID(uuidString: famIdString) {

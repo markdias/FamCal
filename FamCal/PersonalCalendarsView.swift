@@ -1,14 +1,14 @@
 //
-//  SharedCalendarsView.swift
+//  PersonalCalendarsView.swift
 //  FamCal
 //
-//  Created by Mark Dias on 21/11/2025.
+//  Created by Mark Dias on 26/11/2025.
 //
 
 import SwiftUI
 import CoreData
 
-struct SharedCalendarsView: View {
+struct PersonalCalendarsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
@@ -16,21 +16,18 @@ struct SharedCalendarsView: View {
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
-        entity: SharedCalendar.entity(),
-        sortDescriptors: [NSSortDescriptor(keyPath: \SharedCalendar.calendarName, ascending: true)]
+        entity: PersonalCalendar.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \PersonalCalendar.calendarName, ascending: true)]
     )
-    private var sharedCalendars: FetchedResults<SharedCalendar>
+    private var personalCalendars: FetchedResults<PersonalCalendar>
 
-    @State private var showingAddSharedCalendar = false
-    @State private var calendarPendingDelete: SharedCalendar?
+    @State private var showingAddPersonalCalendar = false
+    @State private var calendarPendingDelete: PersonalCalendar?
     @State private var showingDeleteConfirmation = false
-    
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
-    private var reachedFreeLimit: Bool {
-        !appSettingsManager.isProUser && sharedCalendars.count >= appSettingsManager.maxSharedCalendarsAllowed
-    }
 
     var body: some View {
         ZStack {
@@ -38,24 +35,18 @@ struct SharedCalendarsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // MARK: - Shared Calendars Section
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Shared Calendars")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
-                            .padding(.horizontal, 16)
-
-                        if sharedCalendars.isEmpty {
+                        if personalCalendars.isEmpty {
                             VStack(spacing: 12) {
-                                Image(systemName: "calendar.badge.exclamationmark")
+                                Image(systemName: "calendar")
                                     .font(.system(size: 48))
                                     .foregroundColor(secondaryTextColor)
 
-                                Text("No shared calendars")
+                                Text("No personal calendars")
                                     .font(.system(size: 16, weight: .semibold, design: .default))
                                     .foregroundColor(primaryTextColor)
 
-                                Text("Add calendars to share with all family members")
+                                Text("Add calendars for your eyes only")
                                     .font(.system(size: 14, weight: .regular, design: .default))
                                     .foregroundColor(secondaryTextColor)
                                     .multilineTextAlignment(.center)
@@ -72,10 +63,10 @@ struct SharedCalendarsView: View {
                             .padding(.horizontal, 16)
                         } else {
                             VStack(spacing: 0) {
-                                ForEach(sharedCalendars, id: \.self) { calendar in
+                                ForEach(personalCalendars, id: \.self) { calendar in
                                     CalendarRow(
                                         title: calendar.calendarName ?? "Unknown",
-                                        subtitle: "Shared with all",
+                                        subtitle: "Personal only",
                                         colorHex: calendar.calendarColorHex ?? "#007AFF",
                                         onDelete: {
                                             calendarPendingDelete = calendar
@@ -83,7 +74,7 @@ struct SharedCalendarsView: View {
                                         }
                                     )
 
-                                    if calendar.id != sharedCalendars.last?.id {
+                                    if calendar.id != personalCalendars.last?.id {
                                         Divider()
                                             .padding(.horizontal, 16)
                                     }
@@ -99,15 +90,15 @@ struct SharedCalendarsView: View {
                             .padding(.horizontal, 16)
                         }
 
-                        Button(action: { showingAddSharedCalendar = true }) {
+                        Button(action: { showingAddPersonalCalendar = true }) {
                             HStack(spacing: 12) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 20))
-                                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
+                                    .foregroundColor(theme.accentColor)
 
-                                Text("Add Shared Calendar")
+                                Text("Add Personal Calendar")
                                     .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
+                                    .foregroundColor(theme.accentColor)
 
                                 Spacer()
                             }
@@ -120,22 +111,8 @@ struct SharedCalendarsView: View {
                             )
                             .cornerRadius(12)
                             .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .overlay(alignment: .trailing) {
-                                if reachedFreeLimit {
-                                    Text("Pro")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(theme.accentColor)
-                                        .clipShape(Capsule())
-                                        .offset(x: -6)
-                                }
-                            }
                         }
                         .padding(.horizontal, 16)
-                        .disabled(reachedFreeLimit)
-                        .opacity(reachedFreeLimit ? 0.6 : 1.0)
                     }
 
                     Spacer()
@@ -143,27 +120,27 @@ struct SharedCalendarsView: View {
                 .padding(.vertical, 16)
             }
         }
-        .navigationTitle("Shared Calendars")
+        .navigationTitle("Personal Calendars")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingAddSharedCalendar) {
-            AddSharedCalendarView()
+        .sheet(isPresented: $showingAddPersonalCalendar) {
+            AddPersonalCalendarView()
                 .environment(\.managedObjectContext, viewContext)
                 .environmentObject(dataManager)
                 .environmentObject(appSettingsManager)
         }
-        .alert("Delete Shared Calendar?", isPresented: $showingDeleteConfirmation, presenting: calendarPendingDelete) { calendar in
+        .alert("Delete Personal Calendar?", isPresented: $showingDeleteConfirmation, presenting: calendarPendingDelete) { calendar in
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
-                deleteSharedCalendar(calendar)
+                deletePersonalCalendar(calendar)
             }
         } message: { calendar in
             Text("Are you sure you want to delete \(calendar.calendarName ?? "this calendar")?")
         }
     }
 
-    private func deleteSharedCalendar(_ calendar: SharedCalendar) {
+    private func deletePersonalCalendar(_ calendar: PersonalCalendar) {
         guard let id = calendar.id else {
-            print("❌ Cannot delete shared calendar: missing ID")
+            print("❌ Cannot delete personal calendar: missing ID")
             return
         }
 
@@ -171,7 +148,7 @@ struct SharedCalendarsView: View {
         viewContext.delete(calendar)
         do {
             try viewContext.save()
-            print("✅ Shared calendar deleted from CoreData")
+            print("✅ Personal calendar deleted from CoreData")
         } catch {
             print("❌ Failed to save CoreData deletion: \(error)")
             return
@@ -180,10 +157,10 @@ struct SharedCalendarsView: View {
         // Then, delete from Supabase asynchronously
         Task {
             do {
-                try await dataManager.deleteSharedCalendar(id: id.uuidString)
-                print("✅ Shared calendar deleted from Supabase")
+                try await dataManager.deletePersonalCalendar(id: id.uuidString)
+                print("✅ Personal calendar deleted from Supabase")
             } catch {
-                print("❌ Failed to delete shared calendar in Supabase: \(error)")
+                print("❌ Failed to delete personal calendar in Supabase: \(error)")
                 // If Supabase deletion fails, the calendar is already deleted locally
                 // On next sync/refresh, it may reappear if still in Supabase
             }
@@ -191,49 +168,8 @@ struct SharedCalendarsView: View {
     }
 }
 
-// MARK: - CalendarRow View
-
-struct CalendarRow: View {
-    @EnvironmentObject private var themeManager: ThemeManager
-    let title: String
-    let subtitle: String
-    let colorHex: String
-    var onDelete: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(Color.fromHex(colorHex))
-                .frame(width: 10, height: 10)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 16, weight: .regular, design: .default))
-                    .foregroundColor(themeManager.selectedTheme.textPrimary)
-
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .regular, design: .default))
-                    .foregroundColor(themeManager.selectedTheme.textSecondary)
-            }
-
-            Spacer()
-
-            if let onDelete = onDelete {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(Color(.systemGray3))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-}
-
 #Preview {
-    SharedCalendarsView()
+    PersonalCalendarsView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(ThemeManager())
 }

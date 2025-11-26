@@ -18,6 +18,7 @@ struct FamCalApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
     @StateObject private var appSettingsManager = AppSettingsManager.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var hasCompletedOnboarding: Bool = false
     @State private var deepLinkEventTitle: String?
     @State private var deepLinkMemberId: UUID?
@@ -26,6 +27,8 @@ struct FamCalApp: App {
     @State private var isCheckingSession = true
     @State private var calendarCheckStatus: CalendarCheckStatus = .unknown
     @State private var hasLoadedCalendarCheckStatus = false
+    @State private var showResetPasswordSheet = false
+    @State private var resetPasswordEmail: String?
 
     /// Load persisted calendar check status on app launch
     private func loadCalendarCheckStatus() {
@@ -234,7 +237,20 @@ struct FamCalApp: App {
                 }
             }
             .preferredColorScheme(themeManager.selectedTheme.prefersDarkInterface ? .dark : .light)
+            .sheet(isPresented: $showResetPasswordSheet) {
+                ResetPasswordSheet(email: resetPasswordEmail)
+                    .environmentObject(authManager)
+                    .environmentObject(themeManager)
+            }
             .onOpenURL(perform: handleDeepLink(_:))
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    Task { @MainActor in
+                        await dataManager.fetchUserData()
+                        await appSettingsManager.loadSettings()
+                    }
+                }
+            }
             .onChange(of: authManager.isAuthenticated) { oldValue, newValue in
                 // Only handle actual state changes, not first load
                 // Keep onboarding completion sticky; only reset on logout
@@ -319,20 +335,82 @@ struct FamCalApp: App {
 
         // Handle Supabase email confirmation links (famcal://auth/confirm?access_token=...)
         if components.scheme == "famcal" {
-            if let accessToken = components.queryItems?.first(where: { $0.name == "access_token" })?.value {
-                print("✅ Received email confirmation token")
+            let queryItems = components.queryItems ?? []
+            let fragmentItems = parseFragmentItems(components.fragment)
+
+            // Authenticate via access_token in query or fragment
+            let accessToken = (queryItems.first { $0.name == "access_token" }?.value) ?? fragmentItems["access_token"]
+            let inviteToken = (queryItems.first { $0.name == "token" }?.value) ?? fragmentItems["token"]
+            let linkType = fragmentItems["type"] ?? queryItems.first(where: { $0.name == "type" })?.value
+            let email = (queryItems.first { $0.name == "email" }?.value) ?? fragmentItems["email"]
+
+            if let accessToken {
+                print("✅ Received access token from deep link")
                 Task { @MainActor in
-                    // Supabase has already confirmed the email and returned an access token
-                    // We can use this token to log the user in automatically
-                    authManager.userId = components.queryItems?.first(where: { $0.name == "user_id" })?.value
+                    let userId = (queryItems.first { $0.name == "user_id" }?.value)
+                        ?? fragmentItems["user_id"]
+                        ?? decodeSubFromJWT(accessToken)
+                    authManager.userId = userId
+                    authManager.userEmail = email
                     authManager.accessToken = accessToken
-                    authManager.userEmail = components.queryItems?.first(where: { $0.name == "email" })?.value
                     authManager.isAuthenticated = true
                     authManager.saveSession()
-                    print("✅ User automatically authenticated via email confirmation link")
+                    print("✅ User automatically authenticated via deep link (invite/auth)")
+
+                    // After auth, if invite token present, accept and refresh
+                    if let inviteToken {
+                        do {
+                            try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
+                            await SupabaseDataManager.shared.fetchUserData()
+                            print("✅ Invitation accepted and data refreshed")
+                        } catch {
+                            print("❌ Failed to accept invitation: \(error)")
+                        }
+                    }
+
+                    // If this was a recovery link, prompt for new password
+                    if linkType == "recovery" {
+                        resetPasswordEmail = email
+                        showResetPasswordSheet = true
+                    }
+                }
+            } else if let inviteToken {
+                // If no access token but we have invite token (rare), attempt accept if already authenticated
+                Task { @MainActor in
+                    do {
+                        try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
+                        await SupabaseDataManager.shared.fetchUserData()
+                        print("✅ Invitation accepted and data refreshed")
+                    } catch {
+                        print("❌ Failed to accept invitation: \(error)")
+                    }
                 }
             }
         }
+    }
+
+    private func parseFragmentItems(_ fragment: String?) -> [String: String] {
+        guard let fragment, !fragment.isEmpty else { return [:] }
+        var dict: [String: String] = [:]
+        fragment.split(separator: "&").forEach { pair in
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if parts.count == 2, let key = parts.first?.removingPercentEncoding,
+               let value = parts.last?.removingPercentEncoding {
+                dict[key] = value
+            }
+        }
+        return dict
+    }
+
+    private func decodeSubFromJWT(_ jwt: String) -> String? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        let payload = String(parts[1])
+        var base64 = payload.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64.append("=") }
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["sub"] as? String
     }
 
     private func runCalendarCheck() {
@@ -393,41 +471,18 @@ struct FamCalApp: App {
                         let linkedCalendarNamesDeduped = Array(Set(memberCalendars.map { $0.calendar_name }))
                             .sorted()
 
-                        // Check each linked calendar by NAME (not ID)
+                        // Check each linked calendar by NAME
                         // Find calendars whose names DON'T exist on this device
                         var missingCalendarNamesDeduped: [String] = []
-                        var newCalendarIdsToUpdate: [(calendarName: String, newCalendarId: String)] = []
 
                         for linkedCalendar in memberCalendars {
-                            if let matchingCalendar = availableCalendars.first(where: { $0.title == linkedCalendar.calendar_name }) {
+                            if availableCalendars.first(where: { $0.title == linkedCalendar.calendar_name }) != nil {
                                 // Calendar name exists on this device!
-                                // Check if calendar_id is different (device-specific)
-                                if matchingCalendar.id != linkedCalendar.calendar_id {
-                                    print("  → \(member.name): Found '\(linkedCalendar.calendar_name)' on device with different ID. Updating: \(linkedCalendar.calendar_id) → \(matchingCalendar.id)")
-                                    newCalendarIdsToUpdate.append((calendarName: linkedCalendar.calendar_name, newCalendarId: matchingCalendar.id))
-                                } else {
-                                    print("  → \(member.name): Calendar '\(linkedCalendar.calendar_name)' found with matching ID")
-                                }
+                                print("  → \(member.name): Calendar '\(linkedCalendar.calendar_name)' found on device")
                             } else {
                                 // Calendar name NOT found on this device
                                 if !missingCalendarNamesDeduped.contains(linkedCalendar.calendar_name) {
                                     missingCalendarNamesDeduped.append(linkedCalendar.calendar_name)
-                                }
-                            }
-                        }
-
-                        // Update Supabase with new calendar IDs if any found
-                        // Capture the array before the Task closure to avoid mutation issues
-                        if !newCalendarIdsToUpdate.isEmpty {
-                            let updatesToProcess = newCalendarIdsToUpdate
-                            let memberId = member.id
-                            Task {
-                                for (calendarName, newId) in updatesToProcess {
-                                    await dataManager.updateFamilyMemberCalendarId(
-                                        memberId: memberId,
-                                        calendarName: calendarName,
-                                        newCalendarId: newId
-                                    )
                                 }
                             }
                         }
