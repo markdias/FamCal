@@ -10,6 +10,7 @@ import CoreData
 import EventKit
 import Combine
 import MapKit
+import UIKit
 
 struct CalendarView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -140,8 +141,12 @@ struct CalendarView: View {
             .onAppear(perform: setupView)
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
-                    loadEvents()
-                    loadAvailableCalendars()
+                    // Delay to allow EventKit to repopulate cache after resetStore() in FamCalApp
+                    // This prevents events from disappearing when returning from background
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        loadEvents()
+                        loadAvailableCalendars()
+                    }
                 }
             }
             .onChange(of: currentMonth) { _, _ in loadEvents() }
@@ -189,7 +194,9 @@ struct CalendarView: View {
             EventDetailView(event: event)
         }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            print("🔔 CalendarView: Received EKEventStoreChanged")
             loadEvents()
+            loadAvailableCalendars()
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
             loadEvents()
@@ -199,6 +206,11 @@ struct CalendarView: View {
         }
         .onChange(of: externalDisplayMode?.wrappedValue ?? calendarDisplayMode) { _, newValue in
             calendarDisplayMode = newValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            print("📱 CalendarView: Received didBecomeActive")
+            // Only restart timer on active; data reload is handled by EKEventStoreChanged (triggered by App resetStore)
+            startRefreshTimer()
         }
         .onAppear {
             if isCompactHeight {
@@ -861,6 +873,7 @@ struct CalendarView: View {
     }
 
     private func loadEvents() {
+        print("📅 CalendarView: loadEvents() started")
         isLoadingEvents = true
 
         var tempEventsDict: [String: [DayEventItem]] = [:]
@@ -869,17 +882,30 @@ struct CalendarView: View {
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: currentMonth))!
         let endOfMonth = calendar.date(byAdding: .day, value: -1, to: calendar.date(byAdding: .month, value: 1, to: startOfMonth)!)!
 
+        // Fetch all local calendars for resolution
+        let localCalendars = eventStore.calendars(for: .event)
+        let calendarById = Dictionary(uniqueKeysWithValues: localCalendars.map { ($0.calendarIdentifier, $0) })
+        let calendarByTitle = Dictionary(grouping: localCalendars, by: { $0.title }).mapValues { $0.first! }
+
         // Build map of member → their calendar IDs
         var memberCalendarMap: [NSManagedObjectID: (Set<String>, FamilyMember)] = [:]
 
         for link in memberCalendarLinks {
             guard let member = link.familyMember,
-                  let calendarID = link.calendarID else { continue }
+                  let storedID = link.calendarID else { continue }
+            
+            var resolvedID = storedID
+            // If ID not found locally, try to find by name
+            if calendarById[storedID] == nil, let name = link.calendarName, let localCal = calendarByTitle[name] {
+                print("⚠️ Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
+                resolvedID = localCal.calendarIdentifier
+            }
+
             var entry = memberCalendarMap[member.objectID] ?? ([], member)
-            entry.0.insert(calendarID)
+            entry.0.insert(resolvedID)
             memberCalendarMap[member.objectID] = entry
             
-            if memberColors[member.objectID] == nil, let calendar = eventStore.calendar(withIdentifier: calendarID) {
+            if memberColors[member.objectID] == nil, let calendar = calendarById[resolvedID] {
                 memberColors[member.objectID] = UIColor(cgColor: calendar.cgColor)
             }
         }
@@ -889,8 +915,14 @@ struct CalendarView: View {
             var entry = memberCalendarMap[member.objectID] ?? ([], member)
             if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
                 for sharedCal in sharedCals {
-                    if let calendarID = sharedCal.calendarID {
-                        entry.0.insert(calendarID)
+                    if let storedID = sharedCal.calendarID {
+                        var resolvedID = storedID
+                        // If ID not found locally, try to find by name
+                        if calendarById[storedID] == nil, let name = sharedCal.calendarName, let localCal = calendarByTitle[name] {
+                            print("⚠️ Shared Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
+                            resolvedID = localCal.calendarIdentifier
+                        }
+                        entry.0.insert(resolvedID)
                     }
                 }
             }

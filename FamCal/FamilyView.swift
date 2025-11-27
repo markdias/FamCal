@@ -220,8 +220,12 @@ struct FamilyView: View {
         .onAppear(perform: setupView)
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                loadNextEvents()
-                loadAvailableCalendars()
+                // Delay to allow EventKit to repopulate cache after resetStore() in FamCalApp
+                // This prevents events from disappearing when returning from background
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    loadNextEvents()
+                    loadAvailableCalendars()
+                }
             }
         }
         .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }

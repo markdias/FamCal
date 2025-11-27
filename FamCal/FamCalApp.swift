@@ -244,10 +244,17 @@ struct FamCalApp: App {
             }
             .onOpenURL(perform: handleDeepLink(_:))
             .onChange(of: scenePhase) { _, phase in
+                print("📱 ScenePhase changed to: \(phase)")
                 if phase == .active {
-                    Task { @MainActor in
-                        await dataManager.fetchUserData()
-                        await appSettingsManager.loadSettings()
+                    print("🔄 App became active - calling resetStore()")
+                    CalendarManager.shared.resetStore()
+                    // Give EventKit a moment to repopulate its cache after reset
+                    // This prevents events from disappearing in CalendarView when the app returns from background
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        Task { @MainActor in
+                            await dataManager.fetchUserData()
+                            await appSettingsManager.loadSettings()
+                        }
                     }
                 }
             }
