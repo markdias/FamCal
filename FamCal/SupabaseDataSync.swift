@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreData
+import EventKit
 
 class SupabaseDataSync {
     static let shared = SupabaseDataSync()
@@ -62,29 +63,42 @@ class SupabaseDataSync {
                 let existingCalendars = member.memberCalendars as? Set<FamilyMemberCalendar> ?? []
                 let supabaseMemberCalendars = supabaseCalendars.filter { $0.family_member_id == supabaseDTO.id }
                 let supabaseCalendarIds = Set(supabaseMemberCalendars.map { $0.id })
-                
+
                 // 1. Delete calendars that are no longer in Supabase
                 for calendar in existingCalendars {
                     if let calendarId = calendar.id?.uuidString, !supabaseCalendarIds.contains(calendarId) {
                         context.delete(calendar)
                     }
                 }
-                
+
                 // 2. Update existing or create new calendars
                 for calendarDTO in supabaseMemberCalendars {
                     let memberCalendar: FamilyMemberCalendar
-                    
+                    let isNewCalendar: Bool
+
                     if let existing = existingCalendars.first(where: { $0.id?.uuidString == calendarDTO.id }) {
                         memberCalendar = existing
+                        isNewCalendar = false
                     } else {
                         memberCalendar = FamilyMemberCalendar(context: context)
                         memberCalendar.id = UUID(uuidString: calendarDTO.id) ?? UUID()
                         memberCalendar.familyMember = member
+                        isNewCalendar = true
                     }
-                    
+
                     memberCalendar.calendarName = calendarDTO.calendar_name
                     memberCalendar.calendarColorHex = calendarDTO.calendar_color_hex
                     memberCalendar.isAutoLinked = calendarDTO.is_auto_linked
+
+                    // For new calendars or calendars without calendarID, try to match by calendar name
+                    // This ensures device-specific calendar IDs are populated during sync
+                    if isNewCalendar || memberCalendar.calendarID == nil || memberCalendar.calendarID!.isEmpty {
+                        if let calendarName = calendarDTO.calendar_name {
+                            if let matched = findCalendarIdByName(calendarName) {
+                                memberCalendar.calendarID = matched
+                            }
+                        }
+                    }
                 }
             }
 
@@ -93,6 +107,17 @@ class SupabaseDataSync {
         } catch {
             print("❌ Error syncing family members: \(error)")
         }
+    }
+
+    /// Helper function to find iOS calendar ID by name
+    private func findCalendarIdByName(_ calendarName: String) -> String? {
+        let eventStore = EKEventStore()
+        let calendars = eventStore.calendars(for: .event)
+        // Case-insensitive exact match
+        if let matched = calendars.first(where: { $0.title.lowercased() == calendarName.lowercased() }) {
+            return matched.calendarIdentifier
+        }
+        return nil
     }
 
     /// Syncs Supabase shared calendars to local CoreData
@@ -124,9 +149,11 @@ class SupabaseDataSync {
                 let matches = try context.fetch(existingFetch)
 
                 let calendar: SharedCalendar
+                let isNewCalendar: Bool
                 if let existingCalendar = matches.first {
                     // Update existing calendar
                     calendar = existingCalendar
+                    isNewCalendar = false
                     calendar.calendarName = supabaseDTO.calendar_name
                     calendar.calendarColorHex = supabaseDTO.calendar_color_hex
                 } else {
@@ -135,6 +162,17 @@ class SupabaseDataSync {
                     calendar.id = UUID(uuidString: supabaseDTO.id) ?? UUID()
                     calendar.calendarName = supabaseDTO.calendar_name
                     calendar.calendarColorHex = supabaseDTO.calendar_color_hex
+                    isNewCalendar = true
+                }
+
+                // For new calendars or calendars without calendarID, try to match by calendar name
+                // This ensures device-specific calendar IDs are populated during sync
+                if isNewCalendar || calendar.calendarID == nil || calendar.calendarID!.isEmpty {
+                    if let calendarName = supabaseDTO.calendar_name {
+                        if let matched = findCalendarIdByName(calendarName) {
+                            calendar.calendarID = matched
+                        }
+                    }
                 }
 
                 // Ensure shared calendars are linked to all members for display/filters
