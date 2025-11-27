@@ -93,8 +93,8 @@ class SupabaseDataSync {
                     // For new calendars or calendars without calendarID, try to match by calendar name
                     // This ensures device-specific calendar IDs are populated during sync
                     if isNewCalendar || memberCalendar.calendarID == nil || memberCalendar.calendarID!.isEmpty {
-                        if let calendarName = calendarDTO.calendar_name {
-                            if let matched = findCalendarIdByName(calendarName) {
+                        if !calendarDTO.calendar_name.isEmpty {
+                            if let matched = findCalendarIdByName(calendarDTO.calendar_name) {
                                 memberCalendar.calendarID = matched
                             }
                         }
@@ -168,8 +168,8 @@ class SupabaseDataSync {
                 // For new calendars or calendars without calendarID, try to match by calendar name
                 // This ensures device-specific calendar IDs are populated during sync
                 if isNewCalendar || calendar.calendarID == nil || calendar.calendarID!.isEmpty {
-                    if let calendarName = supabaseDTO.calendar_name {
-                        if let matched = findCalendarIdByName(calendarName) {
+                    if !supabaseDTO.calendar_name.isEmpty {
+                        if let matched = findCalendarIdByName(supabaseDTO.calendar_name) {
                             calendar.calendarID = matched
                         }
                     }
