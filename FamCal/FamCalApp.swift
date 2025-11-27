@@ -248,14 +248,11 @@ struct FamCalApp: App {
                 if phase == .active {
                     print("🔄 App became active - calling resetStore()")
                     CalendarManager.shared.resetStore()
-                    // Give EventKit a moment to repopulate its cache after reset
-                    // This prevents events from disappearing in CalendarView when the app returns from background
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        Task { @MainActor in
-                            await dataManager.fetchUserData()
-                            await appSettingsManager.loadSettings()
-                        }
-                    }
+                    // NOTE: We only reset the EventKit store here. Data syncing happens via:
+                    // 1. Automatic refresh timer (set by AppSettingsManager)
+                    // 2. Manual pull-to-refresh in calendar views
+                    // 3. Initial app load and after user actions (adding/editing calendars)
+                    // This avoids unnecessary Supabase fetches on every app resume.
                 }
             }
             .onChange(of: authManager.isAuthenticated) { oldValue, newValue in
