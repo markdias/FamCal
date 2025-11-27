@@ -48,6 +48,12 @@ final class CalendarManager {
 
     private let eventStore = EKEventStore()
 
+    func resetStore() {
+        print("🔄 CalendarManager: resetStore() called")
+        eventStore.reset()
+        print("✅ CalendarManager: eventStore.reset() completed")
+    }
+
     func fetchAvailableCalendars() -> [AvailableCalendar] {
         let calendars = eventStore.calendars(for: .event)
         return calendars.map { calendar in

@@ -8,6 +8,7 @@
 import SwiftUI
 import CoreData
 import EventKit
+import UIKit
 
 struct SpotlightView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -85,9 +86,7 @@ struct SpotlightView: View {
                         .padding(.vertical, 12)
 
                         // Events list
-                        if isLoadingEvents {
-                            loadingView
-                        } else if events.isEmpty {
+                        if events.isEmpty && !isLoadingEvents {
                             emptyStateView
                         } else {
                             let isLandscape = verticalSizeClass == .compact
@@ -132,6 +131,7 @@ struct SpotlightView: View {
                                 }
                             }
                             .padding(.horizontal, 16)
+                            .opacity(isLoadingEvents ? 0.6 : 1.0)
                         }
                     }
                     .padding(.vertical, 12)
@@ -147,6 +147,15 @@ struct SpotlightView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+            print("🔔 SpotlightView: Received EKEventStoreChanged")
+            loadEvents()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            print("📱 SpotlightView: Received didBecomeActive")
+            // Only restart timer on active; data reload is handled by EKEventStoreChanged
+            startRefreshTimer()
+        }
         .onAppear(perform: setupView)
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: appSettingsManager.spotlightEventsPerPerson) { _, _ in loadEvents() }
@@ -360,9 +369,15 @@ struct SpotlightView: View {
     }
 
     private func loadEvents() {
+        print("🔦 SpotlightView: loadEvents() started")
         isLoadingEvents = true
 
         let now = Date()
+
+        // Fetch all local calendars for resolution
+        let localCalendars = eventStore.calendars(for: .event)
+        let calendarById = Dictionary(uniqueKeysWithValues: localCalendars.map { ($0.calendarIdentifier, $0) })
+        let calendarByTitle = Dictionary(grouping: localCalendars, by: { $0.title }).mapValues { $0.first! }
 
         // Get all calendar IDs for this member
         var calendarIDs = Set<String>()
@@ -370,8 +385,13 @@ struct SpotlightView: View {
         // Personal calendars
         if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
             for cal in memberCals {
-                if let calID = cal.calendarID {
-                    calendarIDs.insert(calID)
+                if let storedID = cal.calendarID {
+                    var resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = cal.calendarName, let localCal = calendarByTitle[name] {
+                        print("⚠️ Spotlight: Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    calendarIDs.insert(resolvedID)
                 }
             }
         }
@@ -379,8 +399,13 @@ struct SpotlightView: View {
         // Shared calendars
         if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
             for cal in sharedCals {
-                if let calID = cal.calendarID {
-                    calendarIDs.insert(calID)
+                if let storedID = cal.calendarID {
+                    var resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = cal.calendarName, let localCal = calendarByTitle[name] {
+                        print("⚠️ Spotlight: Shared Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    calendarIDs.insert(resolvedID)
                 }
             }
         }
