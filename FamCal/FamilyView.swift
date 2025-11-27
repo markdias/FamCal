@@ -15,6 +15,7 @@ struct FamilyView: View {
     var onAddEventRequested: (() -> Void)? = nil
     var onChangeViewRequested: (() -> Void)? = nil
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
@@ -217,6 +218,12 @@ struct FamilyView: View {
             await refreshAllData()
         }
         .onAppear(perform: setupView)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                loadNextEvents()
+                loadAvailableCalendars()
+            }
+        }
         .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }
         .onChange(of: memberCalendarLinks.count) { _, _ in loadNextEvents() }
         .onChange(of: familyEvents.count) { _, _ in loadNextEvents() }

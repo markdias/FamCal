@@ -13,6 +13,7 @@ import MapKit
 
 struct CalendarView: View {
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -135,6 +136,36 @@ struct CalendarView: View {
     }
 
     var body: some View {
+        mainView
+            .onAppear(perform: setupView)
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    loadEvents()
+                    loadAvailableCalendars()
+                }
+            }
+            .onChange(of: currentMonth) { _, _ in loadEvents() }
+            .onChange(of: selectedDate) { _, _ in
+                if calendarDisplayMode == .day {
+                    loadEvents()
+                }
+            }
+            .onChange(of: familyMembers.count) { _, _ in loadEvents() }
+            .onChange(of: memberCalendarLinks.count) { _, _ in loadEvents() }
+            .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
+            .onChange(of: verticalSizeClass) { _, newValue in
+                if newValue == .compact {
+                    calendarDisplayMode = .day
+                }
+            }
+            .onChange(of: todayTrigger?.wrappedValue) { _, _ in
+                currentMonth = Date()
+                selectedDate = Date()
+            }
+            .onDisappear(perform: cleanupView)
+    }
+
+    private var mainView: some View {
         NavigationView {
             ZStack(alignment: .bottomLeading) {
                 theme.backgroundLayer()
@@ -197,26 +228,6 @@ struct CalendarView: View {
         } message: {
             Text("This event is linked to other calendars. Delete only here or everywhere?")
         }
-        .onAppear(perform: setupView)
-        .onChange(of: currentMonth) { _, _ in loadEvents() }
-        .onChange(of: selectedDate) { _, _ in
-            if calendarDisplayMode == .day {
-                loadEvents()
-            }
-        }
-        .onChange(of: familyMembers.count) { _, _ in loadEvents() }
-        .onChange(of: memberCalendarLinks.count) { _, _ in loadEvents() }
-        .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
-        .onChange(of: verticalSizeClass) { _, newValue in
-            if newValue == .compact {
-                calendarDisplayMode = .day
-            }
-        }
-        .onChange(of: todayTrigger?.wrappedValue) { _, _ in
-            currentMonth = Date()
-            selectedDate = Date()
-        }
-        .onDisappear(perform: cleanupView)
     }
 
     @ViewBuilder
