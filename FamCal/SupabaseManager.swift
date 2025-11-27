@@ -84,7 +84,9 @@ class SupabaseManager: @unchecked Sendable {
                 )
             } catch {
                 print("❌ Token refresh failed: \(error)")
-                // Fall through to return the original 401 error
+                // Token refresh failed - user will need to re-authenticate on next app launch
+                // For now, let the 401 error propagate so the caller can handle it gracefully
+                // Do NOT log out the user here - they may continue using the app with stale token
             }
         }
 
@@ -200,6 +202,39 @@ class SupabaseManager: @unchecked Sendable {
         return try JSONDecoder().decode([ProfileDTO].self, from: data)
     }
 
+    struct MemberEmailDTO: Codable {
+        let family_member_id: String
+        let email: String?
+    }
+
+    /// Fetch linked emails for members in the current user's family via service-role edge function.
+    func getMemberEmailsForFamily() async throws -> [MemberEmailDTO] {
+        guard let userToken = authManager.accessToken else {
+            throw NSError(domain: "GetMemberEmails", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        var headers: [String: String] = [:]
+        if !SupabaseConfig.inviteFunctionKey.isEmpty {
+            headers["x-invite-fn-key"] = SupabaseConfig.inviteFunctionKey
+        }
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "functions/v1/member-emails",
+            userToken: userToken,
+            extraHeaders: headers
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getMemberEmailsForFamily")
+            throw NSError(domain: "GetMemberEmails", code: statusCode)
+        }
+
+        struct Response: Codable { let emails: [MemberEmailDTO] }
+        let decoded = try JSONDecoder().decode(Response.self, from: data)
+        return decoded.emails
+    }
+
     private func getFamilyForOwner(userId: String, token: String? = nil) async throws -> FamilyDTO? {
         let queryItems = [URLQueryItem(name: "owner_user_id", value: "eq.\(userId)")]
         let userToken = token ?? authManager.accessToken
@@ -271,6 +306,26 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    /// Link the current authenticated user to a family member (sets linked_user_id).
+    func linkCurrentUserToFamilyMember(id: String, token: String? = nil) async throws {
+        guard let userId = authManager.userId else {
+            throw NSError(domain: "LinkFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing user id"])
+        }
+
+        let body: [String: String] = [
+            "linked_user_id": userId
+        ]
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "linkCurrentUserToFamilyMember")
+            throw NSError(domain: "LinkFamilyMember", code: statusCode)
+        }
+    }
+
     func deleteFamilyMember(id: String, token: String? = nil) async throws {
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
         let userToken = token ?? authManager.accessToken
@@ -335,6 +390,31 @@ class SupabaseManager: @unchecked Sendable {
             logErrorResponse(data, statusCode: statusCode, operation: "acceptInvitation")
             let message = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw NSError(domain: "AcceptInvitation", code: statusCode, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+    }
+
+    /// Accept a pending invitation based on the authenticated user's email (service-role edge function).
+    func acceptInvitationForCurrentUserEmail() async throws {
+        guard let userToken = authManager.accessToken else {
+            throw NSError(domain: "AcceptInvitationByEmail", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        var headers: [String: String] = [:]
+        if !SupabaseConfig.inviteFunctionKey.isEmpty {
+            headers["x-invite-fn-key"] = SupabaseConfig.inviteFunctionKey
+        }
+
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "functions/v1/accept-invite",
+            userToken: userToken,
+            extraHeaders: headers
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "acceptInvitationByEmail")
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "AcceptInvitationByEmail", code: statusCode, userInfo: [NSLocalizedDescriptionKey: message])
         }
     }
 

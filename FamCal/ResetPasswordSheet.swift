@@ -109,7 +109,12 @@ struct ResetPasswordSheet: View {
                 successMessage = "Password updated. You can now sign in with this password."
                 dismiss()
             } catch {
-                errorMessage = error.localizedDescription
+                let msg = error.localizedDescription.lowercased()
+                if msg.contains("same") || msg.contains("identical") || msg.contains("already") {
+                    errorMessage = "Password could not be updated. Please choose a different one."
+                } else {
+                    errorMessage = "Password could not be updated. Please try again."
+                }
             }
             isUpdating = false
         }

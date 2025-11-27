@@ -46,6 +46,14 @@ struct FamilySettingsView: View {
         !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
     }
 
+    /// Members eligible for invitation (no linked email/user yet)
+    private var availableInviteMembers: [FamilyMember] {
+        familyMembers.filter { member in
+            guard let id = member.id else { return false }
+            return dataManager.memberLinkedEmails[id] == nil
+        }
+    }
+
     private enum ActiveSheet: Identifiable {
         case addMember
         case editMember(FamilyMember)
@@ -191,7 +199,7 @@ struct FamilySettingsView: View {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Picker("Select member", selection: $selectedInviteMember) {
                                         Text("Choose a member").tag(Optional<FamilyMember>.none)
-                                        ForEach(familyMembers, id: \.self) { member in
+                                        ForEach(availableInviteMembers, id: \.self) { member in
                                             Text(member.name ?? "Member").tag(Optional(member))
                                         }
                                     }
@@ -328,7 +336,18 @@ struct FamilySettingsView: View {
 
     private func linkedEmail(for member: FamilyMember) -> String? {
         guard let id = member.id else { return nil }
-        return dataManager.memberLinkedEmails[id]
+        // Primary lookup by UUID from Supabase DTOs
+        if let email = dataManager.memberLinkedEmails[id] {
+            return email
+        }
+        // Fallback: match by name if IDs are out of sync
+        if let name = member.name,
+           let dto = dataManager.familyMembers.first(where: { $0.name == name }),
+           let dtoUUID = UUID(uuidString: dto.id),
+           let email = dataManager.memberLinkedEmails[dtoUUID] {
+            return email
+        }
+        return nil
     }
 
     private func loadFamilyName() {
@@ -437,15 +456,9 @@ struct FamilySettingsView: View {
                     Text("\((member.memberCalendars?.count) ?? 0) calendar\((member.memberCalendars?.count) ?? 0 != 1 ? "s" : "")")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(secondaryTextColor)
-                    if let email = linkedEmail(for: member) {
-                        Text(email)
-                            .font(.system(size: 12))
-                            .foregroundColor(secondaryTextColor)
-                    } else {
-                        Text("Not linked")
-                            .font(.system(size: 12))
-                            .foregroundColor(secondaryTextColor)
-                    }
+                    Text(linkedEmail(for: member) ?? "Not linked")
+                        .font(.system(size: 12))
+                        .foregroundColor(secondaryTextColor)
                 }
 
                 Spacer()

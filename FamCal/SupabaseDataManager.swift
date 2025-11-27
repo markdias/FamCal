@@ -97,6 +97,13 @@ class SupabaseDataManager: ObservableObject {
             self.familyMembers = try await familyMembers
             print("✅ Fetched \(self.familyMembers.count) family members from Supabase")
             await populateMemberEmails(from: self.familyMembers)
+            // Auto-select linked family member for current user
+            if let authUserId = authManager.userId,
+               let linkedMember = self.familyMembers.first(where: { $0.linked_user_id == authUserId }) {
+                appSettingsManager.linkedFamilyMemberId = linkedMember.id
+                await appSettingsManager.saveSettings()
+                print("✅ Linked current user to family member: \(linkedMember.name)")
+            }
 
             print("ℹ️ Fetching family member calendars from Supabase...")
             var calendarDTOs = try await fetchAllFamilyMemberCalendars()
@@ -251,20 +258,12 @@ class SupabaseDataManager: ObservableObject {
 
     @MainActor
     private func populateMemberEmails(from members: [FamilyMemberDTO]) async {
-        let linkedIds = members.compactMap { $0.linked_user_id }
-        guard !linkedIds.isEmpty else {
-            memberLinkedEmails = [:]
-            return
-        }
-
         do {
-            let profiles = try await supabaseManager.getProfiles(userIds: linkedIds)
+            let emails = try await supabaseManager.getMemberEmailsForFamily()
             var map: [UUID: String] = [:]
-            for member in members {
-                if let linked = member.linked_user_id,
-                   let email = profiles.first(where: { $0.id == linked })?.email,
-                   let memberUUID = UUID(uuidString: member.id) {
-                    map[memberUUID] = email
+            for row in emails {
+                if let uuid = UUID(uuidString: row.family_member_id), let email = row.email {
+                    map[uuid] = email
                 }
             }
             memberLinkedEmails = map

@@ -70,6 +70,7 @@
     </entity>
     <entity name="PersonalCalendar" representedClassName="PersonalCalendar" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="calendarID" optional="YES" attributeType="String"/>
         <attribute name="calendarName" optional="YES" attributeType="String"/>
         <attribute name="calendarColorHex" optional="YES" attributeType="String"/>
     </entity>

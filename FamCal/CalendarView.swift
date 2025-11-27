@@ -38,6 +38,12 @@ struct CalendarView: View {
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
 
     @FetchRequest(
+        entity: PersonalCalendar.entity(),
+        sortDescriptors: []
+    )
+    private var personalCalendars: FetchedResults<PersonalCalendar>
+
+    @FetchRequest(
         entity: SavedAddress.entity(),
         sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
     )
@@ -157,6 +163,7 @@ struct CalendarView: View {
             }
             .onChange(of: familyMembers.count) { _, _ in loadEvents() }
             .onChange(of: memberCalendarLinks.count) { _, _ in loadEvents() }
+            .onChange(of: personalCalendars.count) { _, _ in loadEvents() }
             .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
             .onChange(of: verticalSizeClass) { _, newValue in
                 if newValue == .compact {
@@ -928,6 +935,26 @@ struct CalendarView: View {
             }
             if !entry.0.isEmpty {
                 memberCalendarMap[member.objectID] = entry
+            }
+        }
+
+        // Add personal calendars for the current user
+        if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+           let linkedMember = familyMembers.first(where: { $0.id?.uuidString == linkedMemberId }) {
+            var entry = memberCalendarMap[linkedMember.objectID] ?? ([], linkedMember)
+            for personalCal in personalCalendars {
+                if let storedID = personalCal.calendarID {
+                    var resolvedID = storedID
+                    // If ID not found locally, try to find by name
+                    if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                        print("⚠️ Personal Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    entry.0.insert(resolvedID)
+                }
+            }
+            if !entry.0.isEmpty {
+                memberCalendarMap[linkedMember.objectID] = entry
             }
         }
         

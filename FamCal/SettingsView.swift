@@ -42,12 +42,6 @@ struct SettingsView: View {
         )
     }
     
-    @FetchRequest(
-        entity: FamilyMember.entity(),
-        sortDescriptors: []
-    )
-    private var familyMembers: FetchedResults<FamilyMember>
-
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
@@ -507,8 +501,8 @@ struct SettingsView: View {
     
     private func getDisplayName() -> String {
         if let linkedId = appSettingsManager.linkedFamilyMemberId,
-           let member = familyMembers.first(where: { $0.id?.uuidString == linkedId }) {
-            return member.name ?? "Unknown"
+           let member = dataManager.familyMembers.first(where: { $0.id == linkedId }) {
+            return member.name
         }
         
         if authManager.isGuest {

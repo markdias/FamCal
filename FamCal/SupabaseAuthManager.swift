@@ -112,6 +112,8 @@ class SupabaseAuthManager: ObservableObject {
                 defaults.set(refreshToken, forKey: userDefaultsKeyRefreshToken)
             }
             defaults.set(true, forKey: userDefaultsKeyIsAuthenticated)
+            // Ensure guest flag is cleared when saving a real session
+            defaults.set(false, forKey: userDefaultsKeyIsGuest)
 
             // Also save to app group for widget access
             if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
@@ -143,23 +145,84 @@ class SupabaseAuthManager: ObservableObject {
         print("ℹ️ Session cleared from persistent storage")
     }
 
+    /// Update auth state from a deep link session (e.g. invite or recovery)
+    func applyDeepLinkSession(accessToken: String, refreshToken: String?, userId: String?, email: String?) {
+        let claims = decodeJWTClaims(accessToken)
+        if let userId {
+            self.userId = userId
+        } else if let sub = claims?["sub"] as? String {
+            self.userId = sub
+        }
+        if let email {
+            self.userEmail = email
+        } else if let tokenEmail = claims?["email"] as? String {
+            self.userEmail = tokenEmail
+        }
+        self.accessToken = accessToken
+        if let refreshToken {
+            self.refreshToken = refreshToken
+        }
+        self.isAuthenticated = true
+        self.isGuest = false
+        saveSession()
+    }
+
+    /// Validate and refresh session on app launch
+    /// Returns true if session is valid, false if user needs to re-authenticate
+    func validateSessionOnAppLaunch() async -> Bool {
+        guard isAuthenticated, !isGuest, let _ = refreshToken else {
+            return isAuthenticated
+        }
+
+        do {
+            print("ℹ️ Validating session on app launch...")
+            try await refreshAccessToken()
+            print("✅ Session validated and refreshed")
+            return true
+        } catch {
+            print("⚠️ Session validation failed: \(error.localizedDescription)")
+            print("ℹ️ User will need to re-authenticate")
+            // Don't clear session here - let user try using app first
+            // Session will be cleared if they try to make API calls
+            return false
+        }
+    }
+
+    /// Decode JWT payload into a dictionary of claims
+    private func decodeJWTClaims(_ jwt: String) -> [String: Any]? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var base64 = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64.append("=") }
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json
+    }
+
     /// Refresh the access token using the refresh token
     /// Called when a 401 Unauthorized error is received
+    /// Note: Does NOT log out user if refresh fails - only throws error
+    /// Logout only happens explicitly via signOut() or on app restart
     func refreshAccessToken() async throws {
         guard let refreshToken = self.refreshToken else {
             throw NSError(domain: "NoRefreshToken", code: -1, userInfo: [NSLocalizedDescriptionKey: "No refresh token available"])
         }
 
-        let url = supabaseURL.appendingPathComponent("auth/v1/token")
+        // Supabase requires grant_type as query parameter, not in request body
+        var urlComponents = URLComponents(url: supabaseURL.appendingPathComponent("auth/v1/token"), resolvingAgainstBaseURL: false)!
+        urlComponents.queryItems = [URLQueryItem(name: "grant_type", value: "refresh_token")]
+        let url = urlComponents.url!
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
 
-        let body: [String: String] = [
-            "grant_type": "refresh_token",
-            "refresh_token": refreshToken
-        ]
+        struct RefreshBody: Encodable {
+            let refresh_token: String
+        }
+
+        let body = RefreshBody(refresh_token: refreshToken)
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -177,13 +240,15 @@ class SupabaseAuthManager: ObservableObject {
                 print("✅ Access token refreshed successfully")
             } catch {
                 print("❌ Failed to decode token response: \(error)")
+                // Throw error but don't log out - let caller decide what to do
                 throw error
             }
         } else {
-            // 401 on refresh means refresh token is invalid - need to re-authenticate
-            self.clearSession()
-            self.isAuthenticated = false
-            throw NSError(domain: "TokenRefreshFailed", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Session expired. Please log in again."])
+            // Refresh token is invalid or expired - throw error but don't log out yet
+            // This allows the app to continue; logout will happen on next app launch if needed
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("⚠️ Token refresh failed (HTTP \(httpResponse.statusCode)): \(errorMessage)")
+            throw NSError(domain: "TokenRefreshFailed", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Unable to refresh session. Please try again."])
         }
     }
 

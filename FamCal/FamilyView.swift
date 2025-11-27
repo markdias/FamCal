@@ -43,6 +43,12 @@ struct FamilyView: View {
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
 
     @FetchRequest(
+        entity: PersonalCalendar.entity(),
+        sortDescriptors: []
+    )
+    private var personalCalendars: FetchedResults<PersonalCalendar>
+
+    @FetchRequest(
         entity: SavedAddress.entity(),
         sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
     )
@@ -230,6 +236,7 @@ struct FamilyView: View {
         }
         .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }
         .onChange(of: memberCalendarLinks.count) { _, _ in loadNextEvents() }
+        .onChange(of: personalCalendars.count) { _, _ in loadNextEvents() }
         .onChange(of: familyEvents.count) { _, _ in loadNextEvents() }
         .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents() }
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
@@ -1003,6 +1010,18 @@ struct FamilyView: View {
                 var entry = memberCalendarMap[member.objectID] ?? (member, [])
                 entry.calendars.insert(calendarID)
                 memberCalendarMap[member.objectID] = entry
+            }
+
+            // Add personal calendars for the current user
+            if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+               let linkedMember = familyMembers.first(where: { $0.id?.uuidString == linkedMemberId }) {
+                var entry = memberCalendarMap[linkedMember.objectID] ?? (linkedMember, [])
+                for personalCal in personalCalendars {
+                    if let calendarID = personalCal.calendarID {
+                        entry.calendars.insert(calendarID)
+                    }
+                }
+                memberCalendarMap[linkedMember.objectID] = entry
             }
 
             // Process events per member

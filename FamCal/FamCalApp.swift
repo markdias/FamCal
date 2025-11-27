@@ -257,14 +257,13 @@ struct FamCalApp: App {
             }
             .onChange(of: authManager.isAuthenticated) { oldValue, newValue in
                 // Only handle actual state changes, not first load
-                // Keep onboarding completion sticky; only reset on logout
                 if !isFirstLoad && oldValue != newValue {
                     if newValue {
                         // User just logged in - reset check status and flag (check will run in gate view)
                         calendarCheckStatus = .unknown
                         hasLoadedCalendarCheckStatus = false
                     } else {
-                        // User just logged out - clear persisted calendar check status for this user
+                        // User just logged out - clear persisted calendar check status and reset onboarding
                         calendarCheckStatus = .unknown
                         hasLoadedCalendarCheckStatus = false
                         if let email = authManager.userEmail {
@@ -290,6 +289,16 @@ struct FamCalApp: App {
                 // Mark first load as complete after initial render
                 isFirstLoad = false
                 previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
+
+                // Validate session on app launch if user is authenticated
+                if authManager.isAuthenticated && !authManager.isGuest {
+                    Task {
+                        let isValid = await authManager.validateSessionOnAppLaunch()
+                        if !isValid {
+                            print("⚠️ Session validation failed on app launch - user may need to re-authenticate")
+                        }
+                    }
+                }
 
                 // Stop showing loading screen after a short delay to allow session check to complete
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -325,6 +334,8 @@ struct FamCalApp: App {
 
         print("ℹ️ Received deep link: \(url.absoluteString)")
         print("ℹ️ Scheme: \(components.scheme ?? "nil"), Host: \(components.host ?? "nil")")
+        if let query = components.query { print("🔎 Query: \(query)") }
+        if let fragment = components.fragment { print("🔎 Fragment: \(fragment)") }
 
         // Handle widget event links (famli://event?...)
         if components.scheme == "famli" && components.host == "event" {
@@ -344,9 +355,16 @@ struct FamCalApp: App {
 
             // Authenticate via access_token in query or fragment
             let accessToken = (queryItems.first { $0.name == "access_token" }?.value) ?? fragmentItems["access_token"]
-            let inviteToken = (queryItems.first { $0.name == "token" }?.value) ?? fragmentItems["token"]
+            let refreshToken = (queryItems.first { $0.name == "refresh_token" }?.value) ?? fragmentItems["refresh_token"]
+            // Supabase also uses "token" in some flows; prefer invite_token to avoid collisions
+            let inviteToken = (queryItems.first { $0.name == "invite_token" }?.value)
+                ?? fragmentItems["invite_token"]
+                ?? (queryItems.first { $0.name == "token" }?.value)
+                ?? fragmentItems["token"]
             let linkType = fragmentItems["type"] ?? queryItems.first(where: { $0.name == "type" })?.value
             let email = (queryItems.first { $0.name == "email" }?.value) ?? fragmentItems["email"]
+
+            print("🔑 Deep link tokens - access: \(accessToken != nil), refresh: \(refreshToken != nil), invite: \(inviteToken ?? "nil"), type: \(linkType ?? "nil"), email: \(email ?? "nil")")
 
             if let accessToken {
                 print("✅ Received access token from deep link")
@@ -354,11 +372,12 @@ struct FamCalApp: App {
                     let userId = (queryItems.first { $0.name == "user_id" }?.value)
                         ?? fragmentItems["user_id"]
                         ?? decodeSubFromJWT(accessToken)
-                    authManager.userId = userId
-                    authManager.userEmail = email
-                    authManager.accessToken = accessToken
-                    authManager.isAuthenticated = true
-                    authManager.saveSession()
+                    authManager.applyDeepLinkSession(
+                        accessToken: accessToken,
+                        refreshToken: refreshToken,
+                        userId: userId,
+                        email: email
+                    )
                     print("✅ User automatically authenticated via deep link (invite/auth)")
 
                     // After auth, if invite token present, accept and refresh
@@ -370,11 +389,20 @@ struct FamCalApp: App {
                         } catch {
                             print("❌ Failed to accept invitation: \(error)")
                         }
+                    } else if linkType == "invite" {
+                        // Fallback: accept by current user's email via service-role function when token is missing
+                        do {
+                            try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
+                            await SupabaseDataManager.shared.fetchUserData()
+                            print("✅ Invitation accepted via email fallback and data refreshed")
+                        } catch {
+                            print("❌ Failed to accept invitation via email fallback: \(error)")
+                        }
                     }
 
-                    // If this was a recovery link, prompt for new password
-                    if linkType == "recovery" {
-                        resetPasswordEmail = email
+                    // If this was a recovery or invite link, prompt for new password
+                    if linkType == "recovery" || linkType == "invite" {
+                        resetPasswordEmail = email ?? authManager.userEmail
                         showResetPasswordSheet = true
                     }
                 }

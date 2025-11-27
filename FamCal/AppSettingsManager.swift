@@ -149,6 +149,10 @@ class AppSettingsManager: ObservableObject {
             startAutoRefreshTimer()
         } catch {
             print("⚠️ Error loading app settings: \(error)")
+
+            // Note: We don't logout on 401 errors anymore - user can continue using the app
+            // and will be prompted to re-authenticate on next app launch if needed
+
             print("ℹ️ Creating initial settings record for user...")
 
             // Try to create initial settings if they don't exist
@@ -346,6 +350,8 @@ class AppSettingsManager: ObservableObject {
             persistSettingsLocally()
         } catch {
             print("❌ Error saving app settings: \(error)")
+            // Still persist to local UserDefaults as fallback even if cloud sync fails
+            persistSettingsLocally()
         }
     }
 

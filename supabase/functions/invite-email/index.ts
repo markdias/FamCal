@@ -68,9 +68,18 @@ Deno.serve(async (req) => {
       return json({ error: invErr.message }, 400);
     }
 
+    if (!inv?.token) {
+      console.error("create_family_invitation returned no token", inv);
+      return json({ error: "missing invite token" }, 500);
+    }
+
     // 2) Send Supabase invite email with built-in template
+    //    Use a distinct query param name to avoid collisions with Supabase's own `token` param
+    const redirect = `famcal://invite?invite_token=${inv.token}`;
+
     const { error: emailErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(invitee_email, {
-      redirectTo: "famcal://invite",
+      // Include the invite token so the app can accept the invitation after auth
+      redirectTo: redirect,
     });
     if (emailErr) {
       console.error("inviteUserByEmail error", emailErr);

@@ -216,9 +216,11 @@ class SupabaseDataSync {
                 let matches = try context.fetch(existingFetch)
 
                 let calendar: PersonalCalendar
+                let isNewCalendar: Bool
                 if let existingCalendar = matches.first {
                     // Update existing calendar
                     calendar = existingCalendar
+                    isNewCalendar = false
                     calendar.calendarName = supabaseDTO.calendar_name
                     calendar.calendarColorHex = supabaseDTO.calendar_color_hex
                 } else {
@@ -227,6 +229,17 @@ class SupabaseDataSync {
                     calendar.id = UUID(uuidString: supabaseDTO.id) ?? UUID()
                     calendar.calendarName = supabaseDTO.calendar_name
                     calendar.calendarColorHex = supabaseDTO.calendar_color_hex
+                    isNewCalendar = true
+                }
+
+                // For new calendars or calendars without calendarID, try to match by calendar name
+                // This ensures device-specific calendar IDs are populated during sync
+                if isNewCalendar || calendar.calendarID == nil || calendar.calendarID!.isEmpty {
+                    if !supabaseDTO.calendar_name.isEmpty {
+                        if let matched = findCalendarIdByName(supabaseDTO.calendar_name) {
+                            calendar.calendarID = matched
+                        }
+                    }
                 }
             }
 

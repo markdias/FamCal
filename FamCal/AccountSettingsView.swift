@@ -15,6 +15,7 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var authManager: SupabaseAuthManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    private let supabaseManager = SupabaseManager.shared
     
     @State private var showingFamilySettings = false
     
@@ -22,14 +23,7 @@ struct AccountSettingsView: View {
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
     
-    @FetchRequest(
-        entity: FamilyMember.entity(),
-        sortDescriptors: [
-            NSSortDescriptor(keyPath: \FamilyMember.sortOrder, ascending: true),
-            NSSortDescriptor(keyPath: \FamilyMember.name, ascending: true)
-        ]
-    )
-    private var familyMembers: FetchedResults<FamilyMember>
+    // Use in-memory Supabase data for names/emails instead of CoreData
     
     var body: some View {
         ZStack {
@@ -88,11 +82,11 @@ struct AccountSettingsView: View {
                         
                         settingsContainer {
                             Menu {
-                                ForEach(familyMembers, id: \.id) { member in
+                                ForEach(dataManager.familyMembers, id: \.id) { member in
                                     Button(action: { selectMember(member) }) {
                                         HStack {
-                                            Text(member.name ?? "Unknown")
-                                            if isSelected(member) {
+                                            Text(member.name)
+                                            if isSelected(member.id) {
                                                 Image(systemName: "checkmark")
                                             }
                                         }
@@ -184,26 +178,34 @@ struct AccountSettingsView: View {
     
     private func getDisplayName() -> String {
         if let linkedId = appSettingsManager.linkedFamilyMemberId,
-           let member = familyMembers.first(where: { $0.id?.uuidString == linkedId }) {
-            return member.name ?? "Unknown"
+           let member = dataManager.familyMembers.first(where: { $0.id == linkedId }) {
+            return member.name
         }
-        return "Select a member"
+        // Fallback to email to avoid "Select a member" when user is linked but data not yet loaded
+        return authManager.userEmail ?? "Select a member"
     }
     
-    private func isSelected(_ member: FamilyMember) -> Bool {
+    private func isSelected(_ memberId: String) -> Bool {
         guard let linkedId = appSettingsManager.linkedFamilyMemberId else { return false }
-        return member.id?.uuidString == linkedId
+        return memberId == linkedId
     }
     
-    private func selectMember(_ member: FamilyMember) {
-        guard let id = member.id?.uuidString else { return }
-        
+    private func selectMember(_ member: FamilyMemberDTO) {
+        let id = member.id
+
         // Update local state immediately for UI responsiveness
         appSettingsManager.linkedFamilyMemberId = id
-        
-        // Persist to Supabase
+
+        // Persist to Supabase and link the member to this user
         Task {
-            await appSettingsManager.saveSettings()
+            do {
+                try await supabaseManager.linkCurrentUserToFamilyMember(id: id)
+                await appSettingsManager.saveSettings()
+                await dataManager.fetchUserData()
+                print("✅ Linked user to family member \(member.name)")
+            } catch {
+                print("❌ Failed to link user to family member: \(error)")
+            }
         }
     }
     
