@@ -66,7 +66,77 @@ struct FamilyView: View {
     }
 
     @State private var isLoadingEvents = false
-    @State private var memberEvents: [MemberEventGroup] = []
+    @State private var memberEvents: [MemberEventGroup] = {
+        // Try to load cached events synchronously for instant display
+        if let cachedEvents = UserDefaults.standard.data(forKey: "famcal_member_events_cache") {
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let dtos = try decoder.decode([MemberEventGroupDTO].self, from: cachedEvents)
+                print("📦 Pre-loaded \(dtos.count) cached events")
+
+                return dtos.map { dto in
+                    let memberColor = Color.fromHex(dto.memberColorHex)
+                    let nextEvent = dto.nextEvent.map { eventDTO -> GroupedEvent in
+                        GroupedEvent(
+                            id: eventDTO.id,
+                            eventIdentifier: eventDTO.eventIdentifier,
+                            title: eventDTO.title,
+                            timeRange: eventDTO.timeRange,
+                            location: eventDTO.location,
+                            startDate: eventDTO.startDate,
+                            endDate: eventDTO.endDate,
+                            memberNames: eventDTO.memberNames,
+                            memberColor: UIColorFromHex(eventDTO.memberColorHex),
+                            calendarColor: UIColorFromHex(eventDTO.calendarColorHex),
+                            calendarTitle: eventDTO.calendarTitle,
+                            calendarID: eventDTO.calendarID,
+                            memberColors: eventDTO.memberColorsHex.map { UIColorFromHex($0) },
+                            hasRecurrence: eventDTO.hasRecurrence,
+                            isAllDay: eventDTO.isAllDay,
+                            driverName: eventDTO.driverName,
+                            isImportant: eventDTO.isImportant
+                        )
+                    }
+
+                    let upcomingEvents = dto.upcomingEvents.map { eventDTO -> GroupedEvent in
+                        GroupedEvent(
+                            id: eventDTO.id,
+                            eventIdentifier: eventDTO.eventIdentifier,
+                            title: eventDTO.title,
+                            timeRange: eventDTO.timeRange,
+                            location: eventDTO.location,
+                            startDate: eventDTO.startDate,
+                            endDate: eventDTO.endDate,
+                            memberNames: eventDTO.memberNames,
+                            memberColor: UIColorFromHex(eventDTO.memberColorHex),
+                            calendarColor: UIColorFromHex(eventDTO.calendarColorHex),
+                            calendarTitle: eventDTO.calendarTitle,
+                            calendarID: eventDTO.calendarID,
+                            memberColors: eventDTO.memberColorsHex.map { UIColorFromHex($0) },
+                            hasRecurrence: eventDTO.hasRecurrence,
+                            isAllDay: eventDTO.isAllDay,
+                            driverName: eventDTO.driverName,
+                            isImportant: eventDTO.isImportant
+                        )
+                    }
+
+                    return MemberEventGroup(
+                        id: NSManagedObjectID(),
+                        memberName: dto.memberName,
+                        sortOrder: dto.sortOrder,
+                        memberColor: memberColor,
+                        nextEvent: nextEvent,
+                        upcomingEvents: upcomingEvents
+                    )
+                }
+            } catch {
+                print("⚠️ Failed to pre-load cached events: \(error)")
+                return []
+            }
+        }
+        return []
+    }()
     @State private var eventsTask: Task<Void, Never>? = nil
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
     @State private var spotlightMemberName: String? = nil
@@ -229,7 +299,8 @@ struct FamilyView: View {
                 // Delay to allow EventKit to repopulate cache after resetStore() in FamCalApp
                 // This prevents events from disappearing when returning from background
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    loadNextEvents()
+                    // Refresh silently if we already have cached events (no loading flash)
+                    loadNextEvents(showLoadingState: memberEvents.isEmpty)
                     loadAvailableCalendars()
                 }
             }
@@ -889,12 +960,19 @@ struct FamilyView: View {
     // MARK: - View Lifecycle
 
     private func setupView() {
-        loadNextEvents()
         loadAvailableCalendars()
-        
+
         // Apply initial order from settings if available
         if !appSettingsManager.familyMemberOrder.isEmpty {
             applyOrderFromSettings(appSettingsManager.familyMemberOrder)
+        }
+
+        // Load fresh events in background (cached events already displayed)
+        // Use a small delay to ensure view is fully initialized
+        let hasCachedEvents = !memberEvents.isEmpty
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Only show loading state if we have no cached data to display
+            loadNextEvents(showLoadingState: !hasCachedEvents)
         }
 
         // Set up notification observer for calendar changes
@@ -903,7 +981,8 @@ struct FamilyView: View {
             object: eventStore,
             queue: .main
         ) { _ in
-            loadNextEvents()
+            // Refresh silently when calendars change
+            loadNextEvents(showLoadingState: false)
             loadAvailableCalendars()
         }
 
@@ -916,7 +995,8 @@ struct FamilyView: View {
             print("🔔 Personal calendar visibility changed, reloading events...")
             // Small delay to ensure CoreData has propagated the change
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                loadNextEvents()
+                // Refresh silently for visibility changes
+                loadNextEvents(showLoadingState: false)
             }
         }
 
@@ -939,7 +1019,8 @@ struct FamilyView: View {
             Task { @MainActor in
                 currentTime = Date()
                 await dataManager.fetchUserData()
-                loadNextEvents()
+                // Refresh silently in background (no loading state flash)
+                loadNextEvents(showLoadingState: false)
             }
         }
         currentTime = Date()
@@ -1016,10 +1097,12 @@ struct FamilyView: View {
         }
     }
 
-    private func loadNextEvents() {
+    private func loadNextEvents(showLoadingState: Bool = true) {
         eventsTask?.cancel()
         eventsTask = Task { @MainActor in
-            isLoadingEvents = true
+            if showLoadingState {
+                isLoadingEvents = true
+            }
             defer { isLoadingEvents = false }
             resetDragState()
 
@@ -1218,7 +1301,69 @@ struct FamilyView: View {
             }
 
             memberEvents = memberEventGroups
+
+            // Cache the events for instant display on next app launch
+            await cacheLoadedEvents(memberEventGroups)
         }
+    }
+
+    /// Convert loaded member event groups to cacheable DTOs and save
+    private func cacheLoadedEvents(_ memberEventGroups: [MemberEventGroup]) async {
+        let dtos = memberEventGroups.map { group -> MemberEventGroupDTO in
+            let nextEventDTO = group.nextEvent.map { event -> GroupedEventDTO in
+                GroupedEventDTO(
+                    id: event.id,
+                    eventIdentifier: event.eventIdentifier,
+                    title: event.title,
+                    timeRange: event.timeRange,
+                    location: event.location,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    memberNames: event.memberNames,
+                    memberColorHex: event.memberColor.hex(),
+                    calendarColorHex: event.calendarColor.hex(),
+                    calendarTitle: event.calendarTitle,
+                    calendarID: event.calendarID,
+                    memberColorsHex: event.memberColors.map { $0.hex() },
+                    hasRecurrence: event.hasRecurrence,
+                    isAllDay: event.isAllDay,
+                    driverName: event.driverName,
+                    isImportant: event.isImportant
+                )
+            }
+
+            let upcomingEventDTOs = group.upcomingEvents.map { event -> GroupedEventDTO in
+                GroupedEventDTO(
+                    id: event.id,
+                    eventIdentifier: event.eventIdentifier,
+                    title: event.title,
+                    timeRange: event.timeRange,
+                    location: event.location,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    memberNames: event.memberNames,
+                    memberColorHex: event.memberColor.hex(),
+                    calendarColorHex: event.calendarColor.hex(),
+                    calendarTitle: event.calendarTitle,
+                    calendarID: event.calendarID,
+                    memberColorsHex: event.memberColors.map { $0.hex() },
+                    hasRecurrence: event.hasRecurrence,
+                    isAllDay: event.isAllDay,
+                    driverName: event.driverName,
+                    isImportant: event.isImportant
+                )
+            }
+
+            return MemberEventGroupDTO(
+                memberName: group.memberName,
+                sortOrder: group.sortOrder,
+                memberColorHex: group.memberColor.toHex(),
+                nextEvent: nextEventDTO,
+                upcomingEvents: upcomingEventDTOs
+            )
+        }
+
+        await EventCache.shared.save(dtos)
     }
 
     private func cleanupStaleEvents() async {
