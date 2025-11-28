@@ -442,7 +442,8 @@ struct AddEventView: View {
         let eventEndDate = endTime
 
         // Create recurrence rule if needed
-        let recurrenceRule: EKRecurrenceRule? = selectedRecurrenceRule(startDate: eventStartDate)
+        // Note: We generate this inside the loop now to ensure a fresh instance for each event
+        // let recurrenceRule: EKRecurrenceRule? = selectedRecurrenceRule(startDate: eventStartDate)
 
         var createdEventIds: [String] = []
 
@@ -484,6 +485,10 @@ struct AddEventView: View {
         let notesValue = notes.isEmpty ? nil : notes
         for target in targets {
             var eventId: String?
+            
+            // Generate a fresh recurrence rule for THIS specific event instance
+            // EKRecurrenceRule is a reference type and can be "claimed" by the first event it's added to
+            let recurrenceRule = selectedRecurrenceRule(startDate: eventStartDate)
 
             if let recurrenceRule = recurrenceRule {
                 eventId = CalendarManager.shared.createRecurringEvent(
