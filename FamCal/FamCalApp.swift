@@ -26,34 +26,15 @@ struct FamCalApp: App {
     @State private var previousAuthState: (isAuthenticated: Bool, isGuest: Bool)?
     @State private var isCheckingSession = true
     @State private var calendarCheckStatus: CalendarCheckStatus = .unknown
-    @State private var hasLoadedCalendarCheckStatus = false
     @State private var showResetPasswordSheet = false
     @State private var resetPasswordEmail: String?
 
-    /// Load persisted calendar check status on app launch
-    private func loadCalendarCheckStatus() {
-        // Only load once per session
-        guard !hasLoadedCalendarCheckStatus else { return }
-        hasLoadedCalendarCheckStatus = true
-
-        // If user is authenticated and previously passed the check, skip showing gate
-        if authManager.isAuthenticated && !authManager.isGuest {
-            // Use user-specific key to differentiate between different accounts
-            let userKey = "hasPassedCalendarCheck_\(authManager.userEmail ?? "unknown")"
-            if UserDefaults.standard.bool(forKey: userKey) {
-                calendarCheckStatus = .ready
-                print("✅ Calendar check previously passed for \(authManager.userEmail ?? "user") - skipping gate")
-            }
-        }
-    }
-
     /// Persist calendar check status when it becomes ready
+    /// Uses device-level flag - calendar check runs only once per device
     private func saveCalendarCheckStatus() {
         if case .ready = calendarCheckStatus {
-            // Use user-specific key to store per-account
-            let userKey = "hasPassedCalendarCheck_\(authManager.userEmail ?? "unknown")"
-            UserDefaults.standard.set(true, forKey: userKey)
-            print("💾 Saved calendar check status: passed for \(authManager.userEmail ?? "user")")
+            UserDefaults.standard.set(true, forKey: "hasPassedCalendarCheckOnce")
+            print("💾 Saved calendar check status: completed on this device")
         }
     }
 
@@ -75,6 +56,12 @@ struct FamCalApp: App {
         // Load onboarding completion status from UserDefaults
         // This prevents showing onboarding again for returning users
         _hasCompletedOnboarding = State(initialValue: defaults.bool(forKey: "hasCompletedOnboarding"))
+
+        // Load calendar check status from UserDefaults on app init
+        // This prevents showing gate view if already completed on this device
+        if defaults.bool(forKey: "hasPassedCalendarCheckOnce") {
+            _calendarCheckStatus = State(initialValue: .ready)
+        }
 
         // Initialize Google Mobile Ads SDK
         // Commented out due to pod configuration issues - will be initialized separately
@@ -167,11 +154,6 @@ struct FamCalApp: App {
                             print("📱 Calendar Gate View appearing")
                             dataManager.setManagedObjectContext(persistenceController.container.viewContext)
 
-                            // Load persisted calendar check status on first appearance of gate
-                            if !hasLoadedCalendarCheckStatus {
-                                loadCalendarCheckStatus()
-                            }
-
                             Task {
                                 await appSettingsManager.loadSettings()
                                 await dataManager.fetchUserData()
@@ -259,18 +241,11 @@ struct FamCalApp: App {
                 // Only handle actual state changes, not first load
                 if !isFirstLoad && oldValue != newValue {
                     if newValue {
-                        // User just logged in - reset check status and flag (check will run in gate view)
-                        calendarCheckStatus = .unknown
-                        hasLoadedCalendarCheckStatus = false
+                        // User just logged in - device-level flag will be checked in body
                     } else {
-                        // User just logged out - clear persisted calendar check status and reset onboarding
+                        // User just logged out - only reset state variables, not the device-level flag
+                        // (calendar check should only run once per device)
                         calendarCheckStatus = .unknown
-                        hasLoadedCalendarCheckStatus = false
-                        if let email = authManager.userEmail {
-                            let userKey = "hasPassedCalendarCheck_\(email)"
-                            UserDefaults.standard.set(false, forKey: userKey)
-                            print("🔄 User \(email) logged out - reset calendar check status")
-                        }
                     }
                 }
             }
