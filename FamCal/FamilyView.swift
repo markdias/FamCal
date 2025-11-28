@@ -1216,7 +1216,7 @@ struct FamilyView: View {
                 print("🔍 DEBUG: Fetching events for member '\(member.name ?? "nil")' from \(calendarIDs.count) calendars: \(calendarIDs)")
 
                 // Fetch events for this member
-                let upcomingEvents = CalendarManager.shared.fetchNextEvents(
+                let upcomingEvents = await CalendarManager.shared.fetchNextEventsAsync(
                     for: Array(calendarIDs),
                     limit: 0, // Unlimited so we don't miss future events
                     pastDays: appSettingsManager.eventsPastDays,

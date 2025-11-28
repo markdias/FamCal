@@ -5,7 +5,7 @@
 //  Created by Mark Dias on 17/11/2025.
 //
 
-import EventKit
+@preconcurrency import EventKit
 import EventKitUI
 import UIKit
 
@@ -42,11 +42,11 @@ struct UpcomingCalendarEvent: Identifiable, Equatable {
         lhs.isAllDay == rhs.isAllDay
     }
 }
-@MainActor
 final class CalendarManager {
     static let shared = CalendarManager()
 
     private let eventStore = EKEventStore()
+    private let eventStoreQueue = DispatchQueue(label: "com.famcal.eventstore", qos: .userInitiated)
 
     func resetStore() {
         print("🔄 CalendarManager: resetStore() called")
@@ -257,16 +257,44 @@ final class CalendarManager {
         return findEvent(withIdentifier: identifier, occurrenceStartDate: occurrenceStartDate)
     }
 
+    func fetchNextEventsAsync(for calendarIDs: [String], limit: Int, pastDays: Int = 90, futureDays: Int = 180) async -> [UpcomingCalendarEvent] {
+        // Offload heavy EventKit queries to a background queue to avoid blocking the main actor
+        return await withCheckedContinuation { continuation in
+            let store = eventStore
+            let ids = calendarIDs
+            eventStoreQueue.async {
+                let results = Self.fetchNextEvents(
+                    in: store,
+                    calendarIDs: ids,
+                    limit: limit,
+                    pastDays: pastDays,
+                    futureDays: futureDays
+                )
+                continuation.resume(returning: results)
+            }
+        }
+    }
+
     func fetchNextEvents(for calendarIDs: [String], limit: Int, pastDays: Int = 90, futureDays: Int = 180) -> [UpcomingCalendarEvent] {
-        let calendars = eventStore.calendars(for: .event).filter { calendarIDs.contains($0.calendarIdentifier) }
+        Self.fetchNextEvents(
+            in: eventStore,
+            calendarIDs: calendarIDs,
+            limit: limit,
+            pastDays: pastDays,
+            futureDays: futureDays
+        )
+    }
+
+    nonisolated(unsafe) private static func fetchNextEvents(in store: EKEventStore, calendarIDs: [String], limit: Int, pastDays: Int, futureDays: Int) -> [UpcomingCalendarEvent] {
+        let calendars = store.calendars(for: .event).filter { calendarIDs.contains($0.calendarIdentifier) }
         guard !calendars.isEmpty else { return [] }
 
         let calendar = Calendar.current
         let startDate = calendar.date(byAdding: .day, value: -pastDays, to: Date()) ?? Date()
         let endDate = calendar.date(byAdding: .day, value: futureDays, to: Date()) ?? Date()
 
-        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
-        let events = eventStore.events(matching: predicate).sorted { $0.startDate < $1.startDate }
+        let predicate = store.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
+        let events = store.events(matching: predicate).sorted { $0.startDate < $1.startDate }
 
         var results: [UpcomingCalendarEvent] = []
 
