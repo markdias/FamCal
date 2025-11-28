@@ -9,6 +9,9 @@
 import EventKitUI
 import UIKit
 
+// EventKit types are not marked Sendable, but we serialize access via `eventStoreQueue`.
+extension EKEventStore: @unchecked @retroactive Sendable {}
+
 struct AvailableCalendar {
     let id: String
     let title: String
@@ -285,7 +288,7 @@ final class CalendarManager {
         )
     }
 
-    nonisolated(unsafe) private static func fetchNextEvents(in store: EKEventStore, calendarIDs: [String], limit: Int, pastDays: Int, futureDays: Int) -> [UpcomingCalendarEvent] {
+    private static func fetchNextEvents(in store: EKEventStore, calendarIDs: [String], limit: Int, pastDays: Int, futureDays: Int) -> [UpcomingCalendarEvent] {
         let calendars = store.calendars(for: .event).filter { calendarIDs.contains($0.calendarIdentifier) }
         guard !calendars.isEmpty else { return [] }
 
@@ -519,6 +522,10 @@ final class CalendarManager {
         return findEvent(withIdentifier: identifier)
     }
 
+    func getCalendar(withIdentifier calendarID: String) -> EKCalendar? {
+        return eventStore.calendar(withIdentifier: calendarID)
+    }
+
     private func createAlarm(from alertOption: AlertOption) -> EKAlarm {
         let alarm = EKAlarm()
 
@@ -598,6 +605,46 @@ final class CalendarManager {
         } catch {
             print("❌ Error deleting event: \(error.localizedDescription)")
             // Log the underlying error details
+            if let ekError = error as? EKError {
+                print("   EKError code: \(ekError.errorCode)")
+            }
+            return false
+        }
+    }
+
+    /// Ensure an event has the provided recurrence rule; useful when some providers drop recurrence on create.
+    func enforceRecurrence(for identifier: String,
+                           occurrenceStartDate: Date?,
+                           in calendarID: String,
+                           recurrenceRule: EKRecurrenceRule) -> Bool {
+        guard eventStore.calendar(withIdentifier: calendarID) != nil else {
+            print("❌ enforceRecurrence: Could not find calendar \(calendarID)")
+            return false
+        }
+
+        // Try to locate the event (with or without occurrence date, since some providers need nil)
+        let event: EKEvent? = findEvent(withIdentifier: identifier, occurrenceStartDate: occurrenceStartDate)
+            ?? findEvent(withIdentifier: identifier, occurrenceStartDate: nil)
+            ?? eventStore.event(withIdentifier: identifier)
+
+        guard let event else {
+            print("❌ enforceRecurrence: Could not find event \(identifier) in calendar \(calendarID)")
+            return false
+        }
+
+        guard event.calendar.calendarIdentifier == calendarID else {
+            print("❌ enforceRecurrence: Event \(identifier) is in calendar \(event.calendar.calendarIdentifier), expected \(calendarID)")
+            return false
+        }
+
+        event.recurrenceRules = [recurrenceRule]
+
+        do {
+            try eventStore.save(event, span: .futureEvents)
+            print("✅ enforceRecurrence: Applied recurrence to event \(identifier) in calendar \(calendarID)")
+            return true
+        } catch {
+            print("❌ enforceRecurrence: Failed to save recurrence for event \(identifier) in calendar \(calendarID) - \(error.localizedDescription)")
             if let ekError = error as? EKError {
                 print("   EKError code: \(ekError.errorCode)")
             }

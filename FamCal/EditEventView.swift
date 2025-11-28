@@ -1548,57 +1548,120 @@ struct EditEventView: View {
         }
     }
 
+    private func buildCombinedCalendarList(memberCalendars: Set<FamilyMemberCalendar>, personalCalendars: Set<PersonalCalendar>) -> [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] {
+        var allCalendars: [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] = []
+
+        // Add member calendars
+        for cal in memberCalendars {
+            allCalendars.append((
+                calendar: cal,
+                type: "member",
+                name: cal.calendarName ?? "Unknown",
+                colorHex: cal.calendarColorHex ?? "#555555",
+                isAutoLinked: cal.isAutoLinked
+            ))
+        }
+
+        // Add personal calendars
+        for cal in personalCalendars {
+            allCalendars.append((
+                calendar: cal,
+                type: "personal",
+                name: cal.calendarName ?? "Unknown",
+                colorHex: cal.calendarColorHex ?? "#555555",
+                isAutoLinked: false
+            ))
+        }
+
+        return allCalendars
+    }
+
     @ViewBuilder
     private func memberCalendarSelector(for member: FamilyMember) -> some View {
-        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
-           !memberCalendars.isEmpty {
-            let sortedCalendars = memberCalendars.sorted { cal1, cal2 in
-                // Auto-linked calendar first
-                if cal1.isAutoLinked && !cal2.isAutoLinked { return true }
-                if !cal1.isAutoLinked && cal2.isAutoLinked { return false }
-                // Then by name
-                return (cal1.calendarName ?? "") < (cal2.calendarName ?? "")
+        // Force-load the memberCalendars relationship
+        let memberCalendars = (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set()
+        // Load personal calendars for this member
+        let personalCalendars = (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
+
+        // Combine both types into a single list
+        let allCalendars = buildCombinedCalendarList(memberCalendars: memberCalendars, personalCalendars: personalCalendars)
+
+        if !allCalendars.isEmpty {
+            // Filter out subscription/read-only calendars
+            let writableCalendars = allCalendars.filter { item in
+                if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
+                    if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
+                        return ekCalendar.allowsContentModifications
+                    }
+                }
+                // Include calendars we can't verify (assume writable)
+                return true
             }
 
-            Menu {
-                ForEach(sortedCalendars, id: \.self) { calendar in
-                    Button(action: {
-                        updateSelectedCalendarForMember(member: member, calendar: calendar)
-                    }) {
-                        HStack {
-                            Circle()
-                                .fill(Color.fromHex(calendar.calendarColorHex ?? "#555555"))
-                                .frame(width: 12, height: 12)
-                            Text(calendar.calendarName ?? "Unknown")
-                            if isCalendarSelectedForMember(member: member, calendar: calendar) {
-                                Image(systemName: "checkmark")
+            if !writableCalendars.isEmpty {
+                let sortedCalendars = writableCalendars.sorted { item1, item2 in
+                    // Auto-linked calendar first
+                    if item1.isAutoLinked && !item2.isAutoLinked { return true }
+                    if !item1.isAutoLinked && item2.isAutoLinked { return false }
+                    // Then by name
+                    return item1.name < item2.name
+                }
+
+                Menu {
+                    ForEach(sortedCalendars.indices, id: \.self) { index in
+                        let item = sortedCalendars[index]
+                        Button(action: {
+                            updateSelectedCalendarForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type)
+                        }) {
+                            HStack {
+                                Circle()
+                                    .fill(Color.fromHex(item.colorHex))
+                                    .frame(width: 12, height: 12)
+                                Text(item.name)
+                                if isCalendarSelectedForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type) {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
                     }
-                }
-            } label: {
-                HStack {
-                    if let selectedCalendar = getSelectedCalendarForMember(member: member) {
-                        Circle()
-                            .fill(Color.fromHex(selectedCalendar.calendarColorHex ?? "#555555"))
-                            .frame(width: 10, height: 10)
-                        Text(selectedCalendar.calendarName ?? "Unknown")
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundColor(primaryTextColor)
-                    } else {
-                        Text("Select calendar")
-                            .font(.system(size: 15, weight: .regular))
+                } label: {
+                    HStack {
+                        if let (selectedID, selectedColor) = getSelectedCalendarForMemberCombined(member: member) {
+                            Circle()
+                                .fill(Color.fromHex(selectedColor))
+                                .frame(width: 10, height: 10)
+                            if let memberCal = memberCalendars.first(where: { $0.calendarID == selectedID }) {
+                                Text(memberCal.calendarName ?? "Unknown")
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundColor(primaryTextColor)
+                            } else if let personalCal = personalCalendars.first(where: { $0.calendarID == selectedID }) {
+                                Text(personalCal.calendarName ?? "Unknown")
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundColor(primaryTextColor)
+                            } else {
+                                Text("Unknown")
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundColor(primaryTextColor)
+                            }
+                        } else {
+                            Text("Select calendar")
+                                .font(.system(size: 15, weight: .regular))
+                                .foregroundColor(secondaryTextColor)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(secondaryTextColor)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(secondaryTextColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(fieldBackground)
+                    .cornerRadius(12)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(fieldBackground)
-                .cornerRadius(12)
+            } else {
+                Text("Calendar: \(upcomingEvent.calendarTitle)")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(primaryTextColor)
             }
         } else {
             Text("Calendar: \(upcomingEvent.calendarTitle)")
@@ -1681,6 +1744,74 @@ struct EditEventView: View {
         if let selected = getSelectedCalendarForMember(member: member),
            selected.objectID == calendar.objectID {
             return true
+        }
+        return false
+    }
+
+    // New combined helpers for member + personal calendars
+    private func updateSelectedCalendarForMemberCombined(member: FamilyMember, calendarID: String?, type: String) {
+        if let calendarID = calendarID {
+            selectedMemberCalendars[member.objectID] = calendarID
+            self.calendarId = calendarID // Also update main selection
+        }
+    }
+
+    private func getSelectedCalendarForMemberCombined(member: FamilyMember) -> (id: String, color: String)? {
+        if let selectedCalID = selectedMemberCalendars[member.objectID] {
+            // Check if it's a member calendar
+            if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+               let selected = memberCalendars.first(where: { $0.calendarID == selectedCalID }) {
+                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
+            }
+            // Check if it's a personal calendar
+            if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
+               let selected = personalCalendars.first(where: { $0.calendarID == selectedCalID }) {
+                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
+            }
+            return nil
+        }
+
+        // Prefer the event's current calendar ID if it matches this member's calendars
+        let eventCalID = calendarId ?? upcomingEvent.calendarID
+        if !eventCalID.isEmpty {
+            if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+               let match = memberCalendars.first(where: { $0.calendarID == eventCalID }) {
+                return (id: eventCalID, color: match.calendarColorHex ?? "#555555")
+            }
+            if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
+               let match = personalCalendars.first(where: { $0.calendarID == eventCalID }) {
+                return (id: eventCalID, color: match.calendarColorHex ?? "#555555")
+            }
+        }
+
+        // Default to first auto-linked member calendar
+        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+           let autoLinked = memberCalendars.first(where: { $0.isAutoLinked }) {
+            return (id: autoLinked.calendarID ?? "", color: autoLinked.calendarColorHex ?? "#555555")
+        }
+
+        // Fallback to first available member calendar
+        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+           let firstMember = memberCalendars.sorted(by: { ($0.calendarName ?? "") < ($1.calendarName ?? "") }).first,
+           let calID = firstMember.calendarID {
+            return (id: calID, color: firstMember.calendarColorHex ?? "#555555")
+        }
+
+        // Fallback to first personal calendar
+        if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
+           let firstPersonal = personalCalendars.sorted(by: { ($0.calendarName ?? "") < ($1.calendarName ?? "") }).first,
+           let calID = firstPersonal.calendarID {
+            return (id: calID, color: firstPersonal.calendarColorHex ?? "#555555")
+        }
+
+        return nil
+    }
+
+    private func isCalendarSelectedForMemberCombined(member: FamilyMember, calendarID: String?, type: String) -> Bool {
+        guard let calendarID = calendarID else { return false }
+
+        if let (selectedID, _) = getSelectedCalendarForMemberCombined(member: member) {
+            return selectedID == calendarID
         }
         return false
     }

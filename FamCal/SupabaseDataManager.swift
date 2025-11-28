@@ -161,7 +161,8 @@ class SupabaseDataManager: ObservableObject {
                 )
                 SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
                     supabaseCalendars: self.personalCalendars,
-                    to: context
+                    to: context,
+                    linkedFamilyMemberId: appSettingsManager.linkedFamilyMemberId
                 )
                 SupabaseDataSync.shared.syncDriversFromSupabase(
                     supabaseDrivers: self.drivers,
@@ -531,7 +532,8 @@ class SupabaseDataManager: ObservableObject {
             print("🔍 DEBUG: Syncing to CoreData...")
             SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
                 supabaseCalendars: personalCalendars,
-                to: context
+                to: context,
+                linkedFamilyMemberId: appSettingsManager.linkedFamilyMemberId
             )
         } else {
             print("❌ DEBUG: No CoreData context available for sync!")

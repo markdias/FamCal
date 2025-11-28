@@ -199,7 +199,8 @@ struct AccountSettingsView: View {
         // Persist to Supabase and link the member to this user
         Task {
             do {
-                try await supabaseManager.linkCurrentUserToFamilyMember(id: id)
+                // Clear links, then link to the selected member
+                try await supabaseManager.relinkCurrentUser(to: id, familyId: member.family_id)
                 await appSettingsManager.saveSettings()
                 await dataManager.fetchUserData()
                 print("✅ Linked user to family member \(member.name)")

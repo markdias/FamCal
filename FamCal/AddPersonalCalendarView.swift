@@ -190,14 +190,67 @@ struct AddPersonalCalendarView: View {
     }
 
     private func addPersonalCalendar(_ calendar: AvailableCalendar) {
+        print("🔍 addPersonalCalendar called for: \(calendar.title)")
+
         // Save to Supabase
         Task {
             do {
-                _ = try await dataManager.addPersonalCalendar(
+                let _ = try await dataManager.addPersonalCalendar(
                     calendarName: calendar.title,
                     calendarColorHex: calendar.color.hex()
                 )
-                print("✅ Personal calendar saved to Supabase (calendarID will be auto-populated by name matching)")
+                print("✅ Personal calendar saved to Supabase: \(calendar.title)")
+
+                // Link to logged-in member if available
+                if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+                   let linkedMemberUUID = UUID(uuidString: linkedMemberId) {
+                    print("👤 Found linked member ID: \(linkedMemberId)")
+
+                    // Find the personal calendar in Core Data and link it to the member
+                    DispatchQueue.main.async {
+                        print("⏳ Waiting for Core Data sync (0.5s delay)...")
+
+                        // The DTO id is a String, but we need to find the Core Data object
+                        // Wait a moment for Core Data to sync, then fetch
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            print("🔎 Searching for saved calendar in Core Data: \(calendar.title)")
+                            print("📊 Total personal calendars in Core Data: \(self.personalCalendars.count)")
+
+                            if let savedCalendar = self.personalCalendars.first(where: { $0.calendarName == calendar.title }) {
+                                print("✅ Found personal calendar in Core Data")
+
+                                // Fetch the family member and set the relationship
+                                let fetchRequest = NSFetchRequest<FamilyMember>(entityName: "FamilyMember")
+                                fetchRequest.predicate = NSPredicate(format: "id == %@", linkedMemberUUID as CVarArg)
+
+                                do {
+                                    let fetchResults = try self.viewContext.fetch(fetchRequest)
+                                    print("📋 Fetch results for member \(linkedMemberId): \(fetchResults.count) found")
+
+                                    if let member = fetchResults.first {
+                                        print("👥 Found family member, adding personal calendar to relationship")
+                                        member.addToPersonalCalendars(savedCalendar)
+                                        try self.viewContext.save()
+                                        print("✅ Personal calendar linked to logged-in member")
+                                        print("📚 Member now has \(member.personalCalendars?.count ?? 0) personal calendars")
+                                    } else {
+                                        print("❌ No family member found with ID: \(linkedMemberId)")
+                                    }
+                                } catch {
+                                    print("❌ Error linking calendar to member: \(error)")
+                                }
+                            } else {
+                                print("❌ Personal calendar not found in Core Data")
+                                print("🔍 Available calendars in Core Data:")
+                                for cal in self.personalCalendars {
+                                    print("   - \(cal.calendarName ?? "Unknown")")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    print("⚠️ No linked member ID found in AppSettingsManager")
+                }
             } catch {
                 print("❌ Error saving personal calendar: \(error)")
             }

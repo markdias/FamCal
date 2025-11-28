@@ -191,9 +191,23 @@ class SupabaseDataSync {
     /// Syncs Supabase personal calendars to local CoreData
     func syncPersonalCalendarsFromSupabase(
         supabaseCalendars: [PersonalCalendarDTO],
-        to context: NSManagedObjectContext
+        to context: NSManagedObjectContext,
+        linkedFamilyMemberId: String?
     ) {
         do {
+            var linkedMember: FamilyMember?
+            if let linkedFamilyMemberId,
+               let linkedUUID = UUID(uuidString: linkedFamilyMemberId) {
+                let memberFetch: NSFetchRequest<FamilyMember> = FamilyMember.fetchRequest()
+                memberFetch.predicate = NSPredicate(format: "id == %@", linkedUUID as CVarArg)
+                linkedMember = try context.fetch(memberFetch).first
+                if linkedMember == nil {
+                    print("⚠️ No FamilyMember found for linkedFamilyMemberId: \(linkedFamilyMemberId)")
+                }
+            } else {
+                print("ℹ️ No linkedFamilyMemberId provided; personal calendars will not be attached to a member")
+            }
+
             // Build a set of Supabase calendar IDs for quick lookup
             let supabaseIds = Set(supabaseCalendars.map { $0.id })
 
@@ -248,6 +262,11 @@ class SupabaseDataSync {
                 calendar.showInUpcoming = supabaseDTO.show_in_upcoming ?? false
                 calendar.showInMonth = supabaseDTO.show_in_month ?? true
                 calendar.showInDay = supabaseDTO.show_in_day ?? true
+
+                // Attach personal calendars only to the linked member (so they stay private)
+                if calendar.owner != linkedMember {
+                    calendar.owner = linkedMember
+                }
 
                 print("🔍 DEBUG syncPersonalCalendars: Synced '\(calendar.calendarName ?? "nil")' - ID: \(calendar.calendarID ?? "nil") | Next: \(calendar.showInNext) | Spotlight: \(calendar.showInSpotlight) | Upcoming: \(calendar.showInUpcoming)")
             }

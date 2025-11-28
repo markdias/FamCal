@@ -14,6 +14,7 @@
         <relationship name="memberCalendars" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="FamilyMemberCalendar" inverseName="familyMember" inverseEntity="FamilyMemberCalendar"/>
         <relationship name="sharedCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SharedCalendar" inverseName="members" inverseEntity="SharedCalendar"/>
         <relationship name="familyEvents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="attendees" inverseEntity="FamilyEvent"/>
+        <relationship name="personalCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="PersonalCalendar" inverseName="owner" inverseEntity="PersonalCalendar"/>
     </entity>
     <entity name="FamilyMemberCalendar" representedClassName="FamilyMemberCalendar" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -78,6 +79,7 @@
         <attribute name="showInUpcoming" optional="YES" attributeType="Boolean" defaultValueString="NO"/>
         <attribute name="showInMonth" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
         <attribute name="showInDay" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
+        <relationship name="owner" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="personalCalendars" inverseEntity="FamilyMember"/>
     </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>

@@ -312,18 +312,68 @@ class SupabaseManager: @unchecked Sendable {
             throw NSError(domain: "LinkFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing user id"])
         }
 
-        let body: [String: String] = [
-            "linked_user_id": userId
-        ]
+        let body = LinkedUserUpdate(linked_user_id: userId)
 
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
         let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
 
-        guard statusCode == 200 else {
+        guard (200...299).contains(statusCode) else {
             logErrorResponse(data, statusCode: statusCode, operation: "linkCurrentUserToFamilyMember")
             throw NSError(domain: "LinkFamilyMember", code: statusCode)
         }
+    }
+
+    /// Remove linked_user_id for all members in a family (without deleting members).
+    func unlinkFamilyMembers(familyId: String, token: String? = nil) async throws {
+        let body: [String: AnyCodable] = ["linked_user_id": .null] // force explicit null
+        let queryItems = [URLQueryItem(name: "family_id", value: "eq.\(familyId)")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard (200...299).contains(statusCode) else {
+            logErrorResponse(data, statusCode: statusCode, operation: "unlinkFamilyMembers")
+            throw NSError(domain: "UnlinkFamilyMember", code: statusCode)
+        }
+    }
+
+    /// Remove linked_user_id for members linked to the current user, optionally scoped to a family.
+    func unlinkCurrentUserFromFamilyMembers(familyId: String? = nil, token: String? = nil) async throws {
+        guard let userId = authManager.userId else {
+            throw NSError(domain: "UnlinkFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing user id"])
+        }
+
+        var queryItems = [URLQueryItem(name: "linked_user_id", value: "eq.\(userId)")]
+        if let familyId {
+            queryItems.append(URLQueryItem(name: "family_id", value: "eq.\(familyId)"))
+        }
+
+        let body: [String: AnyCodable] = ["linked_user_id": .null] // force explicit null
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard (200...299).contains(statusCode) else {
+            logErrorResponse(data, statusCode: statusCode, operation: "unlinkCurrentUserFromFamilyMembers")
+            throw NSError(domain: "UnlinkFamilyMember", code: statusCode)
+        }
+    }
+
+    /// Clear any linked_user_id in the family and any rows linked to the current user, then link the new member.
+    func relinkCurrentUser(to memberId: String, familyId: String?, token: String? = nil) async throws {
+        // 1) Clear any existing links for this user across all families (do not rely on linked_user_id for membership)
+        try await unlinkCurrentUserFromFamilyMembers(token: token)
+
+        // 2) Clear any linked_user_id values within the target family (keeps members; only nulls the link)
+        if let familyId {
+            try await unlinkFamilyMembers(familyId: familyId, token: token)
+        }
+
+        // 3) Link to the target member
+        try await linkCurrentUserToFamilyMember(id: memberId, token: token)
+    }
+
+    private struct LinkedUserUpdate: Encodable {
+        let linked_user_id: String?
     }
 
     func deleteFamilyMember(id: String, token: String? = nil) async throws {

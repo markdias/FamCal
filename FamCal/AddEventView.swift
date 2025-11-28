@@ -458,8 +458,8 @@ struct AddEventView: View {
             // Specific people selected: add to each person's selected calendar
             for memberID in selectedMembers {
                 if let member = familyMembers.first(where: { $0.objectID == memberID }) {
-                    if let selectedCalendar = getSelectedCalendarForMember(member: member),
-                       let calendarID = selectedCalendar.calendarID {
+                    if let selected = getSelectedCalendarForMemberCombined(member: member) {
+                        let calendarID = selected.id
                         targets.append((calendarID, member))
                     }
                 }
@@ -480,6 +480,8 @@ struct AddEventView: View {
 
         // Create event in all target calendars
         var firstEventId: String? = nil
+        let locationValue = locationAddress.isEmpty ? nil : locationAddress
+        let notesValue = notes.isEmpty ? nil : notes
         for target in targets {
             var eventId: String?
 
@@ -488,8 +490,8 @@ struct AddEventView: View {
                     title: title,
                     startDate: eventStartDate,
                     endDate: eventEndDate,
-                    location: locationAddress.isEmpty ? nil : locationAddress,
-                    notes: notes.isEmpty ? nil : notes,
+                    location: locationValue,
+                    notes: notesValue,
                     recurrenceRule: recurrenceRule,
                     isAllDay: isAllDay,
                     in: target.calendarID,
@@ -500,8 +502,8 @@ struct AddEventView: View {
                     title: title,
                     startDate: eventStartDate,
                     endDate: eventEndDate,
-                    location: locationAddress.isEmpty ? nil : locationAddress,
-                    notes: notes.isEmpty ? nil : notes,
+                    location: locationValue,
+                    notes: notesValue,
                     isAllDay: isAllDay,
                     in: target.calendarID,
                     alertOption: alertOption
@@ -512,17 +514,37 @@ struct AddEventView: View {
 
             if let eventId = eventId {
                 // Store first event ID for notification scheduling
-                if firstEventId == nil {
-                    firstEventId = eventId
+                var finalEventId: String? = eventId
+
+                // Ensure recurrence is applied in every target calendar (may recreate with a new ID)
+                if let recurrenceRule = recurrenceRule {
+                    finalEventId = enforceRecurringSeries(
+                        eventId: eventId,
+                        calendarId: target.calendarID,
+                        title: title,
+                        startDate: eventStartDate,
+                        endDate: eventEndDate,
+                        location: locationValue,
+                        notes: notesValue,
+                        isAllDay: isAllDay,
+                        recurrenceRule: recurrenceRule,
+                        alertOption: alertOption
+                    )
                 }
 
-                createdEventIds.append(eventId)
+                if firstEventId == nil, let resolvedId = finalEventId {
+                    firstEventId = resolvedId
+                }
+
+                if let resolvedId = finalEventId {
+                    createdEventIds.append(resolvedId)
+                }
 
                 // Store in CoreData
                 let familyEvent = FamilyEvent(context: viewContext)
                 familyEvent.id = eventGroupId
                 familyEvent.eventGroupId = eventGroupId
-                familyEvent.eventIdentifier = eventId
+                familyEvent.eventIdentifier = finalEventId ?? eventId
                 familyEvent.calendarId = target.calendarID
                 familyEvent.createdAt = Date()
                 familyEvent.isSharedCalendarEvent = selectEveryone
@@ -1411,7 +1433,7 @@ struct AddEventView: View {
 
     @ViewBuilder
     private var calendarSection: some View {
-        if selectEveryone && availableCalendars.count > 1 {
+        if selectEveryone && !availableCalendars.isEmpty {
             // For "Everyone": Show shared calendars selection
             sectionCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1464,8 +1486,8 @@ struct AddEventView: View {
                     }
                 }
             }
-        } else if !selectEveryone && availableCalendars.count > 1 {
-            // For specific members: Show per-member calendar selection
+        } else if !selectEveryone {
+            // For specific members: Show per-member calendar selection (always visible)
             sectionCard {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeading("Calendars")
@@ -1486,63 +1508,122 @@ struct AddEventView: View {
         }
     }
 
+    private func buildCombinedCalendarList(memberCalendars: Set<FamilyMemberCalendar>, personalCalendars: Set<PersonalCalendar>) -> [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] {
+        var allCalendars: [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] = []
+
+        // Add member calendars
+        for cal in memberCalendars {
+            allCalendars.append((
+                calendar: cal,
+                type: "member",
+                name: cal.calendarName ?? "Unknown",
+                colorHex: cal.calendarColorHex ?? "#555555",
+                isAutoLinked: cal.isAutoLinked
+            ))
+        }
+
+        // Add personal calendars
+        for cal in personalCalendars {
+            allCalendars.append((
+                calendar: cal,
+                type: "personal",
+                name: cal.calendarName ?? "Unknown",
+                colorHex: cal.calendarColorHex ?? "#555555",
+                isAutoLinked: false
+            ))
+        }
+
+        return allCalendars
+    }
+
     @ViewBuilder
     private func memberCalendarSelector(for member: FamilyMember) -> some View {
-        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
-           !memberCalendars.isEmpty {
-            let sortedCalendars = memberCalendars.sorted { cal1, cal2 in
-                // Auto-linked calendar first
-                if cal1.isAutoLinked && !cal2.isAutoLinked { return true }
-                if !cal1.isAutoLinked && cal2.isAutoLinked { return false }
-                // Then by name
-                return (cal1.calendarName ?? "") < (cal2.calendarName ?? "")
+        // Force-load the memberCalendars relationship
+        let memberCalendars = (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set()
+        // Load personal calendars for this member
+        let personalCalendars = (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
+
+        // Combine both types into a single list
+        let allCalendars = buildCombinedCalendarList(memberCalendars: memberCalendars, personalCalendars: personalCalendars)
+
+        if !allCalendars.isEmpty {
+            // Filter out subscription/read-only calendars
+            let writableCalendars = allCalendars.filter { item in
+                if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
+                    if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
+                        return ekCalendar.allowsContentModifications
+                    }
+                }
+                // Include calendars we can't verify (assume writable)
+                return true
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(member.name ?? "Unknown")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(primaryTextColor)
+            if !writableCalendars.isEmpty {
+                let sortedCalendars = writableCalendars.sorted { item1, item2 in
+                    // Auto-linked calendar first
+                    if item1.isAutoLinked && !item2.isAutoLinked { return true }
+                    if !item1.isAutoLinked && item2.isAutoLinked { return false }
+                    // Then by name
+                    return item1.name < item2.name
+                }
 
-                Menu {
-                    ForEach(sortedCalendars, id: \.self) { calendar in
-                        Button(action: {
-                            // Store selected calendar per member
-                            updateSelectedCalendarForMember(member: member, calendar: calendar)
-                        }) {
-                            HStack {
-                                Circle()
-                                    .fill(Color.fromHex(calendar.calendarColorHex ?? "#555555"))
-                                    .frame(width: 12, height: 12)
-                                Text(calendar.calendarName ?? "Unknown")
-                                if isCalendarSelectedForMember(member: member, calendar: calendar) {
-                                    Image(systemName: "checkmark")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(member.name ?? "Unknown")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(primaryTextColor)
+
+                    Menu {
+                        ForEach(sortedCalendars.indices, id: \.self) { index in
+                            let item = sortedCalendars[index]
+                            Button(action: {
+                                // Store selected calendar per member
+                                updateSelectedCalendarForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type)
+                            }) {
+                                HStack {
+                                    Circle()
+                                        .fill(Color.fromHex(item.colorHex))
+                                        .frame(width: 12, height: 12)
+                                    Text(item.name)
+                                    if isCalendarSelectedForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type) {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
-                    }
-                } label: {
-                    HStack {
-                        if let selectedCalendar = getSelectedCalendarForMember(member: member) {
-                            Circle()
-                                .fill(Color.fromHex(selectedCalendar.calendarColorHex ?? "#555555"))
-                                .frame(width: 10, height: 10)
-                            Text(selectedCalendar.calendarName ?? "Unknown")
-                                .font(.system(size: 15, weight: .regular))
-                                .foregroundColor(primaryTextColor)
-                        } else {
-                            Text("Select calendar")
-                                .font(.system(size: 15, weight: .regular))
+                    } label: {
+                        HStack {
+                            if let (selectedID, selectedColor) = getSelectedCalendarForMemberCombined(member: member) {
+                                Circle()
+                                    .fill(Color.fromHex(selectedColor))
+                                    .frame(width: 10, height: 10)
+                                if let memberCal = memberCalendars.first(where: { $0.calendarID == selectedID }) {
+                                    Text(memberCal.calendarName ?? "Unknown")
+                                        .font(.system(size: 15, weight: .regular))
+                                        .foregroundColor(primaryTextColor)
+                                } else if let personalCal = personalCalendars.first(where: { $0.calendarID == selectedID }) {
+                                    Text(personalCal.calendarName ?? "Unknown")
+                                        .font(.system(size: 15, weight: .regular))
+                                        .foregroundColor(primaryTextColor)
+                                } else {
+                                    Text("Unknown")
+                                        .font(.system(size: 15, weight: .regular))
+                                        .foregroundColor(primaryTextColor)
+                                }
+                            } else {
+                                Text("Select calendar")
+                                    .font(.system(size: 15, weight: .regular))
+                                    .foregroundColor(secondaryTextColor)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(secondaryTextColor)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(fieldBackground)
+                        .cornerRadius(12)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(fieldBackground)
-                    .cornerRadius(12)
                 }
             }
         }
@@ -1582,6 +1663,61 @@ struct AddEventView: View {
         }
         return false
     }
+
+    // New combined helpers for member + personal calendars
+    private func updateSelectedCalendarForMemberCombined(member: FamilyMember, calendarID: String?, type: String) {
+        if let calendarID = calendarID {
+            selectedMemberCalendars[member.objectID] = calendarID
+            selectedCalendarID = calendarID // Also update main selection
+        }
+    }
+
+    private func getSelectedCalendarForMemberCombined(member: FamilyMember) -> (id: String, color: String)? {
+        if let selectedCalID = selectedMemberCalendars[member.objectID] {
+            // Check if it's a member calendar
+            if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+               let selected = memberCalendars.first(where: { $0.calendarID == selectedCalID }) {
+                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
+            }
+            // Check if it's a personal calendar
+            if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
+               let selected = personalCalendars.first(where: { $0.calendarID == selectedCalID }) {
+                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
+            }
+            return nil
+        }
+
+        // Default to first auto-linked member calendar
+        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+           let autoLinked = memberCalendars.first(where: { $0.isAutoLinked }) {
+            return (id: autoLinked.calendarID ?? "", color: autoLinked.calendarColorHex ?? "#555555")
+        }
+
+        // Fallback to first available member or personal calendar
+        let memberCalendars = (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set()
+        if let firstMember = memberCalendars.sorted(by: { ($0.calendarName ?? "") < ($1.calendarName ?? "") }).first,
+           let calID = firstMember.calendarID {
+            return (id: calID, color: firstMember.calendarColorHex ?? "#555555")
+        }
+
+        if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
+           let firstPersonal = personalCalendars.sorted(by: { ($0.calendarName ?? "") < ($1.calendarName ?? "") }).first,
+           let calID = firstPersonal.calendarID {
+            return (id: calID, color: firstPersonal.calendarColorHex ?? "#555555")
+        }
+
+        return nil
+    }
+
+    private func isCalendarSelectedForMemberCombined(member: FamilyMember, calendarID: String?, type: String) -> Bool {
+        guard let calendarID = calendarID else { return false }
+
+        if let (selectedID, _) = getSelectedCalendarForMemberCombined(member: member) {
+            return selectedID == calendarID
+        }
+        return false
+    }
+
     @ViewBuilder
     private var notesSection: some View {
         sectionCard {
@@ -1625,6 +1761,73 @@ struct AddEventView: View {
         } else {
             print("❌ No available calendars to create driver event")
         }
+    }
+
+    /// Some calendar providers drop recurrence on creation; reapply if needed so every target calendar gets the full series.
+    private func enforceRecurringSeries(
+        eventId: String,
+        calendarId: String,
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        location: String?,
+        notes: String?,
+        isAllDay: Bool,
+        recurrenceRule: EKRecurrenceRule,
+        alertOption: AlertOption?
+    ) -> String {
+        let createdEvent = CalendarManager.shared.fetchEventDetails(
+            withIdentifier: eventId,
+            occurrenceStartDate: startDate
+        ) ?? CalendarManager.shared.getEvent(withIdentifier: eventId)
+
+        if let createdEvent,
+           let rules = createdEvent.recurrenceRules,
+           !rules.isEmpty {
+            print("✅ Recurrence already present for event \(eventId) in calendar \(calendarId)")
+            return eventId
+        }
+
+        print("♻️ Recurrence missing for event \(eventId) in calendar \(calendarId); reapplying rule")
+        let updated = CalendarManager.shared.enforceRecurrence(
+            for: eventId,
+            occurrenceStartDate: nil, // allow EventKit to resolve the master event
+            in: calendarId,
+            recurrenceRule: recurrenceRule
+        )
+
+        if updated {
+            print("✅ Successfully re-applied recurrence for event \(eventId) in calendar \(calendarId)")
+            return eventId
+        }
+
+        print("❌ Failed to re-apply recurrence for event \(eventId) in calendar \(calendarId). Attempting recreate.")
+
+        // As a last resort, delete the non-recurring instance and recreate a recurring event
+        _ = CalendarManager.shared.deleteEvent(
+            withIdentifier: eventId,
+            occurrenceStartDate: startDate,
+            from: calendarId,
+            span: .thisEvent
+        )
+
+        if let newId = CalendarManager.shared.createRecurringEvent(
+            title: title,
+            startDate: startDate,
+            endDate: endDate,
+            location: location,
+            notes: notes,
+            recurrenceRule: recurrenceRule,
+            isAllDay: isAllDay,
+            in: calendarId,
+            alertOption: alertOption
+        ) {
+            print("✅ Recreated recurring event with ID \(newId) in calendar \(calendarId)")
+            return newId
+        }
+
+        print("❌ Failed to recreate recurring event in calendar \(calendarId). Keeping original ID \(eventId)")
+        return eventId
     }
 }
 
