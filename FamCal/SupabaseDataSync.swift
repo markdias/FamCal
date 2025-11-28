@@ -241,10 +241,19 @@ class SupabaseDataSync {
                         }
                     }
                 }
+
+                // Visibility flags (with safe defaults)
+                calendar.showInNext = supabaseDTO.show_in_next ?? false
+                calendar.showInSpotlight = supabaseDTO.show_in_spotlight ?? false
+                calendar.showInUpcoming = supabaseDTO.show_in_upcoming ?? false
+                calendar.showInMonth = supabaseDTO.show_in_month ?? true
+                calendar.showInDay = supabaseDTO.show_in_day ?? true
+
+                print("🔍 DEBUG syncPersonalCalendars: Synced '\(calendar.calendarName ?? "nil")' - ID: \(calendar.calendarID ?? "nil") | Next: \(calendar.showInNext) | Spotlight: \(calendar.showInSpotlight) | Upcoming: \(calendar.showInUpcoming)")
             }
 
             try context.save()
-            print("✅ Synced personal calendars from Supabase to CoreData")
+            print("✅ Synced \(supabaseCalendars.count) personal calendars from Supabase to CoreData")
         } catch {
             print("❌ Error syncing personal calendars: \(error)")
         }

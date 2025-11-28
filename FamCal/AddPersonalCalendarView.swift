@@ -190,14 +190,14 @@ struct AddPersonalCalendarView: View {
     }
 
     private func addPersonalCalendar(_ calendar: AvailableCalendar) {
-        // Save to Supabase first
+        // Save to Supabase
         Task {
             do {
                 _ = try await dataManager.addPersonalCalendar(
                     calendarName: calendar.title,
                     calendarColorHex: calendar.color.hex()
                 )
-                print("✅ Personal calendar saved to Supabase")
+                print("✅ Personal calendar saved to Supabase (calendarID will be auto-populated by name matching)")
             } catch {
                 print("❌ Error saving personal calendar: \(error)")
             }

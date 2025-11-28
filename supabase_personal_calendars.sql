@@ -6,6 +6,11 @@ create table public.personal_calendars (
   calendar_id text not null,
   calendar_name text not null,
   calendar_color_hex text not null default '#007AFF',
+  show_in_next boolean not null default false,
+  show_in_spotlight boolean not null default false,
+  show_in_upcoming boolean not null default false,
+  show_in_month boolean not null default true,
+  show_in_day boolean not null default true,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
 

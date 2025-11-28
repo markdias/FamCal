@@ -574,11 +574,27 @@ class SupabaseManager: @unchecked Sendable {
     // MARK: - Personal Calendars
 
     func addPersonalCalendar(userId: String, calendarName: String, calendarColorHex: String, token: String? = nil) async throws -> PersonalCalendarDTO {
-        let body: [String: String] = [
-            "user_id": userId,
-            "calendar_name": calendarName,
-            "calendar_color_hex": calendarColorHex
-        ]
+        struct CreateBody: Encodable {
+            let user_id: String
+            let calendar_name: String
+            let calendar_color_hex: String
+            let show_in_next: Bool
+            let show_in_spotlight: Bool
+            let show_in_upcoming: Bool
+            let show_in_month: Bool
+            let show_in_day: Bool
+        }
+
+        let body = CreateBody(
+            user_id: userId,
+            calendar_name: calendarName,
+            calendar_color_hex: calendarColorHex,
+            show_in_next: true,
+            show_in_spotlight: true,
+            show_in_upcoming: true,
+            show_in_month: true,
+            show_in_day: true
+        )
 
         let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("POST", path: "rest/v1/personal_calendars", body: body, userToken: userToken)
@@ -602,6 +618,52 @@ class SupabaseManager: @unchecked Sendable {
         let decoder = JSONDecoder()
         let createdCalendar = try decoder.decode(PersonalCalendarDTO.self, from: data)
         return createdCalendar
+    }
+
+    func updatePersonalCalendarVisibility(
+        id: String,
+        userId: String,
+        showInNext: Bool,
+        showInSpotlight: Bool,
+        showInUpcoming: Bool,
+        showInMonth: Bool,
+        showInDay: Bool,
+        token: String? = nil
+    ) async throws {
+        struct UpdateBody: Encodable {
+            let show_in_next: Bool
+            let show_in_spotlight: Bool
+            let show_in_upcoming: Bool
+            let show_in_month: Bool
+            let show_in_day: Bool
+        }
+
+        let body = UpdateBody(
+            show_in_next: showInNext,
+            show_in_spotlight: showInSpotlight,
+            show_in_upcoming: showInUpcoming,
+            show_in_month: showInMonth,
+            show_in_day: showInDay
+        )
+
+        let queryItems = [
+            URLQueryItem(name: "id", value: "eq.\(id)"),
+            URLQueryItem(name: "user_id", value: "eq.\(userId)")
+        ]
+
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest(
+            "PATCH",
+            path: "rest/v1/personal_calendars",
+            queryItems: queryItems,
+            body: body,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 || statusCode == 204 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "updatePersonalCalendarVisibility")
+            throw NSError(domain: "UpdatePersonalCalendarVisibility", code: statusCode)
+        }
     }
 
     func getPersonalCalendars(userId: String, token: String? = nil) async throws -> [PersonalCalendarDTO] {
@@ -1031,10 +1093,15 @@ struct PersonalCalendarDTO: Codable {
     let user_id: String
     let calendar_name: String
     let calendar_color_hex: String
+    let show_in_next: Bool?
+    let show_in_spotlight: Bool?
+    let show_in_upcoming: Bool?
+    let show_in_month: Bool?
+    let show_in_day: Bool?
     let created_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, calendar_name, calendar_color_hex, created_at
+        case id, user_id, calendar_name, calendar_color_hex, show_in_next, show_in_spotlight, show_in_upcoming, show_in_month, show_in_day, created_at
     }
 }
 

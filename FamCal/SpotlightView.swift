@@ -29,6 +29,12 @@ struct SpotlightView: View {
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
 
     @FetchRequest(
+        entity: PersonalCalendar.entity(),
+        sortDescriptors: []
+    )
+    private var personalCalendars: FetchedResults<PersonalCalendar>
+
+    @FetchRequest(
         entity: SavedAddress.entity(),
         sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
     )
@@ -410,6 +416,37 @@ struct SpotlightView: View {
             }
         }
 
+        // Personal calendars - only include if this member is the logged-in user
+        if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+           member.id?.uuidString.lowercased() == linkedMemberId.lowercased() {
+            print("🔦 SpotlightView: This is the logged-in user, checking personal calendars...")
+            for personalCal in personalCalendars {
+                // Only include if toggled for spotlight view
+                let shouldInclude = personalCal.showInSpotlight
+                print("🔦 SpotlightView: Personal Calendar '\(personalCal.calendarName ?? "nil")' showInSpotlight: \(shouldInclude)")
+                guard shouldInclude else { continue }
+
+                var resolvedID: String?
+                if let storedID = personalCal.calendarID {
+                    resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                        print("⚠️ Spotlight: Personal Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                } else if let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                    print("ℹ️ Spotlight: Personal Calendar missing ID, resolved by name: \(name) -> \(localCal.calendarIdentifier)")
+                    resolvedID = localCal.calendarIdentifier
+                }
+
+                if let resolvedID {
+                    print("✅ Spotlight: Adding personal calendar '\(personalCal.calendarName ?? "nil")' with ID: \(resolvedID)")
+                    calendarIDs.insert(resolvedID)
+                } else {
+                    print("❌ Spotlight: Failed to resolve ID for personal calendar '\(personalCal.calendarName ?? "nil")'")
+                }
+            }
+        }
+
         guard !calendarIDs.isEmpty else {
             events = []
             isLoadingEvents = false
@@ -551,10 +588,23 @@ struct SpotlightView: View {
     private func setupView() {
         loadEvents()
         startRefreshTimer()
+
+        // Set up notification observer for personal calendar visibility changes
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("PersonalCalendarVisibilityChanged"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            print("🔦 SpotlightView: Personal calendar visibility changed, reloading events...")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                loadEvents()
+            }
+        }
     }
 
     private func cleanupView() {
         stopRefreshTimer()
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("PersonalCalendarVisibilityChanged"), object: nil)
     }
 
     private func startRefreshTimer() {

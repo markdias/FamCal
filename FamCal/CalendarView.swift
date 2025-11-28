@@ -940,16 +940,27 @@ struct CalendarView: View {
 
         // Add personal calendars for the current user
         if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
-           let linkedMember = familyMembers.first(where: { $0.id?.uuidString == linkedMemberId }) {
+           let linkedMember = familyMembers.first(where: { $0.id?.uuidString.lowercased() == linkedMemberId.lowercased() }) {
             var entry = memberCalendarMap[linkedMember.objectID] ?? ([], linkedMember)
             for personalCal in personalCalendars {
+                // Check if calendar view is enabled (either month OR day)
+                let calendarViewEnabled = personalCal.showInMonth || personalCal.showInDay
+                guard calendarViewEnabled else { continue }
+
+                var resolvedID: String?
                 if let storedID = personalCal.calendarID {
-                    var resolvedID = storedID
+                    resolvedID = storedID
                     // If ID not found locally, try to find by name
                     if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
                         print("⚠️ Personal Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
                         resolvedID = localCal.calendarIdentifier
                     }
+                } else if let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                    print("ℹ️ Personal Calendar missing ID, resolved by name: \(name) -> \(localCal.calendarIdentifier)")
+                    resolvedID = localCal.calendarIdentifier
+                }
+
+                if let resolvedID {
                     entry.0.insert(resolvedID)
                 }
             }
@@ -1067,6 +1078,19 @@ struct CalendarView: View {
         loadEvents()
         loadAvailableCalendars()
         startRefreshTimer()
+
+        // Set up notification observer for personal calendar visibility changes
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("PersonalCalendarVisibilityChanged"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            print("🔔 Personal calendar visibility changed, reloading calendar events...")
+            // Small delay to ensure CoreData has propagated the change
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.loadEvents()
+            }
+        }
     }
 
     private func loadAvailableCalendars() {

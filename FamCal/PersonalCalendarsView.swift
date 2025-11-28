@@ -24,6 +24,7 @@ struct PersonalCalendarsView: View {
     @State private var showingAddPersonalCalendar = false
     @State private var calendarPendingDelete: PersonalCalendar?
     @State private var showingDeleteConfirmation = false
+    @State private var visibilityState: [NSManagedObjectID: VisibilityState] = [:]
 
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -63,20 +64,35 @@ struct PersonalCalendarsView: View {
                             .padding(.horizontal, 16)
                         } else {
                             VStack(spacing: 0) {
-                                ForEach(personalCalendars, id: \.self) { calendar in
-                                    CalendarRow(
-                                        title: calendar.calendarName ?? "Unknown",
-                                        subtitle: "Personal only",
-                                        colorHex: calendar.calendarColorHex ?? "#007AFF",
-                                        onDelete: {
-                                            calendarPendingDelete = calendar
-                                            showingDeleteConfirmation = true
-                                        }
-                                    )
+                                ForEach(personalCalendars, id: \.objectID) { calendar in
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        CalendarRow(
+                                            title: calendar.calendarName ?? "Unknown",
+                                            subtitle: "Personal only",
+                                            colorHex: calendar.calendarColorHex ?? "#007AFF",
+                                            onDelete: {
+                                                calendarPendingDelete = calendar
+                                                showingDeleteConfirmation = true
+                                            }
+                                        )
 
-                                    if calendar.id != personalCalendars.last?.id {
                                         Divider()
                                             .padding(.horizontal, 16)
+
+                                        VStack(spacing: 12) {
+                                            toggleRow(
+                                                title: "Family View",
+                                                icon: "person.3.fill",
+                                                binding: visibilityBinding(for: calendar, keyPath: \.familyView)
+                                            )
+                                            toggleRow(
+                                                title: "Calendar View",
+                                                icon: "calendar",
+                                                binding: visibilityBinding(for: calendar, keyPath: \.calendarView)
+                                            )
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.bottom, 12)
                                     }
                                 }
                             }
@@ -136,6 +152,10 @@ struct PersonalCalendarsView: View {
         } message: { calendar in
             Text("Are you sure you want to delete \(calendar.calendarName ?? "this calendar")?")
         }
+        .onAppear(perform: hydrateVisibilityState)
+        .onChange(of: personalCalendars.count) { _, _ in
+            hydrateVisibilityState()
+        }
     }
 
     private func deletePersonalCalendar(_ calendar: PersonalCalendar) {
@@ -165,6 +185,106 @@ struct PersonalCalendarsView: View {
                 // On next sync/refresh, it may reappear if still in Supabase
             }
         }
+    }
+
+    // MARK: - Visibility State
+
+    private struct VisibilityState {
+        var familyView: Bool
+        var calendarView: Bool
+    }
+
+    private func hydrateVisibilityState() {
+        for calendar in personalCalendars {
+            guard visibilityState[calendar.objectID] == nil else { continue }
+            // Consolidate old toggles: familyView = (next OR spotlight OR upcoming), calendarView = (month OR day)
+            let familyView = calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming
+            let calendarView = calendar.showInMonth || calendar.showInDay
+            visibilityState[calendar.objectID] = VisibilityState(
+                familyView: familyView,
+                calendarView: calendarView
+            )
+        }
+    }
+
+    private func visibilityBinding(for calendar: PersonalCalendar, keyPath: WritableKeyPath<VisibilityState, Bool>) -> Binding<Bool> {
+        Binding(
+            get: {
+                let familyView = calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming
+                let calendarView = calendar.showInMonth || calendar.showInDay
+                return (visibilityState[calendar.objectID] ?? VisibilityState(
+                    familyView: familyView,
+                    calendarView: calendarView
+                ))[keyPath: keyPath]
+            },
+            set: { newValue in
+                updateVisibility(for: calendar, keyPath: keyPath, value: newValue)
+            }
+        )
+    }
+
+    private func updateVisibility(for calendar: PersonalCalendar, keyPath: WritableKeyPath<VisibilityState, Bool>, value: Bool) {
+        let familyView = calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming
+        let calendarView = calendar.showInMonth || calendar.showInDay
+        var state = visibilityState[calendar.objectID] ?? VisibilityState(
+            familyView: familyView,
+            calendarView: calendarView
+        )
+        state[keyPath: keyPath] = value
+        visibilityState[calendar.objectID] = state
+
+        // Update CoreData immediately for snappy UI
+        // When familyView is toggled, set all three family view fields to the same value
+        calendar.showInNext = state.familyView
+        calendar.showInSpotlight = state.familyView
+        calendar.showInUpcoming = state.familyView
+        // When calendarView is toggled, set both calendar view fields to the same value
+        calendar.showInMonth = state.calendarView
+        calendar.showInDay = state.calendarView
+
+        do {
+            try viewContext.save()
+            print("✅ Updated visibility in CoreData: Family=\(state.familyView), Calendar=\(state.calendarView)")
+        } catch {
+            print("❌ Failed to save visibility locally: \(error)")
+        }
+
+        guard let id = calendar.id?.uuidString else {
+            print("❌ Cannot update visibility: missing calendar ID")
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                try await dataManager.updatePersonalCalendarVisibility(
+                    id: id,
+                    showInNext: state.familyView,
+                    showInSpotlight: state.familyView,
+                    showInUpcoming: state.familyView,
+                    showInMonth: state.calendarView,
+                    showInDay: state.calendarView
+                )
+                print("ℹ️ Updated personal calendar visibility for \(calendar.calendarName ?? id)")
+
+                // Notify views to reload events
+                NotificationCenter.default.post(name: Notification.Name("PersonalCalendarVisibilityChanged"), object: nil)
+            } catch {
+                print("❌ Failed to update visibility in Supabase: \(error)")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toggleRow(title: String, icon: String, binding: Binding<Bool>) -> some View {
+        Toggle(isOn: binding) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(theme.accentColor)
+                Text(title)
+                    .foregroundColor(primaryTextColor)
+            }
+        }
+        .toggleStyle(SwitchToggleStyle(tint: theme.accentColor))
     }
 }
 

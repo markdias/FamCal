@@ -513,20 +513,79 @@ class SupabaseDataManager: ObservableObject {
         }
 
         let createdCalendar = try await supabaseManager.addPersonalCalendar(userId: userId, calendarName: calendarName, calendarColorHex: calendarColorHex)
-        print("✅ Personal calendar created in Supabase (ID: \(createdCalendar.id))")
+        print("✅ Personal calendar created in Supabase:")
+        print("   - ID: \(createdCalendar.id)")
+        print("   - Name: \(createdCalendar.calendar_name)")
+        print("   - Next: \(createdCalendar.show_in_next ?? false)")
+        print("   - Spotlight: \(createdCalendar.show_in_spotlight ?? false)")
+        print("   - Upcoming: \(createdCalendar.show_in_upcoming ?? false)")
+        print("   - Month: \(createdCalendar.show_in_month ?? false)")
+        print("   - Day: \(createdCalendar.show_in_day ?? false)")
 
         // Add to in-memory list immediately
         personalCalendars.append(createdCalendar)
+        print("🔍 DEBUG: Added to in-memory list. Total personal calendars: \(personalCalendars.count)")
 
         // Sync to CoreData
         if let context = managedObjectContext {
+            print("🔍 DEBUG: Syncing to CoreData...")
             SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
                 supabaseCalendars: personalCalendars,
                 to: context
             )
+        } else {
+            print("❌ DEBUG: No CoreData context available for sync!")
         }
 
         return createdCalendar
+    }
+
+    @MainActor
+    func updatePersonalCalendarVisibility(
+        id: String,
+        showInNext: Bool,
+        showInSpotlight: Bool,
+        showInUpcoming: Bool,
+        showInMonth: Bool,
+        showInDay: Bool
+    ) async throws {
+        guard let userId = authManager.userId else {
+            throw NSError(domain: "NoUserID", code: -1)
+        }
+
+        try await supabaseManager.updatePersonalCalendarVisibility(
+            id: id,
+            userId: userId,
+            showInNext: showInNext,
+            showInSpotlight: showInSpotlight,
+            showInUpcoming: showInUpcoming,
+            showInMonth: showInMonth,
+            showInDay: showInDay
+        )
+
+        // Update in-memory list
+        if let index = personalCalendars.firstIndex(where: { $0.id == id }) {
+            var updated = personalCalendars[index]
+            updated = PersonalCalendarDTO(
+                id: updated.id,
+                user_id: updated.user_id,
+                calendar_name: updated.calendar_name,
+                calendar_color_hex: updated.calendar_color_hex,
+                show_in_next: showInNext,
+                show_in_spotlight: showInSpotlight,
+                show_in_upcoming: showInUpcoming,
+                show_in_month: showInMonth,
+                show_in_day: showInDay,
+                created_at: updated.created_at
+            )
+            personalCalendars[index] = updated
+
+            print("🔍 DEBUG: Updated in-memory calendar '\(updated.calendar_name)': Next=\(showInNext), Spotlight=\(showInSpotlight), Upcoming=\(showInUpcoming), Month=\(showInMonth), Day=\(showInDay)")
+        }
+
+        // Don't sync back to CoreData here - it's already been updated in PersonalCalendarsView
+        // Syncing here causes a race condition where stale in-memory data overwrites the fresh CoreData changes
+        print("ℹ️ Skipping CoreData sync after visibility update (already updated in UI)")
     }
 
     @MainActor

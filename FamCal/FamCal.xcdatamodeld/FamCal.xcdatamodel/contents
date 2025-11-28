@@ -73,6 +73,11 @@
         <attribute name="calendarID" optional="YES" attributeType="String"/>
         <attribute name="calendarName" optional="YES" attributeType="String"/>
         <attribute name="calendarColorHex" optional="YES" attributeType="String"/>
+        <attribute name="showInNext" optional="YES" attributeType="Boolean" defaultValueString="NO"/>
+        <attribute name="showInSpotlight" optional="YES" attributeType="Boolean" defaultValueString="NO"/>
+        <attribute name="showInUpcoming" optional="YES" attributeType="Boolean" defaultValueString="NO"/>
+        <attribute name="showInMonth" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
+        <attribute name="showInDay" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
     </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
