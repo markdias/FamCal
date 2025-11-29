@@ -897,8 +897,20 @@ struct AddEventView: View {
                         .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
+
+                    if !locationName.isEmpty {
+                        Button(action: {
+                            locationName = ""
+                            locationAddress = ""
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(secondaryTextColor)
+                                .font(.system(size: 16))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                
+
                 if !locationAddress.isEmpty && locationAddress != locationName {
                     Text(locationAddress)
                         .font(.system(size: 12))
