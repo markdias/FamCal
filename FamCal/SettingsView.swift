@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State private var showingOnboarding = false
     @State private var onboardingCompletedInSettings = false
     @State private var showingProSheet = false
+    @State private var showingDonate = false
+    @State private var showingFeedback = false
     private var proToggleBinding: Binding<Bool> {
         Binding(
             get: { appSettingsManager.isProUser },
@@ -290,13 +292,18 @@ struct SettingsView: View {
                                 .padding(.horizontal, 16)
 
                             settingsContainer {
-                                Button(action: { /* Rate & Review Action */ }) {
-                                    SettingsRowView(iconName: "star.bubble", title: "Rate & Review")
+                                Button(action: { showingFeedback = true }) {
+                                    SettingsRowView(iconName: "bubbles.and.sparkles", title: "Feedback")
                                 }
                                 Divider().padding(.leading, 56)
 
                                 Button(action: { showingPermissions = true }) {
                                     SettingsRowView(iconName: "lock", title: "Permissions")
+                                }
+                                Divider().padding(.leading, 56)
+
+                                Button(action: { showingDonate = true }) {
+                                    SettingsRowView(iconName: "heart.fill", title: "Donate")
                                 }
                                 Divider().padding(.leading, 56)
 
@@ -445,6 +452,14 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingHelp) {
             HelpView()
+        }
+        .sheet(isPresented: $showingFeedback) {
+            FeedbackView()
+                .environmentObject(themeManager)
+        }
+        .sheet(isPresented: $showingDonate) {
+            DonateView()
+                .environmentObject(themeManager)
         }
         .fullScreenCover(isPresented: $showingProSheet) {
             FamCalProView()
