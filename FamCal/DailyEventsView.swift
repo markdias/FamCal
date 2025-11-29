@@ -278,8 +278,18 @@ struct DailyEventsView: View {
                         .opacity(isPast ? 0.7 : 1.0)
 
                     if let driverName = event.driverName {
-                        if let phone = event.driverPhone, !phone.isEmpty {
-                            Link(destination: URL(string: "tel:\(phone)")!) {
+                        Group {
+                            if let phone = event.driverPhone, !phone.isEmpty {
+                                Link(destination: URL(string: "tel:\(phone)")!) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "car.fill")
+                                            .font(.system(size: 10))
+                                        Text(driverName)
+                                            .font(.system(size: 10, weight: .medium))
+                                    }
+                                    .foregroundColor(theme.mutedTagColor)
+                                }
+                            } else {
                                 HStack(spacing: 4) {
                                     Image(systemName: "car.fill")
                                         .font(.system(size: 10))
@@ -288,14 +298,6 @@ struct DailyEventsView: View {
                                 }
                                 .foregroundColor(theme.mutedTagColor)
                             }
-                        } else {
-                            HStack(spacing: 4) {
-                                Image(systemName: "car.fill")
-                                    .font(.system(size: 10))
-                                Text(driverName)
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(theme.mutedTagColor)
                         }
                         .opacity(isPast ? 0.7 : 1.0)
                     }
