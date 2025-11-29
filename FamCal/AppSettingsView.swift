@@ -109,11 +109,8 @@ struct AppSettingsView: View {
         )
     }
 
-    private var darkModeBinding: Binding<Bool> {
-        Binding(
-            get: { themeManager.isDarkModeEnabled },
-            set: { themeManager.setDarkMode($0) }
-        )
+    private var appearanceOptions: [InterfaceStylePreference] {
+        InterfaceStylePreference.allCases
     }
     private var spotlightOptions: [Int] {
         Array(1...appSettingsManager.currentSpotlightLimit)
@@ -198,24 +195,37 @@ struct AppSettingsView: View {
                                 .padding(.horizontal, 16)
 
                             settingsContainer {
-                                HStack(spacing: 16) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Dark mode")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(primaryTextColor)
+                                ForEach(appearanceOptions.indices, id: \.self) { index in
+                                    let option = appearanceOptions[index]
+                                    Button(action: {
+                                        themeManager.setInterfaceStylePreference(option)
+                                    }) {
+                                        HStack(spacing: 16) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(option.displayName)
+                                                    .font(.system(size: 16, weight: .medium))
+                                                    .foregroundColor(primaryTextColor)
 
-                                        Text("Apply dark colors to current theme")
-                                            .font(.system(size: 13))
-                                            .foregroundColor(secondaryTextColor)
+                                                Text(option.subtitle)
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(secondaryTextColor)
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: themeManager.interfaceStylePreference == option ? "checkmark.circle.fill" : "circle")
+                                                .font(.system(size: 18, weight: .semibold))
+                                                .foregroundColor(themeManager.interfaceStylePreference == option ? toggleColor : secondaryTextColor)
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
                                     }
+                                    .buttonStyle(.plain)
 
-                                    Spacer()
-
-                                    Toggle("", isOn: darkModeBinding)
-                                        .tint(toggleColor)
+                                    if index < appearanceOptions.count - 1 {
+                                        Divider().padding(.leading, 16)
+                                    }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
                             }
                         }
 

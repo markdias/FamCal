@@ -9,6 +9,7 @@ import SwiftUI
 import CoreData
 import WidgetKit
 import EventKit
+import GoogleMobileAds
 // import GoogleSignIn - Enable in Xcode GUI after uncommenting GoogleSignIn pod
 
 @main
@@ -66,9 +67,8 @@ struct FamCalApp: App {
         }
 
         // Initialize Google Mobile Ads SDK
-        // Commented out due to pod configuration issues - will be initialized separately
-        // MobileAds.initialize()
-        // print("📱 Google Mobile Ads SDK initialized")
+        MobileAds.initialize()
+        print("📱 Google Mobile Ads SDK initialized")
 
         // Move diagnostics off main thread to prevent blocking UI
         DispatchQueue.global(qos: .utility).async {
@@ -125,6 +125,7 @@ struct FamCalApp: App {
 
     var body: some Scene {
         WindowGroup {
+            SystemColorSchemeUpdater(themeManager: themeManager) {
             Group {
                 // While session is being checked, show loading screen
                 if isCheckingSession {
@@ -239,7 +240,7 @@ struct FamCalApp: App {
                     }
                 }
             }
-            .preferredColorScheme(themeManager.selectedTheme.prefersDarkInterface ? .dark : .light)
+            .preferredColorScheme(themeManager.preferredColorScheme)
             .sheet(isPresented: $showResetPasswordSheet) {
                 ResetPasswordSheet(email: resetPasswordEmail)
                     .environmentObject(authManager)
@@ -328,6 +329,7 @@ struct FamCalApp: App {
                     print("✅ Family setup completion detected - dismissing setup flow")
                     needsFamilySetup = false
                 }
+            }
             }
         }
     }
@@ -605,6 +607,22 @@ struct FamCalApp: App {
             print("✅ All checks passed - proceeding to main app")
             calendarCheckStatus = .ready
         }
+    }
+}
+
+private struct SystemColorSchemeUpdater<Content: View>: View {
+    @ObservedObject var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+    let content: () -> Content
+
+    var body: some View {
+        content()
+            .onAppear {
+                themeManager.updateSystemColorScheme(colorScheme)
+            }
+            .onChange(of: colorScheme) { _, newScheme in
+                themeManager.updateSystemColorScheme(newScheme)
+            }
     }
 }
 

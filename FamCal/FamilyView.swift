@@ -279,7 +279,7 @@ struct FamilyView: View {
                 // AdMob Banner - only show for free users
                 if !appSettingsManager.isProUser {
                     AdBannerContainer(
-                        adUnitID: "ca-app-pub-6842193682076971/5907724370",
+                        adUnitID: "ca-app-pub-3940256099942544/6300978111", // Test ad unit (for development)
                         isProUser: appSettingsManager.isProUser,
                         theme: theme
                     )

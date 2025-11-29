@@ -6,27 +6,37 @@
 //
 
 import SwiftUI
-// import GoogleMobileAds
-// Temporarily disabled due to pod configuration issues - will be re-enabled once pod setup is fixed
+import GoogleMobileAds
+import UIKit
 
 /// A SwiftUI wrapper for Google Mobile Ads banner view
 /// This component handles the display of banner ads using UIViewRepresentable
 /// Ads are only shown to free tier users (hidden for Pro users)
-///
-/// NOTE: This view is currently disabled until GoogleMobileAds SDK is properly configured
 struct GoogleMobileAdsView: UIViewRepresentable {
     let adUnitID: String
     var isProUser: Bool = false
 
-    class Coordinator: NSObject {
+    class Coordinator: NSObject, BannerViewDelegate {
         var parent: GoogleMobileAdsView
+        var bannerView: BannerView?
 
         init(_ parent: GoogleMobileAdsView) {
             self.parent = parent
+            super.init()
         }
 
-        // MARK: - Placeholder methods (GoogleMobileAds SDK integration disabled)
-        // These would normally implement BannerViewDelegate
+        // MARK: - BannerViewDelegate methods
+        func bannerViewDidReceiveAd(_ bannerView: BannerView) {
+            print("✅ Banner ad received: \(self.parent.adUnitID)")
+        }
+
+        func bannerView(_ bannerView: BannerView, didFailToReceiveAdWithError error: Error) {
+            print("❌ Banner ad failed: \(error.localizedDescription)")
+        }
+
+        func bannerViewDidRecordImpression(_ bannerView: BannerView) {
+            print("👁️ Banner ad impression recorded")
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -34,16 +44,47 @@ struct GoogleMobileAdsView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UIView {
-        // Return empty view - ads disabled until GoogleMobileAds pod is fixed
-        let emptyView = UIView()
-        emptyView.backgroundColor = .clear
-        emptyView.translatesAutoresizingMaskIntoConstraints = false
-        emptyView.heightAnchor.constraint(equalToConstant: 0).isActive = true
-        return emptyView
+        let containerView = UIView()
+        containerView.backgroundColor = .clear
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Create a fresh banner view with proper ad unit ID
+        let bannerView = BannerView(frame: CGRect(x: 0, y: 0, width: 320, height: 50))
+        bannerView.adUnitID = adUnitID
+        bannerView.rootViewController = getRootViewController()
+        bannerView.delegate = context.coordinator
+        bannerView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Store reference for delegate callbacks
+        context.coordinator.bannerView = bannerView
+
+        containerView.addSubview(bannerView)
+
+        // Add constraints to center banner in container
+        NSLayoutConstraint.activate([
+            bannerView.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
+            bannerView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            bannerView.widthAnchor.constraint(equalToConstant: 320),
+            bannerView.heightAnchor.constraint(equalToConstant: 50)
+        ])
+
+        // Load the ad with a Request
+        print("📱 Loading ad with unit ID: \(adUnitID)")
+        bannerView.load(Request())
+
+        return containerView
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // No-op - ads are currently disabled
+        // Update if needed
+    }
+
+    private func getRootViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first else {
+            return nil
+        }
+        return window.rootViewController
     }
 
     static var defaultHeight: CGFloat = 50
@@ -57,12 +98,14 @@ struct AdBannerContainer: View {
 
     var body: some View {
         if !isProUser {
-            GoogleMobileAdsView(adUnitID: adUnitID, isProUser: isProUser)
-                .frame(height: GoogleMobileAdsView.defaultHeight)
-                .background(theme?.cardBackground ?? Color(.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+            VStack {
+                GoogleMobileAdsView(adUnitID: adUnitID, isProUser: isProUser)
+                    .frame(height: GoogleMobileAdsView.defaultHeight)
+                    .background(theme?.cardBackground ?? Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
     }
 }

@@ -100,6 +100,30 @@ struct AppTheme: Identifiable, Equatable {
     }
 }
 
+enum InterfaceStylePreference: String, CaseIterable, Identifiable {
+    case light
+    case dark
+    case system
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .system: return "System Settings"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .light: return "Always use the light appearance"
+        case .dark: return "Always use the dark appearance"
+        case .system: return "Follow the device settings"
+        }
+    }
+}
+
 extension AppTheme {
     @ViewBuilder
     func backgroundLayer() -> some View {
@@ -121,19 +145,31 @@ extension AppTheme {
 
 final class ThemeManager: ObservableObject {
     @Published private(set) var selectedTheme: AppTheme
-    @Published var isDarkModeEnabled: Bool
+    @Published private(set) var interfaceStylePreference: InterfaceStylePreference
     private var baseTheme: AppTheme
+    private var currentSystemColorScheme: ColorScheme = .light
     private let storageKey = "selectedThemeID"
+    private let interfacePreferenceKey = "interfaceStylePreference"
     private let darkModeKey = "darkModeEnabled"
 
     init(defaultTheme: AppTheme = .classic) {
         let stored = UserDefaults.standard.string(forKey: storageKey)
         let initialBaseTheme = AppTheme.theme(with: stored) ?? defaultTheme
-        let initialDarkModeEnabled = UserDefaults.standard.bool(forKey: darkModeKey)
+
+        let initialPreference: InterfaceStylePreference
+        if let rawPreference = UserDefaults.standard.string(forKey: interfacePreferenceKey),
+           let preference = InterfaceStylePreference(rawValue: rawPreference) {
+            initialPreference = preference
+        } else if let legacyDarkMode = UserDefaults.standard.object(forKey: darkModeKey) as? Bool {
+            initialPreference = legacyDarkMode ? .dark : .light
+        } else {
+            initialPreference = .system
+        }
 
         baseTheme = initialBaseTheme
-        isDarkModeEnabled = initialDarkModeEnabled
-        selectedTheme = ThemeManager.makeEffectiveTheme(from: initialBaseTheme, darkModeEnabled: initialDarkModeEnabled)
+        interfaceStylePreference = initialPreference
+        selectedTheme = initialBaseTheme
+        applyEffectiveTheme()
     }
 
     func select(theme: AppTheme) {
@@ -143,19 +179,42 @@ final class ThemeManager: ObservableObject {
         applyEffectiveTheme()
     }
 
-    func setDarkMode(_ enabled: Bool) {
-        guard enabled != isDarkModeEnabled else { return }
-        isDarkModeEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: darkModeKey)
+    func setInterfaceStylePreference(_ preference: InterfaceStylePreference) {
+        guard preference != interfaceStylePreference else { return }
+        interfaceStylePreference = preference
+        UserDefaults.standard.set(preference.rawValue, forKey: interfacePreferenceKey)
         applyEffectiveTheme()
     }
 
+    func updateSystemColorScheme(_ colorScheme: ColorScheme) {
+        guard currentSystemColorScheme != colorScheme else { return }
+        currentSystemColorScheme = colorScheme
+        guard interfaceStylePreference == .system else { return }
+        applyEffectiveTheme()
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch interfaceStylePreference {
+        case .light: return .light
+        case .dark: return .dark
+        case .system: return nil
+        }
+    }
+
     func getEffectiveTheme() -> AppTheme {
-        ThemeManager.makeEffectiveTheme(from: baseTheme, darkModeEnabled: isDarkModeEnabled)
+        ThemeManager.makeEffectiveTheme(from: baseTheme, darkModeEnabled: shouldUseDarkMode)
     }
 
     private func applyEffectiveTheme() {
-        selectedTheme = ThemeManager.makeEffectiveTheme(from: baseTheme, darkModeEnabled: isDarkModeEnabled)
+        selectedTheme = ThemeManager.makeEffectiveTheme(from: baseTheme, darkModeEnabled: shouldUseDarkMode)
+    }
+
+    private var shouldUseDarkMode: Bool {
+        switch interfaceStylePreference {
+        case .light: return false
+        case .dark: return true
+        case .system: return currentSystemColorScheme == .dark
+        }
     }
 
     private static func makeEffectiveTheme(from baseTheme: AppTheme, darkModeEnabled: Bool) -> AppTheme {

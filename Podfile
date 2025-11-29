@@ -11,6 +11,5 @@ target 'FamCal' do
   # pod 'GoogleSignIn'
 
   # Google Mobile Ads SDK for AdMob integration
-  # Temporarily removed due to build configuration issues
-  # pod 'Google-Mobile-Ads-SDK'
+  pod 'Google-Mobile-Ads-SDK'
 end
