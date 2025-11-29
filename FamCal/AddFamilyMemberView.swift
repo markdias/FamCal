@@ -312,7 +312,9 @@ struct AddFamilyMemberView: View {
 
                 // Check if member already exists
                 if let existingMember = familyMembers.first(where: { $0.name?.lowercased() == name.lowercased() }) {
-                    // Member exists - only add calendar if matched and not already linked
+                    // Member exists - update driver status and add calendar if matched and not already linked
+                    existingMember.isDriver = isDriver
+
                     if let matched = matchedCalendar {
                         // Check if this calendar is already linked to the member
                         let existingCalendarIds = (existingMember.memberCalendars as? Set<FamilyMemberCalendar> ?? [])
@@ -347,6 +349,10 @@ struct AddFamilyMemberView: View {
                             print("ℹ️ Calendar already linked to family member")
                         }
                     }
+
+                    // Save the driver status update locally
+                    try viewContext.save()
+
                     // No error message - silently complete for existing members
                     print("✅ Family member '\(name)' already exists (calendar updated if needed)")
                     dismiss()
@@ -358,6 +364,7 @@ struct AddFamilyMemberView: View {
                 // Use local-only method for guests, Supabase sync for authenticated users
                 if authManager.isGuest {
                     let newMember = try dataManager.createFamilyMemberLocal(name: name, colorHex: colorHex)
+                    newMember.isDriver = isDriver
 
                     // If a calendar was matched, add it to the member locally
                     if let matched = matchedCalendar {
@@ -372,23 +379,40 @@ struct AddFamilyMemberView: View {
                         try viewContext.save()
                         print("✅ Calendar linked to family member (guest mode)")
                     }
+
+                    try viewContext.save()
+                    print("✅ Family member created with driver status: \(isDriver)")
                 } else {
                     _ = try await dataManager.createFamilyMember(name: name, colorHex: colorHex)
 
-                    // If a calendar was matched, add it to the member
-                    if let matched = matchedCalendar,
-                       let newMember = dataManager.familyMembers.first(where: { $0.name == name }) {
-                        try await dataManager.supabaseManager.addFamilyMemberCalendar(
-                            memberId: newMember.id,
-                            calendarName: matched.title,
-                            calendarColorHex: matched.color.hex(),
-                            isAutoLinked: true
-                        )
-                        print("✅ Calendar linked to family member")
+                    // Update driver status in Supabase and CoreData
+                    if let newMember = dataManager.familyMembers.first(where: { $0.name == name }),
+                       let coreDataMember = familyMembers.first(where: { $0.name == name }) {
+                        coreDataMember.isDriver = isDriver
 
-                        // Refresh data to sync the newly added calendar
+                        // Update driver status in Supabase
+                        try await dataManager.supabaseManager.updateFamilyMemberDriver(
+                            memberId: newMember.id,
+                            isDriver: isDriver
+                        )
+                        print("✅ Family member created with driver status: \(isDriver)")
+
+                        // If a calendar was matched, add it to the member
+                        if let matched = matchedCalendar {
+                            try await dataManager.supabaseManager.addFamilyMemberCalendar(
+                                memberId: newMember.id,
+                                calendarName: matched.title,
+                                calendarColorHex: matched.color.hex(),
+                                isAutoLinked: true
+                            )
+                            print("✅ Calendar linked to family member")
+                        }
+
+                        // Refresh data to sync the newly added calendar and driver status
                         await dataManager.fetchUserData()
                     }
+
+                    try viewContext.save()
                 }
 
                 print("✅ Family member '\(name)' saved successfully")

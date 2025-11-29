@@ -306,6 +306,21 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    /// Update the driver status for a family member.
+    func updateFamilyMemberDriver(memberId: String, isDriver: Bool, token: String? = nil) async throws {
+        let body: [String: Bool] = [
+            "is_driver": isDriver
+        ]
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(memberId)")]
+        let userToken = token ?? authManager.accessToken
+        let (_, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard statusCode == 200 else {
+            throw NSError(domain: "UpdateFamilyMemberDriver", code: statusCode)
+        }
+    }
+
     /// Link the current authenticated user to a family member (sets linked_user_id).
     func linkCurrentUserToFamilyMember(id: String, token: String? = nil) async throws {
         guard let userId = authManager.userId else {
@@ -1106,10 +1121,11 @@ struct FamilyMemberDTO: Codable {
     let linked_user_id: String?
     let name: String
     let color_hex: String
+    let is_driver: Bool?
     let created_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, family_id, linked_user_id, name, color_hex, created_at
+        case id, user_id, family_id, linked_user_id, name, color_hex, is_driver, created_at
     }
 }
 

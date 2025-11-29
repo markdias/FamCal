@@ -333,6 +333,8 @@ struct EditFamilyMemberView: View {
             do {
                 if authManager.isGuest {
                     // Local-only update for guests
+                    member.name = name
+                    member.isDriver = isDriver
                     try dataManager.updateFamilyMemberLocal(id: member.id ?? UUID(), name: name, colorHex: member.colorHex ?? "#555555")
 
                     // Handle auto-linked calendar updates locally
@@ -359,7 +361,7 @@ struct EditFamilyMemberView: View {
                     }
 
                     try viewContext.save()
-                    print("✅ Family member '\(name)' updated locally (guest mode)")
+                    print("✅ Family member '\(name)' updated locally (guest mode) with driver status: \(isDriver)")
                 } else {
                     // Supabase sync for authenticated users
                     member.name = name
@@ -395,6 +397,9 @@ struct EditFamilyMemberView: View {
                     // Update in Supabase
                     if let memberId = member.id?.uuidString {
                         try await dataManager.updateFamilyMember(id: memberId, name: name, colorHex: member.colorHex ?? "#555555")
+
+                        // Update driver status if it changed
+                        try await dataManager.supabaseManager.updateFamilyMemberDriver(memberId: memberId, isDriver: isDriver)
                     }
                 }
 
