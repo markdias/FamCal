@@ -104,32 +104,8 @@ struct AccountSettingsView: View {
                             .padding(.horizontal, 16)
 
                         settingsContainer {
-                            Menu {
-                                // Show local members for guests, Supabase members for authenticated users
-                                if authManager.isGuest {
-                                    ForEach(localFamilyMembers, id: \.id) { member in
-                                        Button(action: { selectMemberLocal(member) }) {
-                                            HStack {
-                                                Text(member.name ?? "Unknown")
-                                                if isSelectedLocal(member.id) {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    ForEach(dataManager.familyMembers, id: \.id) { member in
-                                        Button(action: { selectMember(member) }) {
-                                            HStack {
-                                                Text(member.name)
-                                                if isSelected(member.id) {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
+                            if !authManager.isGuest && appSettingsManager.linkedFamilyMemberId != nil {
+                                // Authenticated user with linked account - show read-only
                                 HStack {
                                     Text(getDisplayName())
                                         .font(.system(size: 16, weight: .medium))
@@ -137,11 +113,53 @@ struct AccountSettingsView: View {
 
                                     Spacer()
 
-                                    Image(systemName: "chevron.up.chevron.down")
+                                    Image(systemName: "lock.fill")
                                         .font(.system(size: 14))
-                                        .foregroundColor(secondaryTextColor)
+                                        .foregroundColor(.orange)
                                 }
                                 .padding()
+                            } else {
+                                // Guest or unlinked user - show menu
+                                Menu {
+                                    // Show local members for guests, Supabase members for authenticated users
+                                    if authManager.isGuest {
+                                        ForEach(localFamilyMembers, id: \.id) { member in
+                                            Button(action: { selectMemberLocal(member) }) {
+                                                HStack {
+                                                    Text(member.name ?? "Unknown")
+                                                    if isSelectedLocal(member.id) {
+                                                        Image(systemName: "checkmark")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        // Filter out members that are already linked to other accounts
+                                        ForEach(dataManager.familyMembers.filter { $0.linked_user_id == nil }, id: \.id) { member in
+                                            Button(action: { selectMember(member) }) {
+                                                HStack {
+                                                    Text(member.name)
+                                                    if isSelected(member.id) {
+                                                        Image(systemName: "checkmark")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(getDisplayName())
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(primaryTextColor)
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+                                    .padding()
+                                }
                             }
                         }
                     }

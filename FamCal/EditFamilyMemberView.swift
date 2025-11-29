@@ -28,6 +28,8 @@ struct EditFamilyMemberView: View {
     @State private var showDeleteCalendarOption = false
     @State private var saveError: String?
     @State private var showSaveError = false
+    @State private var showUnlinkConfirmation = false
+    @State private var isUnlinking = false
 
     private var calendarLinkingBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -56,19 +58,43 @@ struct EditFamilyMemberView: View {
 
     private var nameInput: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Name")
-                .font(.system(size: 14, weight: .semibold, design: .default))
-                .foregroundColor(.gray)
+            HStack {
+                Text("Name")
+                    .font(.system(size: 14, weight: .semibold, design: .default))
+                    .foregroundColor(.gray)
 
-            TextField("Enter family member's name", text: $name)
-                .font(.system(size: 16, weight: .regular, design: .default))
+                if member.linkedUserId != nil {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+            }
+
+            if member.linkedUserId != nil {
+                HStack {
+                    Text(name)
+                        .font(.system(size: 16, weight: .regular, design: .default))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 12)
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
-                .onChange(of: name) { oldValue, newValue in
-                    updateCalendarMatch()
-                }
+            } else {
+                TextField("Enter family member's name", text: $name)
+                    .font(.system(size: 16, weight: .regular, design: .default))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+                    .onChange(of: name) { oldValue, newValue in
+                        updateCalendarMatch()
+                    }
+            }
         }
     }
 
@@ -202,16 +228,18 @@ struct EditFamilyMemberView: View {
 
     private var actionButtons: some View {
         VStack(spacing: 12) {
-            Button(action: saveMember) {
-                Text("Save Changes")
-                    .font(.system(size: 16, weight: .semibold, design: .default))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(name.isEmpty ? Color.gray : Color(red: 0.33, green: 0.33, blue: 0.33))
-                    .cornerRadius(12)
+            if member.linkedUserId == nil {
+                Button(action: saveMember) {
+                    Text("Save Changes")
+                        .font(.system(size: 16, weight: .semibold, design: .default))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(name.isEmpty ? Color.gray : Color(red: 0.33, green: 0.33, blue: 0.33))
+                        .cornerRadius(12)
+                }
+                .disabled(name.isEmpty)
             }
-            .disabled(name.isEmpty)
 
             Button(action: { dismiss() }) {
                 Text("Cancel")
@@ -221,6 +249,18 @@ struct EditFamilyMemberView: View {
                     .frame(height: 56)
                     .background(Color(.systemGray6))
                     .cornerRadius(12)
+            }
+
+            if member.linkedUserId != nil {
+                Button(action: { showUnlinkConfirmation = true }) {
+                    Text("Unlink Account")
+                        .font(.system(size: 16, weight: .semibold, design: .default))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(Color.orange)
+                        .cornerRadius(12)
+                }
             }
 
             Button(action: { showDeleteConfirmation = true }) {
@@ -290,6 +330,14 @@ struct EditFamilyMemberView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(saveError ?? "An unknown error occurred")
+        }
+        .alert("Unlink Account?", isPresented: $showUnlinkConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Unlink", role: .destructive) {
+                unlinkAccount()
+            }
+        } message: {
+            Text("Are you sure you want to unlink the account from \(member.name ?? "this member")? This action can be reversed by linking a different account later.")
         }
     }
 
@@ -489,6 +537,40 @@ struct EditFamilyMemberView: View {
                 saveError = "Failed to delete family member: \(error.localizedDescription)"
                 showSaveError = true
                 print("❌ Error deleting member: \(error)")
+            }
+        }
+    }
+
+    private func unlinkAccount() {
+        Task {
+            do {
+                isUnlinking = true
+
+                if authManager.isGuest {
+                    // Local-only update for guests
+                    member.linkedUserId = nil
+                    try viewContext.save()
+                    print("✅ Account unlinked from family member locally (guest mode)")
+                } else {
+                    // Supabase update for authenticated users - unlink the specific member
+                    if let memberId = member.id?.uuidString {
+                        try await dataManager.supabaseManager.unlinkSpecificMember(memberId: memberId)
+                        member.linkedUserId = nil
+                        try viewContext.save()
+                        print("✅ Account unlinked from family member \(member.name ?? "Unknown")")
+
+                        // Refresh data from Supabase to ensure UI updates
+                        await dataManager.fetchUserData()
+                    }
+                }
+
+                isUnlinking = false
+                dismiss()
+            } catch {
+                saveError = "Failed to unlink account: \(error.localizedDescription)"
+                showSaveError = true
+                isUnlinking = false
+                print("❌ Error unlinking account: \(error)")
             }
         }
     }

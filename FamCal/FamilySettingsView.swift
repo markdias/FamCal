@@ -29,6 +29,8 @@ struct FamilySettingsView: View {
     @State private var activeSheet: ActiveSheet? = nil
     @State private var memberPendingDelete: FamilyMember? = nil
     @State private var showingDeleteConfirmation = false
+    @State private var memberPendingUnlink: FamilyMember? = nil
+    @State private var showingUnlinkConfirmation = false
     @State private var inviteEmail: String = ""
     @State private var selectedInviteMember: FamilyMember?
     @State private var isSendingInvite = false
@@ -281,6 +283,14 @@ struct FamilySettingsView: View {
         } message: { member in
             Text("Are you sure you want to delete \(member.name ?? "this member")? This cannot be undone.")
         }
+        .alert("Unlink Account?", isPresented: $showingUnlinkConfirmation, presenting: memberPendingUnlink) { member in
+            Button("Cancel", role: .cancel) { }
+            Button("Unlink", role: .destructive) {
+                unlinkMember(member)
+            }
+        } message: { member in
+            Text("Are you sure you want to unlink the account from \(member.name ?? "this member")? The member will remain in your family, but the linked account will be removed. You can link a different account to this member later.")
+        }
             .onAppear {
                 loadFamilyName()
             }
@@ -308,6 +318,58 @@ struct FamilySettingsView: View {
                 print("✅ Family member deleted successfully")
             } catch {
                 print("❌ Error deleting family member: \(error)")
+            }
+        }
+    }
+
+    private func unlinkMember(_ member: FamilyMember) {
+        Task {
+            do {
+                if authManager.isGuest {
+                    // Local-only update for guests
+                    member.linkedUserId = nil
+                    try viewContext.save()
+                    print("✅ Account unlinked from family member locally (guest mode)")
+                } else {
+                    // Supabase update for authenticated users - unlink the specific member
+                    if let memberId = member.id?.uuidString {
+                        try await dataManager.supabaseManager.unlinkSpecificMember(memberId: memberId)
+                        member.linkedUserId = nil
+                        try viewContext.save()
+                        print("✅ Account unlinked from family member \(member.name ?? "Unknown")")
+
+                        // Refresh data from Supabase to ensure UI updates
+                        await dataManager.fetchUserData()
+                    }
+                }
+
+                memberPendingUnlink = nil
+            } catch {
+                print("❌ Error unlinking member: \(error)")
+            }
+        }
+    }
+
+    private func toggleDriverStatus(for member: FamilyMember) {
+        Task {
+            do {
+                let newDriverStatus = !member.isDriver
+                member.isDriver = newDriverStatus
+
+                if authManager.isGuest {
+                    // Local-only update for guests
+                    try viewContext.save()
+                    print("✅ Driver status updated locally (guest mode) to \(newDriverStatus)")
+                } else {
+                    // Update in Supabase for authenticated users
+                    if let memberId = member.id?.uuidString {
+                        try await dataManager.supabaseManager.updateFamilyMemberDriver(memberId: memberId, isDriver: newDriverStatus)
+                    }
+                    try viewContext.save()
+                    print("✅ Driver status updated to \(newDriverStatus) for \(member.name ?? "Unknown")")
+                }
+            } catch {
+                print("❌ Error updating driver status: \(error)")
             }
         }
     }
@@ -477,18 +539,36 @@ struct FamilySettingsView: View {
             }
 
             Button(action: {
-                activeSheet = .editMember(member)
+                toggleDriverStatus(for: member)
             }) {
-                Label("Edit Member", systemImage: "square.and.pencil")
+                let isDriver = member.isDriver
+                Label(isDriver ? "Remove as Driver" : "Set as Driver", systemImage: isDriver ? "car.fill" : "car")
+            }
+
+            if member.linkedUserId == nil {
+                Button(action: {
+                    activeSheet = .editMember(member)
+                }) {
+                    Label("Edit Member", systemImage: "square.and.pencil")
+                }
             }
 
             Divider()
 
-            Button(role: .destructive, action: {
-                memberPendingDelete = member
-                showingDeleteConfirmation = true
-            }) {
-                Label("Delete", systemImage: "trash.fill")
+            if member.linkedUserId != nil {
+                Button(role: .destructive, action: {
+                    memberPendingUnlink = member
+                    showingUnlinkConfirmation = true
+                }) {
+                    Label("Unlink Account", systemImage: "lock.open.fill")
+                }
+            } else {
+                Button(role: .destructive, action: {
+                    memberPendingDelete = member
+                    showingDeleteConfirmation = true
+                }) {
+                    Label("Delete Member", systemImage: "trash.fill")
+                }
             }
         } label: {
             HStack(spacing: 16) {
@@ -503,16 +583,24 @@ struct FamilySettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(member.name ?? "Unknown")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(primaryTextColor)
+                    HStack(spacing: 8) {
+                        Text(member.name ?? "Unknown")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(primaryTextColor)
+
+                        if member.linkedUserId != nil {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.orange)
+                        }
+                    }
 
                     Text("\((member.memberCalendars?.count) ?? 0) calendar\((member.memberCalendars?.count) ?? 0 != 1 ? "s" : "")")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundColor(secondaryTextColor)
                     Text(linkedEmail(for: member) ?? "Not linked")
                         .font(.system(size: 12))
-                        .foregroundColor(secondaryTextColor)
+                        .foregroundColor(member.linkedUserId != nil ? theme.accentColor : secondaryTextColor)
                 }
 
                 Spacer()

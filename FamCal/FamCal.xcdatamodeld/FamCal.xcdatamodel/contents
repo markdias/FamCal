@@ -12,6 +12,7 @@
         <attribute name="isDriver" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="sortOrder" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
         <attribute name="isInvited" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="linkedUserId" optional="YES" attributeType="String"/>
         <relationship name="memberCalendars" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="FamilyMemberCalendar" inverseName="familyMember" inverseEntity="FamilyMemberCalendar"/>
         <relationship name="sharedCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SharedCalendar" inverseName="members" inverseEntity="SharedCalendar"/>
         <relationship name="familyEvents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="attendees" inverseEntity="FamilyEvent"/>

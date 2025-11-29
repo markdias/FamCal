@@ -373,6 +373,19 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    /// Remove linked_user_id from a specific family member by ID.
+    func unlinkSpecificMember(memberId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(memberId)")]
+        let body: [String: AnyCodable] = ["linked_user_id": .null] // force explicit null
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard (200...299).contains(statusCode) else {
+            logErrorResponse(data, statusCode: statusCode, operation: "unlinkSpecificMember")
+            throw NSError(domain: "UnlinkMember", code: statusCode)
+        }
+    }
+
     /// Clear any linked_user_id in the family and any rows linked to the current user, then link the new member.
     func relinkCurrentUser(to memberId: String, familyId: String?, token: String? = nil) async throws {
         // 1) Clear any existing links for this user across all families (do not rely on linked_user_id for membership)
