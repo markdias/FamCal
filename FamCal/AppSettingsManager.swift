@@ -197,9 +197,9 @@ class AppSettingsManager: ObservableObject {
     }
 
     private func loadSettingsLocally() {
-        let defaults = UserDefaults.standard
+        let defaults = AppGroupDefaults.shared
 
-        // Load all settings from UserDefaults
+        // Load all settings from UserDefaults (via app group so widgets can access)
         if defaults.object(forKey: "autoRefreshInterval") != nil {
             autoRefreshInterval = defaults.integer(forKey: "autoRefreshInterval")
         }
@@ -267,9 +267,9 @@ class AppSettingsManager: ObservableObject {
     }
 
     private func persistSettingsLocally() {
-        let defaults = UserDefaults.standard
+        let defaults = AppGroupDefaults.shared
 
-        // Persist all settings to UserDefaults for local access
+        // Persist all settings to UserDefaults for local access (via app group so widgets can access)
         defaults.set(autoRefreshInterval, forKey: "autoRefreshInterval")
         defaults.set(defaultMapsApp, forKey: "defaultMapsApp")
         defaults.set(defaultHomeScreenRawValue, forKey: "defaultHomeScreenRawValue")

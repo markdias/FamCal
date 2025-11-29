@@ -49,12 +49,14 @@ struct FamilyEventsProvider: TimelineProvider {
 
     /// Load all upcoming events for family members
     private func loadEvents() -> FamilyEventsEntry {
+        print("🔍 DEBUG FamilyEventsWidget: loadEvents() called")
         // Check authentication first
         if !isUserAuthenticated() {
             print("⚠️ Widget: User not authenticated")
             return FamilyEventsEntry(date: Date(), errorMessage: "Please log in to see events", isAuthenticated: false)
         }
 
+        print("🔍 DEBUG FamilyEventsWidget: User authenticated, starting loadEvents")
         do {
             // Get max events from user preferences using app group
             guard let defaults = UserDefaults(suiteName: "group.com.markdias.famli") else {
@@ -121,7 +123,20 @@ struct FamilyEventsProvider: TimelineProvider {
             let context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
             context.persistentStoreCoordinator = coordinator
 
-            // Fetch family members
+            print("🔍 DEBUG FamilyEventsWidget: Context created, fetching family members")
+
+            // Fetch family members as objects for later reference
+            let memberObjectRequest: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "FamilyMember")
+            memberObjectRequest.returnsObjectsAsFaults = false
+            let memberObjects = try context.fetch(memberObjectRequest)
+            print("✅ DEBUG FamilyEventsWidget: Fetched \(memberObjects.count) member objects")
+
+            guard !memberObjects.isEmpty else {
+                print("⚠️ Widget: No family members found in database")
+                return FamilyEventsEntry(date: Date(), errorMessage: "No family members configured")
+            }
+
+            // Also fetch as dictionaries for easier property access
             let fetchRequest: NSFetchRequest<NSFetchRequestResult> = NSFetchRequest(entityName: "FamilyMember")
             fetchRequest.returnsObjectsAsFaults = false
             fetchRequest.resultType = .dictionaryResultType
@@ -197,6 +212,82 @@ struct FamilyEventsProvider: TimelineProvider {
                 }
             }
 
+            // D. Personal Calendars (for linked user)
+            // Personal calendars are tied to the logged-in user, not to a specific family member
+            print("🔍 DEBUG FamilyEventsWidget: Checking for linked member ID from defaults")
+            if let linkedMemberId = defaults.string(forKey: "linkedFamilyMemberId") {
+                print("🔍 DEBUG FamilyEventsWidget: Linked member ID: \(linkedMemberId)")
+                // Find the linked member object
+                if let linkedMemberObj = memberObjects.first(where: {
+                    let memberId = ($0.value(forKey: "id") as? UUID)?.uuidString ?? ""
+                    return memberId.lowercased() == linkedMemberId.lowercased()
+                }) {
+                    print("✅ DEBUG FamilyEventsWidget: Found linked member object")
+                    if let linkedMemberName = linkedMemberObj.value(forKey: "name") as? String,
+                       let linkedMemberId = linkedMemberObj.value(forKey: "id") as? UUID,
+                       let linkedMemberColor = linkedMemberObj.value(forKey: "colorHex") as? String {
+
+                        let personalCalRequest: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "PersonalCalendar")
+                        let personalCals = try context.fetch(personalCalRequest)
+                        print("✅ DEBUG FamilyEventsWidget: Found \(personalCals.count) personal calendars")
+
+                        // Build maps for calendar lookup by ID and title
+                        let eventStore = EKEventStore()
+                        let ekCalendars = eventStore.calendars(for: .event)
+                        let calendarById = Dictionary(uniqueKeysWithValues: ekCalendars.map { ($0.calendarIdentifier, $0) })
+                        var calendarByTitle: [String: EKCalendar] = [:]
+                        for cal in ekCalendars {
+                            calendarByTitle[cal.title] = cal
+                        }
+                        print("🔍 DEBUG FamilyEventsWidget: Available EK calendars: \(ekCalendars.map { $0.title }.joined(separator: ", "))")
+
+                        for personalCal in personalCals {
+                            let calName = (personalCal.value(forKey: "calendarName") as? String) ?? "nil"
+                            let calID = (personalCal.value(forKey: "calendarID") as? String) ?? "nil"
+                            let showInNext = (personalCal.value(forKey: "showInNext") as? Bool) ?? false
+                            let showInSpotlight = (personalCal.value(forKey: "showInSpotlight") as? Bool) ?? false
+                            let showInUpcoming = (personalCal.value(forKey: "showInUpcoming") as? Bool) ?? false
+
+                            print("🔍 DEBUG FamilyEventsWidget: Personal calendar '\(calName)' - ID: \(calID), showInNext: \(showInNext), showInSpotlight: \(showInSpotlight), showInUpcoming: \(showInUpcoming)")
+
+                            // Include if toggled into at least one view surface
+                            if showInNext || showInSpotlight || showInUpcoming {
+                                var resolvedID: String?
+                                if let storedID = personalCal.value(forKey: "calendarID") as? String, !storedID.isEmpty {
+                                    resolvedID = storedID
+                                    print("🔍 DEBUG FamilyEventsWidget: Using stored ID: \(storedID)")
+                                    // If ID not found locally, try to find by name
+                                    if calendarById[storedID] == nil, let name = personalCal.value(forKey: "calendarName") as? String, let localCal = calendarByTitle[name] {
+                                        print("⚠️ DEBUG FamilyEventsWidget: Stored ID not found, resolved by name: \(name) -> \(localCal.calendarIdentifier)")
+                                        resolvedID = localCal.calendarIdentifier
+                                    }
+                                } else if let calName = personalCal.value(forKey: "calendarName") as? String, let localCal = calendarByTitle[calName] {
+                                    print("ℹ️ DEBUG FamilyEventsWidget: No stored ID, resolved by name: \(calName) -> \(localCal.calendarIdentifier)")
+                                    resolvedID = localCal.calendarIdentifier
+                                }
+
+                                if let resolvedID = resolvedID, memberCalendarMap[resolvedID] == nil {
+                                    print("✅ DEBUG FamilyEventsWidget: Added personal calendar with ID: \(resolvedID)")
+                                    memberCalendarMap[resolvedID] = (
+                                        memberId: linkedMemberId,
+                                        name: linkedMemberName,
+                                        colorHex: linkedMemberColor
+                                    )
+                                } else {
+                                    print("❌ DEBUG FamilyEventsWidget: Could not resolve calendar ID for: \(calName)")
+                                }
+                            } else {
+                                print("⚠️ DEBUG FamilyEventsWidget: Skipping personal calendar '\(calName)' - not enabled for any view")
+                            }
+                        }
+                    }
+                } else {
+                    print("❌ DEBUG FamilyEventsWidget: Linked member object not found")
+                }
+            } else {
+                print("⚠️ DEBUG FamilyEventsWidget: No linked member ID found in defaults")
+            }
+
             guard !memberCalendarMap.isEmpty else {
                 print("⚠️ Widget: No calendars found in memberCalendarMap")
                 print("   - Legacy linkedCalendarID calendars: \(results.filter { ($0["linkedCalendarID"] as? String)?.isEmpty == false }.count)")
@@ -214,10 +305,17 @@ struct FamilyEventsProvider: TimelineProvider {
                     print("   - SharedCalendar records in DB: \(countResult)")
                 }
 
+                // Check PersonalCalendar records
+                let personalCalCountRequest: NSFetchRequest<NSManagedObject> = NSFetchRequest(entityName: "PersonalCalendar")
+                if let count = try? context.fetch(personalCalCountRequest).count {
+                    print("   - PersonalCalendar records in DB: \(count)")
+                }
+
                 return FamilyEventsEntry(date: Date(), errorMessage: "No calendars found")
             }
 
             print("✅ Widget: Found \(memberCalendarMap.count) calendars in total")
+            print("📋 DEBUG FamilyEventsWidget: memberCalendarMap keys: \(memberCalendarMap.keys.joined(separator: ", "))")
 
             // Check calendar access
             let calendarAccess = EKEventStore.authorizationStatus(for: .event)
@@ -237,13 +335,14 @@ struct FamilyEventsProvider: TimelineProvider {
 
             let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
             let ekEvents = eventStore.events(matching: predicate)
-                .filter { !$0.isAllDay }
-                .filter { $0.endDate > Date() }
                 .sorted { $0.startDate < $1.startDate }
+
+            // Filter to future events (matching FamilyView logic at line 1276) and non-all-day
+            let futureEvents = ekEvents.filter { $0.endDate > Date() && !$0.isAllDay }
 
             // Convert to EventItems
             var eventItems: [EventItem] = []
-            for ekEvent in ekEvents.prefix(actualMaxEvents) {
+            for ekEvent in futureEvents.prefix(actualMaxEvents) {
                 guard let calendarID = ekEvent.calendar.calendarIdentifier as String?,
                       let memberInfo = memberCalendarMap[calendarID] else {
                     continue

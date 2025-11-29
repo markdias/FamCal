@@ -85,16 +85,28 @@ struct NextEventProvider: AppIntentTimelineProvider {
 
     /// Snapshot for widget preview
     func snapshot(for configuration: NextEventConfigurationIntent, in context: Context) async -> NextEventEntry {
-        loadNextEvent(intent: configuration)
+        let msg = "🔍 DEBUG Widget: snapshot() called with selectedMemberName: \(configuration.selectedMemberName ?? "nil")"
+        print(msg)
+        logToFile(msg)
+        return loadNextEvent(intent: configuration)
     }
 
     /// Main timeline generation
     func timeline(for configuration: NextEventConfigurationIntent, in context: Context) async -> Timeline<NextEventEntry> {
+        let msg = "🔍 DEBUG Widget: timeline() called with intent selectedMemberName: \(configuration.selectedMemberName ?? "nil")"
+        print(msg)
+        logToFile(msg)
+
         let entry = loadNextEvent(intent: configuration)
 
         // Refresh more frequently to catch login state changes (1 minute for faster auth detection)
         let refreshInterval = isUserAuthenticated() ? 5 : 1 // 1 min if not auth'd, 5 min if auth'd
         let nextRefreshDate = Calendar.current.date(byAdding: .minute, value: refreshInterval, to: Date()) ?? Date()
+
+        let finalMsg = "✅ DEBUG Widget: timeline() returning entry, next refresh in \(refreshInterval) minutes"
+        print(finalMsg)
+        logToFile(finalMsg)
+
         return Timeline(entries: [entry], policy: .after(nextRefreshDate))
     }
 
@@ -110,9 +122,15 @@ struct NextEventProvider: AppIntentTimelineProvider {
 
     /// Load the next event for the family member with soonest upcoming event
     private func loadNextEvent(intent: NextEventConfigurationIntent? = nil) -> NextEventEntry {
+        let logMessage = "🔍 DEBUG Widget: loadNextEvent() called"
+        print(logMessage)
+        logToFile(logMessage)
+
         // Check authentication first
         if !isUserAuthenticated() {
-            print("⚠️ Widget: User not authenticated")
+            let msg = "⚠️ Widget: User not authenticated"
+            print(msg)
+            logToFile(msg)
             return NextEventEntry(isAuthenticated: false)
         }
 
@@ -246,20 +264,22 @@ struct NextEventProvider: AppIntentTimelineProvider {
             
             // Get user preferences for event range
             let defaults = UserDefaults(suiteName: "group.com.markdias.famli") ?? UserDefaults.standard
+            print("🔍 DEBUG Widget: Defaults loaded - app group available: \(UserDefaults(suiteName: "group.com.markdias.famli") != nil)")
             let pastDays = defaults.integer(forKey: "eventsPastDays")
             let futureDays = defaults.integer(forKey: "eventsFutureDays")
+            print("🔍 DEBUG Widget: Event range - past: \(pastDays), future: \(futureDays)")
 
             let startDate = Calendar.current.date(byAdding: .day, value: -(pastDays > 0 ? pastDays : 90), to: Date()) ?? Date()
             let endDate = Calendar.current.date(byAdding: .day, value: futureDays > 0 ? futureDays : 180, to: Date()) ?? Date()
 
             // 2. Collect ALL calendar IDs for this member
             var memberCalendarIDs = Set<String>()
-            
+
             // A. Personal Linked Calendar
             if let linkedID = member.value(forKey: "linkedCalendarID") as? String, !linkedID.isEmpty {
                 memberCalendarIDs.insert(linkedID)
             }
-            
+
             // B. Shared Calendars (Relationship)
             if let sharedSet = member.value(forKey: "sharedCalendars") as? Set<NSManagedObject> {
                 for shared in sharedSet {
@@ -268,7 +288,7 @@ struct NextEventProvider: AppIntentTimelineProvider {
                     }
                 }
             }
-            
+
             // C. FamilyMemberCalendar Links (Manual Fetch)
             let linksRequest = NSFetchRequest<NSManagedObject>(entityName: "FamilyMemberCalendar")
             linksRequest.predicate = NSPredicate(format: "familyMember == %@", member)
@@ -278,11 +298,75 @@ struct NextEventProvider: AppIntentTimelineProvider {
                     memberCalendarIDs.insert(calID)
                 }
             }
-            
-            guard !memberCalendarIDs.isEmpty else {
-                return NextEventEntry(errorMessage: "No calendars linked for \(memberName)")
+
+            // D. Personal Calendars (if this member is the linked user)
+            // Personal calendars are tied to the logged-in user, not to a specific family member
+            let memberID = (member.value(forKey: "id") as? UUID)?.uuidString ?? ""
+            print("🔍 DEBUG Widget: Member ID: \(memberID)")
+            if let linkedMemberId = defaults.string(forKey: "linkedFamilyMemberId") {
+                print("🔍 DEBUG Widget: Linked member ID: \(linkedMemberId)")
+                if linkedMemberId.lowercased() == memberID.lowercased() {
+                    let personalCalRequest = NSFetchRequest<NSManagedObject>(entityName: "PersonalCalendar")
+                    let personalCals = try context.fetch(personalCalRequest)
+                    print("✅ DEBUG Widget: Found \(personalCals.count) personal calendars")
+
+                    // Build maps for calendar lookup by ID and title
+                    let eventStore = EKEventStore()
+                    let ekCalendars = eventStore.calendars(for: .event)
+                    let calendarById = Dictionary(uniqueKeysWithValues: ekCalendars.map { ($0.calendarIdentifier, $0) })
+                    var calendarByTitle: [String: EKCalendar] = [:]
+                    for cal in ekCalendars {
+                        calendarByTitle[cal.title] = cal
+                    }
+                    print("🔍 DEBUG Widget: Available EK calendars: \(ekCalendars.map { $0.title }.joined(separator: ", "))")
+
+                    for personalCal in personalCals {
+                        let calName = (personalCal.value(forKey: "calendarName") as? String) ?? "nil"
+                        let calID = (personalCal.value(forKey: "calendarID") as? String) ?? "nil"
+                        let showInNext = (personalCal.value(forKey: "showInNext") as? Bool) ?? false
+                        let showInSpotlight = (personalCal.value(forKey: "showInSpotlight") as? Bool) ?? false
+                        let showInUpcoming = (personalCal.value(forKey: "showInUpcoming") as? Bool) ?? false
+
+                        print("🔍 DEBUG Widget: Personal calendar '\(calName)' - ID: \(calID), showInNext: \(showInNext), showInSpotlight: \(showInSpotlight), showInUpcoming: \(showInUpcoming)")
+
+                        // Include if toggled into at least one view surface
+                        if showInNext || showInSpotlight || showInUpcoming {
+                            var resolvedID: String?
+                            if let storedID = personalCal.value(forKey: "calendarID") as? String, !storedID.isEmpty {
+                                resolvedID = storedID
+                                print("🔍 DEBUG Widget: Using stored ID: \(storedID)")
+                                // If ID not found locally, try to find by name
+                                if calendarById[storedID] == nil, let name = personalCal.value(forKey: "calendarName") as? String, let localCal = calendarByTitle[name] {
+                                    print("⚠️ DEBUG Widget: Stored ID not found, resolved by name: \(name) -> \(localCal.calendarIdentifier)")
+                                    resolvedID = localCal.calendarIdentifier
+                                }
+                            } else if let calName = personalCal.value(forKey: "calendarName") as? String, let localCal = calendarByTitle[calName] {
+                                print("ℹ️ DEBUG Widget: No stored ID, resolved by name: \(calName) -> \(localCal.calendarIdentifier)")
+                                resolvedID = localCal.calendarIdentifier
+                            }
+
+                            if let resolvedID = resolvedID {
+                                print("✅ DEBUG Widget: Added personal calendar with ID: \(resolvedID)")
+                                memberCalendarIDs.insert(resolvedID)
+                            } else {
+                                print("❌ DEBUG Widget: Could not resolve calendar ID for: \(calName)")
+                            }
+                        } else {
+                            print("⚠️ DEBUG Widget: Skipping personal calendar '\(calName)' - not enabled for any view")
+                        }
+                    }
+                }
+            } else {
+                print("⚠️ DEBUG Widget: No linked member ID found")
             }
             
+            guard !memberCalendarIDs.isEmpty else {
+                print("❌ DEBUG Widget: memberCalendarIDs is empty! IDs collected: \(memberCalendarIDs.count)")
+                return NextEventEntry(errorMessage: "No calendars linked for \(memberName)")
+            }
+
+            print("✅ DEBUG Widget: memberCalendarIDs collected: \(memberCalendarIDs.count) IDs: \(memberCalendarIDs.joined(separator: ", "))")
+
             // 3. Fetch events for these calendars
             let eventStore = EKEventStore()
             let calendarAccess = EKEventStore.authorizationStatus(for: .event)
@@ -300,11 +384,13 @@ struct NextEventProvider: AppIntentTimelineProvider {
             
             let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
             let events = eventStore.events(matching: predicate)
-                .filter { !$0.isAllDay }
-                .filter { $0.endDate > Date() }
                 .sorted { $0.startDate < $1.startDate }
-            
-            guard let nextEvent = events.first else {
+
+            // Filter to future events (matching FamilyView logic at line 1276)
+            let futureEvents = events.filter { $0.endDate > Date() }
+
+            // Filter to find first non-all-day event (for widget display we want timed events)
+            guard let nextEvent = futureEvents.first(where: { !$0.isAllDay }) else {
                 return NextEventEntry(errorMessage: "No upcoming events for \(memberName)")
             }
             
@@ -340,6 +426,27 @@ struct NextEventProvider: AppIntentTimelineProvider {
     }
 }
 
+// Helper function for file-based logging
+func logToFile(_ message: String) {
+    if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.markdias.famli") {
+        let logFileURL = appGroupURL.appendingPathComponent("widget_debug.log")
+        let timestamp = DateFormatter().string(from: Date())
+        let logEntry = "[\(timestamp)] \(message)\n"
+
+        if let data = logEntry.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logFileURL.path) {
+                if let fileHandle = FileHandle(forWritingAtPath: logFileURL.path) {
+                    fileHandle.seekToEndOfFile()
+                    fileHandle.write(data)
+                    fileHandle.closeFile()
+                }
+            } else {
+                try? data.write(to: logFileURL)
+            }
+        }
+    }
+}
+
 // Helper for color conversion
 extension UIColor {
     var hexString: String {
@@ -347,11 +454,11 @@ extension UIColor {
         var g: CGFloat = 0
         var b: CGFloat = 0
         var a: CGFloat = 0
-        
+
         getRed(&r, green: &g, blue: &b, alpha: &a)
-        
+
         let rgb: Int = (Int)(r*255)<<16 | (Int)(g*255)<<8 | (Int)(b*255)<<0
-        
+
         return String(format: "#%06x", rgb)
     }
 }
