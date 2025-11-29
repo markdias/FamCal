@@ -11,9 +11,10 @@ import EventKit
 import UserNotifications
 
 enum OnboardingStep: Int, CaseIterable {
-    case welcome = 0
-    case permissions = 1
-    case getStarted = 2
+    case welcome
+    case permissions
+    case getStarted
+    case proOffer
 
     var totalSteps: Int { Self.allCases.count }
 }
@@ -50,10 +51,17 @@ struct OnboardingView: View {
 
             case .getStarted:
                 ReadyScreen(
-                    onStartUsingApp: { completeOnboarding() },
+                    onStartUsingApp: { goToNext() },
                     theme: theme,
                     currentStep: currentStep,
                     onSelectStep: { selectStep($0) }
+                )
+
+            case .proOffer:
+                OnboardingProUpsellView(
+                    currentStep: currentStep,
+                    onSelectStep: { selectStep($0) },
+                    onFinish: { completeOnboarding() }
                 )
             }
         }
@@ -61,10 +69,9 @@ struct OnboardingView: View {
     }
 
     private func goToNext() {
-        if currentStep.rawValue < OnboardingStep.getStarted.rawValue {
-            withAnimation {
-                currentStep = OnboardingStep(rawValue: currentStep.rawValue + 1) ?? .getStarted
-            }
+        let nextIndex = currentStep.rawValue + 1
+        if let nextStep = OnboardingStep(rawValue: nextIndex) {
+            withAnimation { currentStep = nextStep }
         }
     }
 
@@ -75,10 +82,9 @@ struct OnboardingView: View {
     }
 
     private func goToPrevious() {
-        if currentStep.rawValue > 0 {
-            withAnimation {
-                currentStep = OnboardingStep(rawValue: currentStep.rawValue - 1) ?? .welcome
-            }
+        let previousIndex = currentStep.rawValue - 1
+        if previousIndex >= 0, let previousStep = OnboardingStep(rawValue: previousIndex) {
+            withAnimation { currentStep = previousStep }
         }
     }
 

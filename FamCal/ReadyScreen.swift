@@ -104,7 +104,7 @@ struct ReadyScreen: View {
                 .padding(.bottom, 20)
 
                 // Start button
-                OnboardingPrimaryButton(title: "Start Using FamCal", action: onStartUsingApp)
+                OnboardingPrimaryButton(title: "Continue", action: onStartUsingApp)
                     .padding(.horizontal, 24)
 
                 Spacer(minLength: 40)

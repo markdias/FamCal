@@ -259,20 +259,24 @@ struct VisibleCalendarsView: View {
             return
         }
 
-        // Then sync deletion to Supabase
-        Task {
-            print("🌐 Starting Supabase deletion for ID: \(calendarId)")
-            do {
-                let userId = dataManager.authManager.userId ?? "unknown"
-                print("📧 User ID for deletion: \(userId)")
+        // Sync deletion to Supabase for authenticated users only
+        if !dataManager.authManager.isGuest {
+            Task {
+                print("🌐 Starting Supabase deletion for ID: \(calendarId)")
+                do {
+                    let userId = dataManager.authManager.userId ?? "unknown"
+                    print("📧 User ID for deletion: \(userId)")
 
-                try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
-                print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
-            } catch {
-                print("❌ Error deleting from Supabase: \(error)")
-                // Note: Calendar is already deleted from CoreData locally
-                // Will be re-synced if Supabase still has it on next fetch
+                    try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
+                    print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
+                } catch {
+                    print("❌ Error deleting from Supabase: \(error)")
+                    // Note: Calendar is already deleted from CoreData locally
+                    // Will be re-synced if Supabase still has it on next fetch
+                }
             }
+        } else {
+            print("ℹ️ Guest mode: skipping Supabase deletion")
         }
     }
 }

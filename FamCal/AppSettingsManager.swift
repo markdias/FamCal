@@ -38,9 +38,13 @@ class AppSettingsManager: ObservableObject {
 
     // Account Link
     @Published var linkedFamilyMemberId: String?
-    
+
     // Family Member Order
     @Published var familyMemberOrder: [String] = []
+
+    // Family Setup
+    @Published var familyName: String = ""
+    @Published var hasCompletedFamilySetup: Bool = UserDefaults.standard.bool(forKey: "hasCompletedFamilySetup")
 
     let supabaseManager: SupabaseManager
     let authManager: SupabaseAuthManager
@@ -65,7 +69,9 @@ class AppSettingsManager: ObservableObject {
         "widgetShowLocation",
         "widgetShowAttendees",
         "linkedFamilyMemberId",
-        "familyMemberOrder"
+        "familyMemberOrder",
+        "familyName",
+        "hasCompletedFamilySetup"
     ]
     private var settingsId: String?
     private var cancellables = Set<AnyCancellable>()

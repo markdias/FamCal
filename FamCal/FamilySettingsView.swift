@@ -164,7 +164,7 @@ struct FamilySettingsView: View {
                                                 .stroke(theme.cardStroke, lineWidth: 1)
                                         )
                                         .cornerRadius(10)
-                                        .disabled(!isOwner)
+                                        .disabled(!(authManager.isGuest || isOwner))
 
                                     if let familyNameMessage {
                                         Text(familyNameMessage)
@@ -182,7 +182,7 @@ struct FamilySettingsView: View {
                                     }
                                     .buttonStyle(.borderedProminent)
                                     .tint(theme.accentColor)
-                                    .disabled(!isOwner || isUpdatingFamilyName || familyName.isEmpty)
+                                    .disabled(!canSaveFamilyName)
                                 }
                                 .padding(12)
                             }
@@ -281,9 +281,9 @@ struct FamilySettingsView: View {
         } message: { member in
             Text("Are you sure you want to delete \(member.name ?? "this member")? This cannot be undone.")
         }
-        .onAppear {
-            loadFamilyName()
-        }
+            .onAppear {
+                loadFamilyName()
+            }
     }
 
     private func deleteMember(_ member: FamilyMember) {
@@ -313,24 +313,50 @@ struct FamilySettingsView: View {
     }
 
     private func saveFamilyName() {
-        guard let familyId else {
-            familyNameMessage = "Family not found."
+        let trimmedName = familyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            familyNameMessage = "Enter a family name."
             return
         }
-        guard isOwner else {
-            familyNameMessage = "Only the owner can update the family name."
-            return
-        }
+
+        familyName = trimmedName
         isUpdatingFamilyName = true
         familyNameMessage = nil
         Task {
-            do {
-                try await supabaseManager.updateFamilyName(familyId: familyId, name: familyName)
-                familyNameMessage = "Saved"
-            } catch {
-                familyNameMessage = "Failed to save: \(error.localizedDescription)"
+            if authManager.isGuest || familyId == nil {
+                await persistFamilyNameLocally(trimmedName, familyId: nil)
+                familyNameMessage = "Saved locally"
+            } else {
+                guard isOwner else {
+                    familyNameMessage = "Only the owner can update the family name."
+                    isUpdatingFamilyName = false
+                    return
+                }
+
+                do {
+                    guard let ownerFamilyId = familyId else {
+                        familyNameMessage = "Family not found."
+                        isUpdatingFamilyName = false
+                        return
+                    }
+                    try await supabaseManager.updateFamilyName(familyId: ownerFamilyId, name: trimmedName)
+                    familyNameMessage = "Saved"
+                    await persistFamilyNameLocally(trimmedName, familyId: ownerFamilyId)
+                } catch {
+                    familyNameMessage = "Failed to save: \(error.localizedDescription)"
+                }
             }
+
             isUpdatingFamilyName = false
+        }
+    }
+
+    @MainActor
+    private func persistFamilyNameLocally(_ name: String, familyId: String?) async {
+        do {
+            try FamilyInfoStore.upsert(name: name, familyId: familyId, in: viewContext)
+        } catch {
+            print("⚠️ Failed to persist family name locally: \(error)")
         }
     }
 
@@ -352,11 +378,17 @@ struct FamilySettingsView: View {
 
     private func loadFamilyName() {
         Task {
+            await loadFamilyNameLocally()
+
+            guard authManager.isAuthenticated && !authManager.isGuest else { return }
+
             do {
                 if let family = try await supabaseManager.getCurrentFamily() {
                     familyId = family.id
-                    familyName = family.family_name ?? ""
+                    let remoteName = family.family_name?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? familyName
+                    familyName = remoteName
                     isOwner = (family.owner_user_id == authManager.userId)
+                    await persistFamilyNameLocally(remoteName, familyId: family.id)
                 } else {
                     familyNameMessage = "Family not found."
                 }
@@ -364,6 +396,28 @@ struct FamilySettingsView: View {
                 familyNameMessage = "Failed to load family name: \(error.localizedDescription)"
             }
         }
+    }
+
+    @MainActor
+    private func loadFamilyNameLocally() async {
+        do {
+            if let info = try FamilyInfoStore.fetchFirst(in: viewContext) {
+                familyName = info.name ?? familyName
+                if familyId == nil {
+                    familyId = info.familyId
+                }
+            }
+        } catch {
+            print("⚠️ Failed to load family name from CoreData: \(error)")
+        }
+    }
+
+    private var trimmedFamilyNameInput: String {
+        familyName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSaveFamilyName: Bool {
+        !trimmedFamilyNameInput.isEmpty && !isUpdatingFamilyName && (authManager.isGuest || isOwner)
     }
 
     private func sendInvite() {

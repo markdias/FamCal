@@ -147,6 +147,10 @@ class SupabaseDataManager: ObservableObject {
             print("ℹ️ Loading app settings from Supabase...")
             await appSettingsManager.loadSettings()
 
+            if !authManager.isGuest {
+                await refreshLocalFamilyInfo(userId: userId)
+            }
+
             // Sync to CoreData for backward compatibility with existing views
             if let context = managedObjectContext {
                 print("ℹ️ Syncing data to CoreData...")
@@ -192,6 +196,37 @@ class SupabaseDataManager: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    @MainActor
+    private func refreshLocalFamilyInfo(userId: String) async {
+        guard let context = managedObjectContext else {
+            print("⚠️ CoreData context not available for FamilyInfo sync")
+            return
+        }
+
+        var fetchedFamily: SupabaseManager.FamilyDTO?
+
+        do {
+            fetchedFamily = try await supabaseManager.getFamilyForOwner(userId: userId)
+        } catch {
+            print("⚠️ Unable to fetch owner family info: \(error)")
+        }
+
+        if fetchedFamily == nil {
+            fetchedFamily = try? await supabaseManager.getCurrentFamily()
+        }
+
+        guard let family = fetchedFamily else {
+            print("ℹ️ No Supabase family row available for FamilyInfo sync")
+            return
+        }
+
+        do {
+            try FamilyInfoStore.upsert(name: family.family_name, familyId: family.id, in: context)
+        } catch {
+            print("⚠️ Failed to persist family info locally: \(error)")
+        }
     }
 
     private func fetchAllFamilyMemberCalendars() async throws -> [FamilyMemberCalendarDTO] {
@@ -419,7 +454,7 @@ class SupabaseDataManager: ObservableObject {
         }
 
         if authManager.isGuest {
-            // For guests, create shared calendar locally
+            // For guests, create shared calendar locally only
             return try addSharedCalendarLocal(calendarName: calendarName, calendarColorHex: calendarColorHex)
         }
 
@@ -430,7 +465,7 @@ class SupabaseDataManager: ObservableObject {
         let createdCalendar = try await supabaseManager.addSharedCalendar(userId: userId, calendarName: calendarName, calendarColorHex: calendarColorHex)
         print("✅ Shared calendar created in Supabase (ID: \(createdCalendar.id))")
 
-        // Refresh shared calendars list
+        // Refresh shared calendars list from Supabase (authenticated users only)
         await fetchUserData()
 
         // Return the newly created shared calendar
@@ -509,6 +544,11 @@ class SupabaseDataManager: ObservableObject {
 
     @MainActor
     func addPersonalCalendar(calendarName: String, calendarColorHex: String) async throws -> PersonalCalendarDTO {
+        // For guests, create calendar locally only
+        if authManager.isGuest {
+            return try addPersonalCalendarLocal(calendarName: calendarName, calendarColorHex: calendarColorHex)
+        }
+
         guard let userId = authManager.userId else {
             throw NSError(domain: "NoUserID", code: -1)
         }
@@ -539,7 +579,65 @@ class SupabaseDataManager: ObservableObject {
             print("❌ DEBUG: No CoreData context available for sync!")
         }
 
+        // Refresh personal calendars list from Supabase (authenticated users only)
+        await fetchUserData()
+
         return createdCalendar
+    }
+
+    /// Add personal calendar locally only (for guest mode - no Supabase sync)
+    @MainActor
+    private func addPersonalCalendarLocal(calendarName: String, calendarColorHex: String) throws -> PersonalCalendarDTO {
+        guard authManager.isGuest else {
+            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use addPersonalCalendar for authenticated users"])
+        }
+
+        guard let context = managedObjectContext else {
+            throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
+        }
+
+        let personalCalendar = PersonalCalendar(context: context)
+        personalCalendar.id = UUID()
+        personalCalendar.calendarName = calendarName
+        personalCalendar.calendarColorHex = calendarColorHex
+        personalCalendar.showInNext = true
+        personalCalendar.showInSpotlight = true
+        personalCalendar.showInUpcoming = true
+        personalCalendar.showInMonth = true
+        personalCalendar.showInDay = true
+
+        // Link to logged-in member if available
+        if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+           let linkedMemberUUID = UUID(uuidString: linkedMemberId) {
+            let fetchRequest = FamilyMember.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", linkedMemberUUID as CVarArg)
+
+            if let member = try context.fetch(fetchRequest).first {
+                member.addToPersonalCalendars(personalCalendar)
+                print("👤 Linked personal calendar to family member")
+            }
+        }
+
+        do {
+            try context.save()
+            print("✅ Personal calendar '\(calendarName)' added locally (guest mode)")
+            // Return as DTO
+            return PersonalCalendarDTO(
+                id: personalCalendar.id?.uuidString ?? "",
+                user_id: "",
+                calendar_name: calendarName,
+                calendar_color_hex: calendarColorHex,
+                show_in_next: true,
+                show_in_spotlight: true,
+                show_in_upcoming: true,
+                show_in_month: true,
+                show_in_day: true,
+                created_at: nil
+            )
+        } catch {
+            print("❌ Error adding personal calendar locally: \(error)")
+            throw error
+        }
     }
 
     @MainActor
@@ -631,7 +729,9 @@ class SupabaseDataManager: ObservableObject {
         fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
 
         guard let sharedCalendar = try context.fetch(fetchRequest).first else {
-            throw NSError(domain: "CalendarNotFound", code: -1, userInfo: ["message": "Shared calendar not found"])
+            // Calendar already deleted from CoreData (likely by view before calling this method)
+            print("ℹ️ Shared calendar with ID '\(id)' not found in CoreData (already deleted)")
+            return
         }
 
         // Remove from all members
@@ -780,7 +880,9 @@ class SupabaseDataManager: ObservableObject {
         fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
 
         guard let personalCalendar = try context.fetch(fetchRequest).first else {
-            throw NSError(domain: "CalendarNotFound", code: -1, userInfo: ["message": "Personal calendar not found"])
+            // Calendar already deleted from CoreData (likely by view before calling this method)
+            print("ℹ️ Personal calendar with ID '\(id)' not found in CoreData (already deleted)")
+            return
         }
 
         context.delete(personalCalendar)
@@ -860,6 +962,92 @@ class SupabaseDataManager: ObservableObject {
             clearData()
         } catch {
             print("❌ Error clearing local CoreData: \(error)")
+        }
+    }
+
+    // MARK: - Family Setup Detection
+
+    /// Check if the current user is an invited family member
+    /// Invited members have a linked_user_id that matches their current auth user ID
+    @MainActor
+    func isCurrentUserInvitedMember() async -> Bool {
+        guard let currentUserId = authManager.userId else {
+            return false
+        }
+
+        do {
+            let memberList = try await supabaseManager.getFamilyMembers(userId: currentUserId)
+            for member in memberList {
+                if let linkedUserId = member.linked_user_id, linkedUserId == currentUserId {
+                    let displayName = member.name.isEmpty ? "Unnamed" : member.name
+                    print("✅ Current user is an invited member: \(displayName)")
+                    return true
+                }
+            }
+            print("ℹ️ Current user is not an invited member")
+            return false
+        } catch {
+            print("⚠️ Error checking if user is invited member: \(error)")
+            return false
+        }
+    }
+
+    /// Sync family setup data to Supabase
+    /// Called after completing the family setup wizard
+    @MainActor
+    func syncFamilySetup() async {
+        guard !authManager.isGuest else {
+            print("ℹ️ Guest mode - skipping family setup sync to Supabase")
+            return
+        }
+
+        guard let userId = authManager.userId else {
+            print("⚠️ No user ID available for family setup sync")
+            return
+        }
+
+        do {
+            print("📤 Syncing family setup to Supabase...")
+            // Refresh members so local cache stays accurate
+            _ = try await supabaseManager.getFamilyMembers(userId: userId)
+
+            let trimmedFamilyName = appSettingsManager.familyName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+            if !trimmedFamilyName.isEmpty {
+                var currentFamily: SupabaseManager.FamilyDTO?
+                do {
+                    currentFamily = try await supabaseManager.getFamilyForOwner(userId: userId)
+                } catch {
+                    print("⚠️ Unable to fetch owner family info during setup sync: \(error)")
+                }
+                if currentFamily == nil {
+                    currentFamily = try? await supabaseManager.getCurrentFamily()
+                }
+
+                if let currentFamily = currentFamily {
+                    let currentName = currentFamily.family_name?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
+                    if currentName != trimmedFamilyName {
+                        try await supabaseManager.updateFamilyName(familyId: currentFamily.id, name: trimmedFamilyName)
+                        print("✅ Synced family name to Supabase: \(trimmedFamilyName)")
+                    } else {
+                        print("ℹ️ Family name already matches Supabase record")
+                    }
+                    if let context = managedObjectContext {
+                        do {
+                            try FamilyInfoStore.upsert(name: trimmedFamilyName, familyId: currentFamily.id, in: context)
+                        } catch {
+                            print("⚠️ Failed to persist family info locally: \(error)")
+                        }
+                    }
+                } else {
+                    print("⚠️ No Supabase family row found to apply the family name")
+                }
+            } else {
+                print("ℹ️ Skipping Supabase family name sync because the name is empty")
+            }
+
+            print("✅ Family setup synced successfully")
+        } catch {
+            print("⚠️ Error syncing family setup: \(error)")
         }
     }
 }

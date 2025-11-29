@@ -11,6 +11,7 @@
         <attribute name="avatarInitials" optional="YES" attributeType="String"/>
         <attribute name="isDriver" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="sortOrder" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
+        <attribute name="isInvited" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <relationship name="memberCalendars" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="FamilyMemberCalendar" inverseName="familyMember" inverseEntity="FamilyMemberCalendar"/>
         <relationship name="sharedCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SharedCalendar" inverseName="members" inverseEntity="SharedCalendar"/>
         <relationship name="familyEvents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="attendees" inverseEntity="FamilyEvent"/>
@@ -30,6 +31,11 @@
         <attribute name="calendarName" optional="YES" attributeType="String"/>
         <attribute name="calendarColorHex" optional="YES" attributeType="String"/>
         <relationship name="members" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="sharedCalendars" inverseEntity="FamilyMember"/>
+    </entity>
+    <entity name="FamilyInfo" representedClassName="FamilyInfo" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="familyId" optional="YES" attributeType="String"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
     </entity>
     <entity name="FamilyEvent" representedClassName="FamilyEvent" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -86,6 +92,7 @@
         <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="134"/>
         <element name="FamilyMemberCalendar" positionX="126" positionY="100" width="128" height="119"/>
         <element name="SharedCalendar" positionX="216" positionY="-18" width="128" height="103"/>
+        <element name="FamilyInfo" positionX="306" positionY="-18" width="128" height="82"/>
         <element name="FamilyEvent" positionX="306" positionY="-18" width="128" height="135"/>
         <element name="Driver" positionX="396" positionY="-18" width="128" height="119"/>
         <element name="SavedAddress" positionX="486" positionY="-18" width="128" height="103"/>

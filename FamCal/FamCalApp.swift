@@ -28,6 +28,8 @@ struct FamCalApp: App {
     @State private var calendarCheckStatus: CalendarCheckStatus = .unknown
     @State private var showResetPasswordSheet = false
     @State private var resetPasswordEmail: String?
+    @State private var needsFamilySetup: Bool = false
+    @State private var isCheckingFamilySetup: Bool = false
 
     /// Persist calendar check status when it becomes ready
     /// Uses device-level flag - calendar check runs only once per device
@@ -134,8 +136,27 @@ struct FamCalApp: App {
                 }
                 // Check if user is authenticated or guest
                 else if authManager.isAuthenticated || authManager.isGuest {
+                    // Check if family setup is needed for new users
+                    if isCheckingFamilySetup {
+                        ZStack {
+                            Color(.systemBackground)
+                                .ignoresSafeArea()
+                            ProgressView()
+                        }
+                    }
+                    // Show family setup flow for new users
+                    else if needsFamilySetup {
+                        FamilySetupFlow()
+                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                            .environmentObject(authManager)
+                            .environmentObject(dataManager)
+                            .environmentObject(appSettingsManager)
+                            .onAppear {
+                                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                            }
+                    }
                     // If authenticated (non-guest) but calendars/family setup needed, block until ready
-                    if authManager.isAuthenticated && !authManager.isGuest && !isCalendarCheckReady {
+                    else if authManager.isAuthenticated && !authManager.isGuest && !isCalendarCheckReady {
                         NavigationView {
                             CalendarGateView(
                                 status: $calendarCheckStatus,
@@ -280,16 +301,78 @@ struct FamCalApp: App {
                     isCheckingSession = false
                 }
             }
-            .onChange(of: authManager.isAuthenticated) { _, _ in
+            .onChange(of: authManager.isAuthenticated) { _, newValue in
                 // Session changed, stop loading
                 isCheckingSession = false
-            }
-            .onChange(of: authManager.isGuest) { _, _ in
-                // Session changed, stop loading
-                isCheckingSession = false
-                if authManager.isGuest {
-                    calendarCheckStatus = .ready
+                // Check family setup when user authenticates
+                if newValue {
+                    checkFamilySetupNeeded()
+                } else {
+                    needsFamilySetup = false
                 }
+            }
+            .onChange(of: authManager.isGuest) { _, newValue in
+                // Session changed, stop loading
+                isCheckingSession = false
+                if newValue {
+                    calendarCheckStatus = .ready
+                    // Check family setup for guest users
+                    checkFamilySetupNeeded()
+                } else {
+                    needsFamilySetup = false
+                }
+            }
+            .onChange(of: appSettingsManager.hasCompletedFamilySetup) { _, newValue in
+                // When family setup completes, dismiss the setup flow
+                if newValue {
+                    print("✅ Family setup completion detected - dismissing setup flow")
+                    needsFamilySetup = false
+                }
+            }
+        }
+    }
+
+    /// Check if family setup is needed for new users
+    private func checkFamilySetupNeeded() {
+        Task { @MainActor in
+            isCheckingFamilySetup = true
+            defer { isCheckingFamilySetup = false }
+
+            // Check if any family data exists
+            let hasExistingData = userHasExistingData(persistenceController)
+
+            // If CoreData was cleared (no existing data), reset the setup flag
+            // This ensures family setup runs again when user logs back in after data loss
+            if !hasExistingData && appSettingsManager.hasCompletedFamilySetup {
+                print("⚠️ CoreData cleared but setup flag was true - resetting setup flag")
+                appSettingsManager.hasCompletedFamilySetup = false
+                UserDefaults.standard.set(false, forKey: "hasCompletedFamilySetup")
+            }
+
+            // Skip family setup if already completed AND data exists
+            if appSettingsManager.hasCompletedFamilySetup && hasExistingData {
+                print("ℹ️ Family setup already completed")
+                needsFamilySetup = false
+                return
+            }
+
+            // Skip family setup for invited members
+            if authManager.isAuthenticated && !authManager.isGuest {
+                let isInvited = await dataManager.isCurrentUserInvitedMember()
+                if isInvited {
+                    print("ℹ️ User is an invited member - skipping family setup")
+                    needsFamilySetup = false
+                    return
+                }
+            }
+
+            // Show setup if no family data exists
+            if !hasExistingData {
+                print("ℹ️ New user detected - showing family setup")
+                needsFamilySetup = true
+            } else {
+                print("ℹ️ User has existing family data - skipping setup")
+                needsFamilySetup = false
             }
         }
     }

@@ -16,9 +16,11 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
     private let supabaseManager = SupabaseManager.shared
-    
+
     @State private var showingFamilySettings = false
-    
+    @FetchRequest(entity: FamilyMember.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \FamilyMember.name, ascending: true)])
+    private var localFamilyMembers: FetchedResults<FamilyMember>
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
@@ -52,9 +54,30 @@ struct AccountSettingsView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 10)
-                    
-                    .padding(.bottom, 10)
-                    
+
+                    // Family Name
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Family")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                            .padding(.horizontal, 16)
+
+                        settingsContainer {
+                            HStack {
+                                Text("Family Name")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(secondaryTextColor)
+
+                                Spacer()
+
+                                Text(appSettingsManager.familyName.isEmpty ? "Not set" : appSettingsManager.familyName)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(primaryTextColor)
+                            }
+                            .padding()
+                        }
+                    }
+
                     // Name Field
                     VStack(alignment: .leading, spacing: 8) {
                         settingsContainer {
@@ -62,9 +85,9 @@ struct AccountSettingsView: View {
                                 Text("Name")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(secondaryTextColor)
-                                
+
                                 Spacer()
-                                
+
                                 Text(getDisplayName())
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(primaryTextColor)
@@ -79,15 +102,29 @@ struct AccountSettingsView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(secondaryTextColor)
                             .padding(.horizontal, 16)
-                        
+
                         settingsContainer {
                             Menu {
-                                ForEach(dataManager.familyMembers, id: \.id) { member in
-                                    Button(action: { selectMember(member) }) {
-                                        HStack {
-                                            Text(member.name)
-                                            if isSelected(member.id) {
-                                                Image(systemName: "checkmark")
+                                // Show local members for guests, Supabase members for authenticated users
+                                if authManager.isGuest {
+                                    ForEach(localFamilyMembers, id: \.id) { member in
+                                        Button(action: { selectMemberLocal(member) }) {
+                                            HStack {
+                                                Text(member.name ?? "Unknown")
+                                                if isSelectedLocal(member.id) {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    ForEach(dataManager.familyMembers, id: \.id) { member in
+                                        Button(action: { selectMember(member) }) {
+                                            HStack {
+                                                Text(member.name)
+                                                if isSelected(member.id) {
+                                                    Image(systemName: "checkmark")
+                                                }
                                             }
                                         }
                                     }
@@ -97,9 +134,9 @@ struct AccountSettingsView: View {
                                     Text(getDisplayName())
                                         .font(.system(size: 16, weight: .medium))
                                         .foregroundColor(primaryTextColor)
-                                    
+
                                     Spacer()
-                                    
+
                                     Image(systemName: "chevron.up.chevron.down")
                                         .font(.system(size: 14))
                                         .foregroundColor(secondaryTextColor)
@@ -177,24 +214,63 @@ struct AccountSettingsView: View {
     }
     
     private func getDisplayName() -> String {
-        if let linkedId = appSettingsManager.linkedFamilyMemberId,
-           let member = dataManager.familyMembers.first(where: { $0.id == linkedId }) {
-            return member.name
+        if let linkedId = appSettingsManager.linkedFamilyMemberId {
+            // For guests, check local CoreData members
+            if authManager.isGuest {
+                if let uuid = UUID(uuidString: linkedId),
+                   let member = localFamilyMembers.first(where: { $0.id == uuid }) {
+                    return member.name ?? "Unknown"
+                }
+            } else {
+                // For authenticated users, check Supabase members
+                if let member = dataManager.familyMembers.first(where: { $0.id == linkedId }) {
+                    return member.name
+                }
+            }
         }
         // Fallback to email to avoid "Select a member" when user is linked but data not yet loaded
         return authManager.userEmail ?? "Select a member"
     }
-    
+
     private func isSelected(_ memberId: String) -> Bool {
         guard let linkedId = appSettingsManager.linkedFamilyMemberId else { return false }
         return memberId == linkedId
     }
-    
+
+    private func isSelectedLocal(_ memberId: UUID?) -> Bool {
+        guard let linkedIdString = appSettingsManager.linkedFamilyMemberId,
+              let linkedId = UUID(uuidString: linkedIdString),
+              let memberId = memberId else { return false }
+        return memberId == linkedId
+    }
+
+    private func selectMemberLocal(_ member: FamilyMember) {
+        guard let memberId = member.id else { return }
+
+        // Update local state immediately for UI responsiveness
+        appSettingsManager.linkedFamilyMemberId = memberId.uuidString
+
+        // Save to AppSettingsManager (persists to UserDefaults)
+        Task {
+            await appSettingsManager.saveSettings()
+            print("✅ Linked guest user to family member \(member.name ?? "Unknown")")
+        }
+    }
+
     private func selectMember(_ member: FamilyMemberDTO) {
         let id = member.id
 
         // Update local state immediately for UI responsiveness
         appSettingsManager.linkedFamilyMemberId = id
+
+        // Only attempt Supabase sync for authenticated users
+        guard !authManager.isGuest else {
+            print("⚠️ Skipping Supabase sync for guest user")
+            Task {
+                await appSettingsManager.saveSettings()
+            }
+            return
+        }
 
         // Persist to Supabase and link the member to this user
         Task {

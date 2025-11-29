@@ -235,7 +235,7 @@ class SupabaseManager: @unchecked Sendable {
         return decoded.emails
     }
 
-    private func getFamilyForOwner(userId: String, token: String? = nil) async throws -> FamilyDTO? {
+    func getFamilyForOwner(userId: String, token: String? = nil) async throws -> FamilyDTO? {
         let queryItems = [URLQueryItem(name: "owner_user_id", value: "eq.\(userId)")]
         let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/families", queryItems: queryItems, userToken: userToken)

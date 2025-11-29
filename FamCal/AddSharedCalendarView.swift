@@ -217,17 +217,14 @@ struct AddSharedCalendarView: View {
             print("❌ Shared calendar limit reached for Free plan. Enable Pro to add more.")
             return
         }
-        // Save to Supabase first
+        // Save to CoreData (for guests) or Supabase (for authenticated users)
         Task {
             do {
                 _ = try await dataManager.addSharedCalendar(
                     calendarName: calendar.title,
                     calendarColorHex: calendar.color.hex()
                 )
-                print("✅ Shared calendar saved to Supabase")
-
-                // Refresh data to sync shared calendars
-                await dataManager.fetchUserData()
+                print("✅ Shared calendar saved")
             } catch {
                 print("❌ Error saving shared calendar: \(error)")
             }
@@ -257,20 +254,24 @@ struct AddSharedCalendarView: View {
                 return
             }
 
-            // Then sync deletion to Supabase
-            Task {
-                print("🌐 Starting Supabase deletion for ID: \(calendarId)")
-                do {
-                    let userId = dataManager.authManager.userId ?? "unknown"
-                    print("📧 User ID for deletion: \(userId)")
+            // Sync deletion to Supabase for authenticated users only
+            if !dataManager.authManager.isGuest {
+                Task {
+                    print("🌐 Starting Supabase deletion for ID: \(calendarId)")
+                    do {
+                        let userId = dataManager.authManager.userId ?? "unknown"
+                        print("📧 User ID for deletion: \(userId)")
 
-                    try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
-                    print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
-                } catch {
-                    print("❌ Error deleting from Supabase: \(error)")
-                    // Note: Calendar is already deleted from CoreData locally
-                    // Will be re-synced if Supabase still has it on next fetch
+                        try await dataManager.supabaseManager.deleteSharedCalendar(id: calendarId, userId: userId)
+                        print("✅ Shared calendar deleted from Supabase (ID: \(calendarId))")
+                    } catch {
+                        print("❌ Error deleting from Supabase: \(error)")
+                        // Note: Calendar is already deleted from CoreData locally
+                        // Will be re-synced if Supabase still has it on next fetch
+                    }
                 }
+            } else {
+                print("ℹ️ Guest mode: skipping Supabase deletion")
             }
         } else {
             print("⚠️ Could not find shared calendar in CoreData for ID: \(calendar.id)")

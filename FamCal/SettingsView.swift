@@ -158,38 +158,15 @@ struct SettingsView: View {
                                 }
                                 Divider().padding(.leading, 56)
 
-                                if appSettingsManager.isProUser {
-                                    Button(action: { showingSharedCalendars = true }) {
-                                        SettingsRowView(iconName: "calendar.badge.plus", title: "Shared Calendars", showChevron: true)
-                                    }
-                                } else {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "calendar.badge.plus")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(theme.accentColor)
-                                            .frame(width: 24, height: 24)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Shared Calendars")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Pro unlocks unlimited shared calendars")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Text("Pro")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(theme.accentColor)
-                                            .clipShape(Capsule())
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                Button(action: { showingSharedCalendars = true }) {
+                                    SettingsRowView(iconName: "calendar.badge.plus", title: "Shared Calendars", showChevron: true)
+                                }
+                                if !appSettingsManager.isProUser {
+                                    Text("Free plan includes one shared calendar; upgrade to FamCal Pro for unlimited shared calendars.")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(secondaryTextColor)
+                                        .padding(.horizontal, 56)
+                                        .padding(.top, 4)
                                 }
                                 Divider().padding(.leading, 56)
 
