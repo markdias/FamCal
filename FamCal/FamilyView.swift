@@ -920,14 +920,29 @@ struct FamilyView: View {
 
                     // Driver (if available)
                     if let driverName = groupedEvent.driverName {
-                        HStack(spacing: 8) {
-                            Image(systemName: "car.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(secondaryTextColor)
-                            Text(driverName)
-                                .font(.system(size: 12))
-                                .foregroundColor(secondaryTextColor)
-                                .lineLimit(1)
+                        let driverPhone = fetchDriverPhoneForEvent(groupedEvent.eventIdentifier)
+                        if let phone = driverPhone, !phone.isEmpty {
+                            Link(destination: URL(string: "tel:\(phone)")!) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "car.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(secondaryTextColor)
+                                    Text(driverName)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(secondaryTextColor)
+                                        .lineLimit(1)
+                                }
+                            }
+                        } else {
+                            HStack(spacing: 8) {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(secondaryTextColor)
+                                Text(driverName)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(secondaryTextColor)
+                                    .lineLimit(1)
+                            }
                         }
                     }
 
@@ -1408,6 +1423,14 @@ struct FamilyView: View {
         // Use FetchedResults for reactive updates instead of synchronous fetch
         if let familyEvent = familyEvents.first(where: { $0.eventIdentifier == eventIdentifier }) {
             return familyEvent.driver?.name
+        }
+        return nil
+    }
+
+    private func fetchDriverPhoneForEvent(_ eventIdentifier: String) -> String? {
+        // Use FetchedResults for reactive updates instead of synchronous fetch
+        if let familyEvent = familyEvents.first(where: { $0.eventIdentifier == eventIdentifier }) {
+            return familyEvent.driver?.phone
         }
         return nil
     }

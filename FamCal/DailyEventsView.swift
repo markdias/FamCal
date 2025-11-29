@@ -266,15 +266,40 @@ struct DailyEventsView: View {
                 .frame(width: 4, height: allDayTitleLineHeight)
                 .opacity(isPast ? 0.6 : 1.0)
 
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(event.title)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .opacity(isPast ? 0.7 : 1.0)
-                Text(event.memberNames.joined(separator: ", "))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(theme.mutedTagColor)
-                    .opacity(isPast ? 0.7 : 1.0)
+                HStack(spacing: 4) {
+                    Text(event.memberNames.joined(separator: ", "))
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(theme.mutedTagColor)
+                        .opacity(isPast ? 0.7 : 1.0)
+
+                    if let driverName = event.driverName {
+                        if let phone = event.driverPhone, !phone.isEmpty {
+                            Link(destination: URL(string: "tel:\(phone)")!) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "car.fill")
+                                        .font(.system(size: 10))
+                                    Text(driverName)
+                                        .font(.system(size: 10, weight: .medium))
+                                }
+                                .foregroundColor(theme.mutedTagColor)
+                            }
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 10))
+                                Text(driverName)
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(theme.mutedTagColor)
+                        }
+                        .opacity(isPast ? 0.7 : 1.0)
+                    }
+                }
             }
 
             Spacer()
@@ -304,9 +329,33 @@ struct DailyEventsView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
 
-                Text(event.memberNames.joined(separator: ", "))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+                HStack(spacing: 4) {
+                    Text(event.memberNames.joined(separator: ", "))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+
+                    if let driverName = event.driverName {
+                        if let phone = event.driverPhone, !phone.isEmpty {
+                            Link(destination: URL(string: "tel:\(phone)")!) {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "car.fill")
+                                        .font(.system(size: 8))
+                                    Text(driverName)
+                                        .font(.system(size: 9, weight: .medium))
+                                }
+                                .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+                            }
+                        } else {
+                            HStack(spacing: 2) {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 8))
+                                Text(driverName)
+                                    .font(.system(size: 9, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+                        }
+                    }
+                }
             } else {
                  // For short events, maybe show time in a more compact way or hide it if it doesn't fit
                  // User only asked to remove member name, but 15pt is very small.

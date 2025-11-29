@@ -39,15 +39,6 @@ enum DriverWrapper: Identifiable, Equatable {
         }
     }
 
-    var email: String? {
-        switch self {
-        case .regular(let driver):
-            return driver.email
-        case .familyMember:
-            return nil // Family members don't have direct email in Driver
-        }
-    }
-
     var isFamilyMember: Bool {
         switch self {
         case .familyMember:

@@ -8,7 +8,6 @@ struct AddDriverView: View {
 
     @State private var name = ""
     @State private var phone = ""
-    @State private var email = ""
     @State private var notes = ""
 
     @State private var showingContactPicker = false
@@ -28,9 +27,6 @@ struct AddDriverView: View {
                     TextField("Name", text: $name)
                     TextField("Phone", text: $phone)
                         .keyboardType(.phonePad)
-                    TextField("Email", text: $email)
-                        .keyboardType(.emailAddress)
-                        .autocorrectionDisabled()
 
                     Button(action: { showingContactPicker = true }) {
                         HStack {
@@ -72,9 +68,6 @@ struct AddDriverView: View {
                         if let phone = contact.primaryPhone {
                             self.phone = phone
                         }
-                        if let email = contact.primaryEmail {
-                            self.email = email
-                        }
                         showingContactPicker = false
                     }
                 )
@@ -90,14 +83,13 @@ struct AddDriverView: View {
     private func saveDriver() {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
-        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespaces)
 
         Task {
             await dataManager.createDriver(
                 name: trimmedName,
                 phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
-                email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                email: nil,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes
             )
             await MainActor.run {

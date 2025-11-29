@@ -528,14 +528,31 @@ struct CalendarView: View {
 
                         // Driver (if available)
                         if let driverName = groupedEvent.driverName {
-                            HStack(spacing: 8) {
-                                Image(systemName: "car.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(secondaryTextColor)
-                                Text(driverName)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(secondaryTextColor)
-                                    .lineLimit(1)
+                            let driverPhone = fetchDriverPhoneForEvent(groupedEvent.eventIdentifier)
+                            Group {
+                                if let phone = driverPhone, !phone.isEmpty {
+                                    Link(destination: URL(string: "tel:\(phone)")!) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "car.fill")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(secondaryTextColor)
+                                            Text(driverName)
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                } else {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "car.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(secondaryTextColor)
+                                        Text(driverName)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(secondaryTextColor)
+                                            .lineLimit(1)
+                                    }
+                                }
                             }
                             .opacity(isPast ? 0.5 : 1.0)
                         }
@@ -879,6 +896,13 @@ struct CalendarView: View {
         return nil
     }
 
+    private func fetchDriverPhoneForEvent(_ eventIdentifier: String) -> String? {
+        if let familyEvent = familyEvents.first(where: { $0.eventIdentifier == eventIdentifier }) {
+            return familyEvent.driver?.phone
+        }
+        return nil
+    }
+
     private func loadEvents() {
         print("📅 CalendarView: loadEvents() started")
         isLoadingEvents = true
@@ -1006,6 +1030,7 @@ struct CalendarView: View {
                     }()
 
                     let driverName = fetchDriverForEvent(event.id)
+                    let driverPhone = fetchDriverPhoneForEvent(event.id)
                     let dayEvent = DayEventItem(
                         id: UUID(),
                         title: event.title,
@@ -1024,7 +1049,8 @@ struct CalendarView: View {
                         endDate: event.endDate,
                         hasRecurrence: event.hasRecurrence,
                         isAllDay: event.isAllDay,
-                        driverName: driverName
+                        driverName: driverName,
+                        driverPhone: driverPhone
                     )
 
                     if tempEventsDict[dateKey] == nil {
@@ -1326,6 +1352,7 @@ struct DayEventItem: Identifiable {
     let hasRecurrence: Bool
     let isAllDay: Bool
     let driverName: String?
+    let driverPhone: String?
 
     var startTime: String? {
         guard let timeRange = timeRange else { return nil }

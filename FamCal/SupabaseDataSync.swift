@@ -49,6 +49,7 @@ class SupabaseDataSync {
                     member.name = supabaseDTO.name
                     member.colorHex = supabaseDTO.color_hex
                     member.avatarInitials = getInitials(from: supabaseDTO.name)
+                    member.isDriver = supabaseDTO.is_driver ?? false
                 } else {
                     // Create new member
                     member = FamilyMember(context: context)
@@ -56,6 +57,7 @@ class SupabaseDataSync {
                     member.name = supabaseDTO.name
                     member.colorHex = supabaseDTO.color_hex
                     member.avatarInitials = getInitials(from: supabaseDTO.name)
+                    member.isDriver = supabaseDTO.is_driver ?? false
                     syncedCount += 1
                 }
 

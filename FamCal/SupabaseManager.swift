@@ -316,7 +316,7 @@ class SupabaseManager: @unchecked Sendable {
         let userToken = token ?? authManager.accessToken
         let (_, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
 
-        guard statusCode == 200 else {
+        guard (200...299).contains(statusCode) else {
             throw NSError(domain: "UpdateFamilyMemberDriver", code: statusCode)
         }
     }
@@ -868,7 +868,6 @@ class SupabaseManager: @unchecked Sendable {
         struct UpdateDriverBody: Encodable {
             let name: String
             let phone: String?
-            let email: String?
             let notes: String?
             let travel_time_minutes: Int
             let family_member_id: String?
@@ -877,7 +876,6 @@ class SupabaseManager: @unchecked Sendable {
         let body = UpdateDriverBody(
             name: name,
             phone: phone,
-            email: email,
             notes: notes,
             travel_time_minutes: travelTimeMinutes,
             family_member_id: familyMemberId
@@ -887,7 +885,7 @@ class SupabaseManager: @unchecked Sendable {
         let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/drivers", queryItems: queryItems, body: body, userToken: userToken)
 
-        guard statusCode == 200 else {
+        guard (200...299).contains(statusCode) else {
             logErrorResponse(data, statusCode: statusCode, operation: "updateDriver")
             throw NSError(domain: "UpdateDriver", code: statusCode)
         }

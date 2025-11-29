@@ -307,14 +307,29 @@ struct SpotlightView: View {
                     }
 
                     if let driverName = event.driverName {
-                        HStack(spacing: 8) {
-                            Image(systemName: "car.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
-                            Text(driverName)
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
-                                .lineLimit(1)
+                        let driverPhone = fetchDriverPhoneForEvent(event.id)
+                        if let phone = driverPhone, !phone.isEmpty {
+                            Link(destination: URL(string: "tel:\(phone)")!) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "car.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                    Text(driverName)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                        .lineLimit(1)
+                                }
+                            }
+                        } else {
+                            HStack(spacing: 8) {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                                Text(driverName)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                                    .lineLimit(1)
+                            }
                         }
                     }
 
@@ -369,6 +384,18 @@ struct SpotlightView: View {
         do {
             let results = try viewContext.fetch(fetchRequest)
             return results.first?.driver?.name
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchDriverPhoneForEvent(_ eventIdentifier: String) -> String? {
+        let fetchRequest = FamilyEvent.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventIdentifier)
+
+        do {
+            let results = try viewContext.fetch(fetchRequest)
+            return results.first?.driver?.phone
         } catch {
             return nil
         }

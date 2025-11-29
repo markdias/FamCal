@@ -491,12 +491,13 @@ struct EventDetailView: View {
     // MARK: - View Components
 
     private var driverSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Driver")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.gray)
                 .padding(.horizontal, 20)
 
+            // Driver selection dropdown
             HStack(spacing: 12) {
                 Menu {
                     Button(action: { selectedDriver = nil }) {
@@ -539,6 +540,8 @@ struct EventDetailView: View {
                             .font(.system(size: 16, weight: .regular))
                             .foregroundColor(.primary)
 
+                        Spacer()
+
                         Image(systemName: "chevron.down")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.gray)
@@ -551,10 +554,30 @@ struct EventDetailView: View {
                 .onChange(of: selectedDriver) { _, _ in
                     saveDriver()
                 }
-
-                Spacer()
             }
             .padding(.horizontal, 20)
+
+            // Phone button (only show if driver selected and has phone)
+            if let selectedDriver = selectedDriver, let phone = selectedDriver.phone, !phone.isEmpty {
+                HStack(spacing: 12) {
+                    Link(destination: URL(string: "tel:\(phone)")!) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "phone.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(phone)
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundColor(.white)
+                        .background(Color.blue)
+                        .cornerRadius(8)
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+            }
         }
     }
 
