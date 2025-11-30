@@ -10,6 +10,7 @@ import CoreData
 
 struct AddMembersSetupView: View {
     @Environment(\.managedObjectContext) var viewContext
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @Binding var familyMembers: [FamilyMember]
     var onNext: () -> Void
     var onBack: () -> Void
@@ -22,6 +23,10 @@ struct AddMembersSetupView: View {
             guard let calendars = member.memberCalendars as? Set<FamilyMemberCalendar>, !calendars.isEmpty else { return false }
             return true
         }
+    }
+
+    var isAddMemberDisabled: Bool {
+        !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
     }
 
     var body: some View {
@@ -75,19 +80,19 @@ struct AddMembersSetupView: View {
                 Button(action: { showAddMemberSheet = true }) {
                     Label("Add Member", systemImage: "plus.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(familyMembers.count >= 2 ? .gray : .blue)
+                        .foregroundColor(isAddMemberDisabled ? .gray : .blue)
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                         .background(Color(.systemGray6))
                         .cornerRadius(8)
                 }
-                .disabled(familyMembers.count >= 2)
+                .disabled(isAddMemberDisabled)
 
-                if familyMembers.count >= 2 {
+                if isAddMemberDisabled {
                     HStack(spacing: 8) {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 12))
-                        Text("Free plan limited to 2 family members")
+                        Text("Free plan limited to \(appSettingsManager.maxFamilyMembersAllowed) family members")
                             .font(.system(size: 12, weight: .regular))
                         Spacer()
                     }

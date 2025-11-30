@@ -11,6 +11,7 @@ import EventKit
 
 struct SharedCalendarsSetupView: View {
     @Environment(\.managedObjectContext) var viewContext
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @Binding var sharedCalendars: [SharedCalendar]
     var onNext: () -> Void
     var onBack: () -> Void
@@ -19,6 +20,14 @@ struct SharedCalendarsSetupView: View {
     @State private var isLoadingCalendars = false
     @State private var selectedCalendarIds: Set<String> = []
     @State private var errorMessage: String?
+
+    var maxCalendarsAllowed: Int {
+        appSettingsManager.maxSharedCalendarsAllowed
+    }
+
+    var isCalendarDisabled: Bool {
+        !appSettingsManager.isProUser && selectedCalendarIds.count >= maxCalendarsAllowed
+    }
 
     var body: some View {
         VStack(spacing: 24) {
@@ -68,11 +77,11 @@ struct SharedCalendarsSetupView: View {
                             CalendarSelectionRow(
                                 calendar: calendar,
                                 isSelected: selectedCalendarIds.contains(calendar.id),
-                                isDisabled: !selectedCalendarIds.contains(calendar.id) && selectedCalendarIds.count >= 1,
+                                isDisabled: !selectedCalendarIds.contains(calendar.id) && isCalendarDisabled,
                                 onToggle: {
                                     if selectedCalendarIds.contains(calendar.id) {
                                         selectedCalendarIds.remove(calendar.id)
-                                    } else if selectedCalendarIds.count < 1 {
+                                    } else if selectedCalendarIds.count < maxCalendarsAllowed {
                                         selectedCalendarIds.insert(calendar.id)
                                     }
                                 }
@@ -101,14 +110,14 @@ struct SharedCalendarsSetupView: View {
             .cornerRadius(8)
 
             // Free plan restriction notice
-            if selectedCalendarIds.count >= 1 {
+            if isCalendarDisabled {
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 14))
                             .foregroundColor(.orange)
 
-                        Text("Free plan limited to 1 shared calendar")
+                        Text("Free plan limited to \(maxCalendarsAllowed) shared calendar\(maxCalendarsAllowed == 1 ? "" : "s")")
                             .font(.system(size: 13, weight: .regular))
                             .foregroundColor(.orange)
 
