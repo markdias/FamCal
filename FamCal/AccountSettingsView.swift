@@ -104,44 +104,43 @@ struct AccountSettingsView: View {
                             .padding(.horizontal, 16)
 
                         settingsContainer {
-                            if !authManager.isGuest && appSettingsManager.linkedFamilyMemberId != nil {
-                                // Authenticated user with linked account - show read-only
-                                HStack {
-                                    Text(getDisplayName())
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(primaryTextColor)
-
-                                    Spacer()
-
-                                    Image(systemName: "lock.fill")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.orange)
-                                }
-                                .padding()
-                            } else {
-                                // Guest or unlinked user - show menu
+                            // All authenticated users can select/change their member (show menu)
+                            if authManager.isGuest {
+                                // Guest users - show local member selection
                                 Menu {
-                                    // Show local members for guests, Supabase members for authenticated users
-                                    if authManager.isGuest {
-                                        ForEach(localFamilyMembers, id: \.id) { member in
-                                            Button(action: { selectMemberLocal(member) }) {
-                                                HStack {
-                                                    Text(member.name ?? "Unknown")
-                                                    if isSelectedLocal(member.id) {
-                                                        Image(systemName: "checkmark")
-                                                    }
+                                    ForEach(localFamilyMembers, id: \.id) { member in
+                                        Button(action: { selectMemberLocal(member) }) {
+                                            HStack {
+                                                Text(member.name ?? "Unknown")
+                                                if isSelectedLocal(member.id) {
+                                                    Image(systemName: "checkmark")
                                                 }
                                             }
                                         }
-                                    } else {
-                                        // Filter out members that are already linked to other accounts
-                                        ForEach(dataManager.familyMembers.filter { $0.linked_user_id == nil }, id: \.id) { member in
-                                            Button(action: { selectMember(member) }) {
-                                                HStack {
-                                                    Text(member.name)
-                                                    if isSelected(member.id) {
-                                                        Image(systemName: "checkmark")
-                                                    }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(getDisplayName())
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(primaryTextColor)
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+                                    .padding()
+                                }
+                            } else {
+                                // Authenticated users - show menu with unlinked members (can select/change)
+                                Menu {
+                                    ForEach(dataManager.familyMembers.filter { $0.linked_user_id == nil }, id: \.id) { member in
+                                        Button(action: { selectMember(member) }) {
+                                            HStack {
+                                                Text(member.name)
+                                                if isSelected(member.id) {
+                                                    Image(systemName: "checkmark")
                                                 }
                                             }
                                         }
