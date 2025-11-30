@@ -27,6 +27,11 @@ class SupabaseDataSync {
             let fetchRequest: NSFetchRequest<FamilyMember> = FamilyMember.fetchRequest()
             let existingMembers = try context.fetch(fetchRequest)
 
+            if supabaseMembers.isEmpty && !existingMembers.isEmpty {
+                print("⚠️ Supabase returned 0 members while local cache has \(existingMembers.count) entries – preserving local data until remote data is available.")
+                return
+            }
+
             // Delete members that no longer exist in Supabase
             for existingMember in existingMembers {
                 if let memberId = existingMember.id?.uuidString, !supabaseIds.contains(memberId) {

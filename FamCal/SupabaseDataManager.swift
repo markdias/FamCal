@@ -760,6 +760,7 @@ class SupabaseDataManager: ObservableObject {
         }
 
         do {
+            let familyId = try await supabaseManager.getFamilyIdForUser(userId: userId)
             try await supabaseManager.createDriver(
                 userId: userId,
                 name: name,
@@ -767,7 +768,8 @@ class SupabaseDataManager: ObservableObject {
                 email: email,
                 notes: notes,
                 travelTimeMinutes: travelTimeMinutes,
-                familyMemberId: familyMemberId?.uuidString
+                familyMemberId: familyMemberId?.uuidString,
+                familyId: familyId
             )
             print("✅ Driver created in Supabase")
             await fetchUserData()

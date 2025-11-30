@@ -249,6 +249,11 @@ struct FamilySetupFlow: View {
 
                     // Step 6: Save settings to Supabase
                     await appSettingsManager.saveSettings()
+
+                    if !isGuest {
+                        print("🔄 Refreshing Supabase data after setup...")
+                        await dataManager.fetchUserData()
+                    }
                 }
 
                 print("✅ Family setup completed successfully with family_id: \(familyId)")

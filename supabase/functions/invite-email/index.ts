@@ -75,7 +75,11 @@ Deno.serve(async (req) => {
 
     // 2) Send Supabase invite email with built-in template
     //    Use a distinct query param name to avoid collisions with Supabase's own `token` param
-    const redirect = `famcal://invite?invite_token=${inv.token}`;
+    const redirectUrl = new URL("famcal://invite");
+    redirectUrl.searchParams.set("invite_token", inv.token);
+    redirectUrl.searchParams.set("type", "invite");
+    redirectUrl.searchParams.set("email", invitee_email);
+    const redirect = redirectUrl.toString();
 
     const { error: emailErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(invitee_email, {
       // Include the invite token so the app can accept the invitation after auth

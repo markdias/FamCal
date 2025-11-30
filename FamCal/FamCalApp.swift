@@ -412,23 +412,30 @@ struct FamCalApp: App {
             }
 
             // If authenticated and NOT an invited member, check if they have a valid family
-            if authManager.isAuthenticated && !authManager.isGuest {
-                // Check if user has a valid family in Supabase (familyId might be stale from previous user)
-                if let familyId = appSettingsManager.familyId {
-                    print("ℹ️ Local familyId found: \(familyId), verifying in Supabase...")
-                    // Verify the family actually exists and belongs to this user
-                    if let _ = try? await SupabaseManager.shared.getFamilyForOwner(userId: authManager.userId ?? "") {
-                        print("ℹ️ Authenticated user with valid family - skipping setup")
-                        needsFamilySetup = false
-                        return
-                    } else {
-                        print("⚠️ Family not found in Supabase, clearing stale familyId")
-                        await MainActor.run {
-                            appSettingsManager.familyId = nil
-                            UserDefaults.standard.removeObject(forKey: "com.famcal.familyId")
+                if authManager.isAuthenticated && !authManager.isGuest {
+                    // Check if user has a valid family in Supabase (familyId might be stale from previous user)
+                    if let familyId = appSettingsManager.familyId {
+                        print("ℹ️ Local familyId found: \(familyId), verifying in Supabase...")
+                        // Verify the family actually exists and belongs to this user
+                        if let _ = try? await SupabaseManager.shared.getFamilyForOwner(userId: authManager.userId ?? "") {
+                            print("ℹ️ Authenticated user with valid family - skipping setup")
+                            needsFamilySetup = false
+                            return
+                        } else {
+                            // The local familyId may belong to another owner (invited member)
+                            if let userId = authManager.userId,
+                               (try? await SupabaseManager.shared.isUserLinkedToFamily(userId: userId, familyId: familyId)) == true {
+                                print("ℹ️ Authenticated user is linked to familyId \(familyId) - skipping setup")
+                                needsFamilySetup = false
+                                return
+                            }
+                            print("⚠️ Family not found in Supabase, clearing stale familyId")
+                            await MainActor.run {
+                                appSettingsManager.familyId = nil
+                                UserDefaults.standard.removeObject(forKey: "com.famcal.familyId")
+                            }
                         }
                     }
-                }
 
                 // No valid family found, show setup
                 print("ℹ️ Authenticated user with no valid family - showing family setup")
@@ -545,6 +552,8 @@ struct FamCalApp: App {
                         }
                     }
 
+                    checkFamilySetupNeeded()
+
                     // If this was a recovery or invite link, prompt for new password
                     if linkType == "recovery" || linkType == "invite" {
                         resetPasswordEmail = email ?? authManager.userEmail
@@ -558,6 +567,8 @@ struct FamCalApp: App {
                         try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
                         await SupabaseDataManager.shared.fetchUserData()
                         print("✅ Invitation accepted and data refreshed")
+
+                        checkFamilySetupNeeded()
                     } catch {
                         print("❌ Failed to accept invitation: \(error)")
                     }

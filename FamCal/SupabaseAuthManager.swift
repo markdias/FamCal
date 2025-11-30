@@ -676,6 +676,46 @@ class SupabaseAuthManager: ObservableObject {
         print("✅ User signed out successfully")
     }
 
+    /// Delete the current user's account
+    /// This removes all data from the database and clears local session
+    func deleteAccount() async throws {
+        isLoading = true
+        errorMessage = nil
+
+        defer { isLoading = false }
+
+        guard let userId = self.userId else {
+            throw NSError(domain: "DeleteAccount", code: -1, userInfo: [NSLocalizedDescriptionKey: "User ID not found"])
+        }
+
+        guard let token = self.accessToken else {
+            throw NSError(domain: "DeleteAccount", code: -1, userInfo: [NSLocalizedDescriptionKey: "Access token not found"])
+        }
+
+        do {
+            // Delete all data from the database through SupabaseManager
+            try await SupabaseManager.shared.deleteAccount(userId: userId, token: token)
+
+            // Clear local session
+            self.userId = nil
+            self.userEmail = nil
+            self.accessToken = nil
+            self.isAuthenticated = false
+            self.isGuest = false
+            self.clearSession()
+            GIDSignIn.sharedInstance.signOut()
+
+            // Reset app data
+            AppSettingsManager.shared.resetToDefaults()
+            SupabaseDataManager.shared.clearAllLocalData()
+
+            print("✅ Account deleted successfully")
+        } catch {
+            print("❌ Account deletion failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
     /// Continue as guest (no cloud sync, local-only settings)
     func continueAsGuest() {
         isLoading = true

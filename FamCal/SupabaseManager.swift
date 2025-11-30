@@ -320,6 +320,40 @@ class SupabaseManager: @unchecked Sendable {
         return families.first
     }
 
+    /// Resolve the family_id assigned to the given user, using their profile or owner record.
+    func getFamilyIdForUser(userId: String, token: String? = nil) async throws -> String {
+        if let cachedFamilyId = AppSettingsManager.shared.familyId {
+            print("🔎 Using cached family_id \(cachedFamilyId) from AppSettingsManager")
+            return cachedFamilyId
+        }
+
+        guard let userToken = token ?? authManager.accessToken else {
+            throw NSError(domain: "ResolveFamilyId", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        do {
+            let profile = try await getProfile(userId: userId, token: userToken)
+            if let familyId = profile.family_id {
+                print("🔎 Resolved family_id \(familyId) for user \(userId) via profile")
+                return familyId
+            }
+        } catch {
+            print("⚠️ Unable to load profile for user \(userId): \(error)")
+        }
+
+        if let family = try? await getCurrentFamily(token: userToken) {
+            print("🔎 Resolved family_id \(family.id) for user \(userId) via accessible family lookup")
+            return family.id
+        }
+
+        if let family = try? await getFamilyForOwner(userId: userId, token: userToken) {
+            print("🔎 Resolved family_id \(family.id) for user \(userId) via owner lookup")
+            return family.id
+        }
+
+        throw NSError(domain: "ResolveFamilyId", code: -1, userInfo: [NSLocalizedDescriptionKey: "No family found for user \(userId)"])
+    }
+
     /// Fetch the current family (first accessible row)
     func getCurrentFamily(token: String? = nil) async throws -> FamilyDTO? {
         let userToken = token ?? authManager.accessToken
@@ -416,11 +450,9 @@ class SupabaseManager: @unchecked Sendable {
         let userToken = token ?? authManager.accessToken
 
         // Get the user's family to get the family_id
-        guard let family = try await getFamilyForOwner(userId: userId, token: userToken) else {
-            throw NSError(domain: "GetFamilyMembers", code: -1, userInfo: [NSLocalizedDescriptionKey: "No family found for user"])
-        }
+        let familyId = try await getFamilyIdForUser(userId: userId, token: userToken)
 
-        let queryItems = [URLQueryItem(name: "family_id", value: "eq.\(family.id)")]
+        let queryItems = [URLQueryItem(name: "family_id", value: "eq.\(familyId)")]
         let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
 
         guard statusCode == 200 else {
@@ -429,6 +461,23 @@ class SupabaseManager: @unchecked Sendable {
         }
 
         return try JSONDecoder().decode([FamilyMemberDTO].self, from: data)
+    }
+
+    func isUserLinkedToFamily(userId: String, familyId: String, token: String? = nil) async throws -> Bool {
+        let userToken = token ?? authManager.accessToken
+        let queryItems = [
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "linked_user_id", value: "eq.\(userId)")
+        ]
+        let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "isUserLinkedToFamily")
+            throw NSError(domain: "IsUserLinkedToFamily", code: statusCode)
+        }
+
+        let members = try JSONDecoder().decode([FamilyMemberDTO].self, from: data)
+        return !members.isEmpty
     }
 
     func updateFamilyMember(id: String, name: String, colorHex: String, token: String? = nil) async throws {
@@ -545,6 +594,177 @@ class SupabaseManager: @unchecked Sendable {
     private struct LinkedUserUpdate: Encodable {
         let linked_user_id: String?
     }
+
+    /// Delete the current user's account and all associated data
+    /// This includes: profile, family members, calendars, events, and settings
+    func deleteAccount(userId: String, token: String? = nil) async throws {
+        guard !userId.isEmpty else {
+            throw NSError(domain: "DeleteAccount", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing user ID"])
+        }
+
+        let userToken = token ?? authManager.accessToken
+        guard userToken != nil else {
+            throw NSError(domain: "DeleteAccount", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        // Note: Deletion follows foreign key constraints and cascading deletes configured in Supabase
+        // The order matters: delete from tables with no dependencies first, then work up to tables with dependencies
+
+        // 1. Delete personal calendars (no dependencies)
+        try await deleteUserPersonalCalendars(userId: userId, token: userToken)
+
+        // 2. Delete saved addresses (no dependencies)
+        try await deleteUserSavedAddresses(userId: userId, token: userToken)
+
+        // 3. Delete drivers (references family members, but will cascade)
+        try await deleteUserDrivers(userId: userId, token: userToken)
+
+        // 4. Delete app settings (references user, no cascade needed)
+        try await deleteUserAppSettings(userId: userId, token: userToken)
+
+        // 5. Delete shared calendars owned by user (many-to-many with family members)
+        try await deleteUserSharedCalendars(userId: userId, token: userToken)
+
+        // 6. Delete family member calendars (references family members)
+        try await deleteUserFamilyMemberCalendars(userId: userId, token: userToken)
+
+        // 7. Delete family members created by user
+        try await deleteUserFamilyMembers(userId: userId, token: userToken)
+
+        // 8. Delete families owned by user (cascades to any remaining members)
+        try await deleteUserFamilies(userId: userId, token: userToken)
+
+        // 9. Delete profile (references families and auth.users)
+        try await deleteUserProfile(userId: userId, token: userToken)
+
+        // 10. Delete the auth user itself via edge function
+        try await deleteAuthUser(token: userToken)
+
+        print("✅ Account deleted successfully for user: \(userId)")
+    }
+
+    private func deleteUserPersonalCalendars(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/personal_calendars", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete personal calendars (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserSavedAddresses(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/saved_addresses", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete saved addresses (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserDrivers(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/drivers", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete drivers (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserAppSettings(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/app_settings", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete app settings (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserSharedCalendars(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/shared_calendars", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete shared calendars (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserFamilyMemberCalendars(userId: String, token: String? = nil) async throws {
+        // Delete family member calendars where the associated family member was created by this user
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/family_member_calendars", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete family member calendars (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserFamilyMembers(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/family_members", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete family members (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserFamilies(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "owner_user_id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/families", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            print("⚠️ Failed to delete families (HTTP \(statusCode))")
+            return
+        }
+    }
+
+    private func deleteUserProfile(userId: String, token: String? = nil) async throws {
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(userId)")]
+        let (_, statusCode) = try await makeRequest("DELETE", path: "rest/v1/profiles", queryItems: queryItems, userToken: token)
+
+        guard statusCode == 204 else {
+            throw NSError(domain: "DeleteProfile", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to delete user profile"])
+        }
+    }
+
+    private func deleteAuthUser(token: String? = nil) async throws {
+        // Call the delete-account edge function to delete the auth user
+        // This requires the service role key which the function has access to
+        let userToken = token ?? authManager.accessToken
+        guard userToken != nil else {
+            throw NSError(domain: "DeleteAuthUser", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
+        }
+
+        var headers: [String: String] = [:]
+        if !SupabaseConfig.deleteAccountFunctionKey.isEmpty {
+            headers["x-delete-account-fn-key"] = SupabaseConfig.deleteAccountFunctionKey
+        }
+
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "functions/v1/delete-account",
+            body: EmptyBody(),
+            userToken: userToken,
+            extraHeaders: headers
+        )
+
+        guard statusCode == 200 else {
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("❌ [deleteAuthUser] HTTP \(statusCode): \(errorString)")
+            }
+            throw NSError(domain: "DeleteAuthUser", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to delete authentication account"])
+        }
+
+        print("✅ Auth user deleted successfully")
+    }
+
+    private struct EmptyBody: Encodable {}
 
     func deleteFamilyMember(id: String, token: String? = nil) async throws {
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
@@ -1026,6 +1246,7 @@ class SupabaseManager: @unchecked Sendable {
         notes: String?,
         travelTimeMinutes: Int,
         familyMemberId: String?,
+        familyId: String,
         token: String? = nil
     ) async throws {
         struct CreateDriverBody: Encodable {
@@ -1036,6 +1257,7 @@ class SupabaseManager: @unchecked Sendable {
             let notes: String?
             let travel_time_minutes: Int
             let family_member_id: String?
+            let family_id: String
         }
 
         let body = CreateDriverBody(
@@ -1045,7 +1267,8 @@ class SupabaseManager: @unchecked Sendable {
             email: email,
             notes: notes,
             travel_time_minutes: travelTimeMinutes,
-            family_member_id: familyMemberId
+            family_member_id: familyMemberId,
+            family_id: familyId
         )
 
         let userToken = token ?? authManager.accessToken

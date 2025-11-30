@@ -229,6 +229,26 @@ struct AccountSettingsView: View {
                             }
                         }
                     }
+
+                    // Delete Account Section (authenticated users only)
+                    if !authManager.isGuest {
+                        VStack(alignment: .leading, spacing: 8) {
+                            NavigationLink(destination: AccountDeletionView()) {
+                                settingsContainer {
+                                    HStack {
+                                        Text("Delete Account")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.red)
+                                        Spacer()
+                                        Image(systemName: "trash.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.red)
+                                    }
+                                    .padding()
+                                }
+                            }
+                        }
+                    }
                     
                     Spacer()
                 }
