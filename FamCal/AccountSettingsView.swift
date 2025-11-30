@@ -104,9 +104,8 @@ struct AccountSettingsView: View {
                             .padding(.horizontal, 16)
 
                         settingsContainer {
-                            // All authenticated users can select/change their member (show menu)
                             if authManager.isGuest {
-                                // Guest users - show local member selection
+                                // Guest users - show local member selection (always editable)
                                 Menu {
                                     ForEach(localFamilyMembers, id: \.id) { member in
                                         Button(action: { selectMemberLocal(member) }) {
@@ -132,8 +131,22 @@ struct AccountSettingsView: View {
                                     }
                                     .padding()
                                 }
+                            } else if appSettingsManager.linkedFamilyMemberId != nil {
+                                // Authenticated user with linked member - show locked view
+                                HStack {
+                                    Text(getDisplayName())
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(primaryTextColor)
+
+                                    Spacer()
+
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.orange)
+                                }
+                                .padding()
                             } else {
-                                // Authenticated users - show menu with unlinked members (can select/change)
+                                // Authenticated user without linked member - show menu to select
                                 Menu {
                                     ForEach(dataManager.familyMembers.filter { $0.linked_user_id == nil }, id: \.id) { member in
                                         Button(action: { selectMember(member) }) {
