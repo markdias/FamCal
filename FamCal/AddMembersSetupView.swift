@@ -344,7 +344,7 @@ struct AddFamilyMemberViewForSetup: View {
                             .cornerRadius(8)
                         }
                     } else if !name.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 12) {
                             Text("Calendar Match")
                                 .font(.system(size: 14, weight: .semibold, design: .default))
                                 .foregroundColor(.gray)
@@ -416,6 +416,19 @@ struct AddFamilyMemberViewForSetup: View {
         .onAppear {
             loadAvailableCalendars()
         }
+        .alert("Create Calendar?", isPresented: $showCreateCalendarAlert) {
+            Button("Create", action: createCalendar)
+            Button("Cancel", role: .cancel) {
+                pendingCalendarName = nil
+            }
+        } message: {
+            Text("Would you like to create a calendar named '\(pendingCalendarName ?? "")'?\n\nAfter creating, you can set up sharing in the Calendar app on your iPhone to allow others to view this calendar.")
+        }
+        .alert("Error", isPresented: $showSaveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(saveError ?? "An unknown error occurred")
+        }
     }
 
     private var calendarLinkingBanner: some View {
@@ -466,13 +479,34 @@ struct AddFamilyMemberViewForSetup: View {
         if matchedCalendar == nil {
             noCalendarTimer?.invalidate()
             pendingCalendarName = name
-            noCalendarTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+            noCalendarTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
                 showCreateCalendarAlert = true
             }
         } else {
             noCalendarTimer?.invalidate()
             noCalendarTimer = nil
             pendingCalendarName = nil
+        }
+    }
+
+    private func createCalendar() {
+        guard let calendarName = pendingCalendarName else { return }
+
+        // Show loading state while creating calendar
+        isLoading = true
+
+        Task { @MainActor in
+            if let newCalendar = CalendarManager.shared.createLocalCalendar(with: calendarName) {
+                // Add the newly created calendar to available calendars
+                availableCalendars.append(newCalendar)
+                // Update match to the newly created calendar
+                matchedCalendar = newCalendar
+                pendingCalendarName = nil
+                print("✅ Calendar successfully created and matched: \(calendarName)")
+            } else {
+                print("❌ Failed to create calendar: \(calendarName)")
+            }
+            isLoading = false
         }
     }
 

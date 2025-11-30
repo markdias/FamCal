@@ -131,30 +131,134 @@ struct FamilySetupFlow: View {
             isLoading = true
             defer { isLoading = false }
 
-            // Mark family setup as complete
-            await MainActor.run {
-                appSettingsManager.familyName = familyName
-                appSettingsManager.hasCompletedFamilySetup = true
-                appSettingsManager.linkedFamilyMemberId = selectedMemberId?.uuidString
-                UserDefaults.standard.set(true, forKey: "hasCompletedFamilySetup")
+            do {
+                let isGuest = SupabaseAuthManager.shared.isGuest
+                var familyId: String
 
-                let context = viewContext
-                do {
-                    try FamilyInfoStore.upsert(name: familyName, familyId: nil as String?, in: context)
-                } catch {
-                    print("⚠️ Failed to persist family name locally: \(error)")
+                if isGuest {
+                    // For guest users: generate a local family_id and store everything locally
+                    print("👤 Guest mode - creating local family...")
+                    familyId = UUID().uuidString
+                    print("✅ Local family created with ID: \(familyId)")
+
+                    // Store family info locally
+                    await MainActor.run {
+                        appSettingsManager.familyId = familyId
+                        appSettingsManager.familyName = familyName
+                        appSettingsManager.hasCompletedFamilySetup = true
+                        appSettingsManager.linkedFamilyMemberId = selectedMemberId?.uuidString
+
+                        UserDefaults.standard.set(familyId, forKey: "com.famcal.familyId")
+                        UserDefaults.standard.set(true, forKey: "hasCompletedFamilySetup")
+
+                        let context = viewContext
+                        do {
+                            try FamilyInfoStore.upsert(name: familyName, familyId: familyId, in: context)
+                        } catch {
+                            print("⚠️ Failed to persist family info locally: \(error)")
+                        }
+                    }
+
+                    print("✅ Guest family setup completed locally")
+                } else {
+                    // For authenticated users: create family in Supabase
+                    guard let userId = SupabaseAuthManager.shared.userId else {
+                        await MainActor.run {
+                            errorMessage = "User ID not available. Please sign in again."
+                        }
+                        return
+                    }
+
+                    print("📤 Creating family in Supabase...")
+                    let createdFamily = try await SupabaseManager.shared.createFamily(
+                        ownerUserId: userId,
+                        familyName: familyName
+                    )
+                    familyId = createdFamily.id
+                    print("✅ Family created with ID: \(familyId)")
+
+                    // Step 2: Update profile.family_id
+                    print("📤 Updating profile with family_id...")
+                    try await SupabaseManager.shared.updateProfileFamilyId(familyId: familyId)
+                    print("✅ Profile updated with family_id")
+
+                    // Step 3: Create family members in Supabase with family_id
+                    print("📤 Creating \(familyMembers.count) family members...")
+                    var selectedMemberSupabaseId: String?
+                    for member in familyMembers {
+                        let createdMember = try await SupabaseManager.shared.createFamilyMember(
+                            userId: userId,
+                            name: member.name ?? "",
+                            colorHex: member.colorHex ?? "#007AFF",
+                            token: SupabaseAuthManager.shared.accessToken
+                        )
+                        // If this is the selected member, store their Supabase ID for linking
+                        if member.id == selectedMemberId {
+                            selectedMemberSupabaseId = createdMember.id
+                        }
+                    }
+                    print("✅ All family members created")
+
+                    // Step 3b: Link authenticated user to their selected family member
+                    if let memberSupabaseId = selectedMemberSupabaseId {
+                        print("📤 Linking user to family member: \(memberSupabaseId)...")
+                        try await SupabaseManager.shared.linkCurrentUserToFamilyMember(
+                            id: memberSupabaseId,
+                            token: SupabaseAuthManager.shared.accessToken
+                        )
+                        print("✅ User linked to family member")
+
+                        // Update AppSettingsManager with the Supabase member ID for future reference
+                        await MainActor.run {
+                            appSettingsManager.linkedFamilyMemberId = memberSupabaseId
+                        }
+                    }
+
+                    // Step 4: Create shared calendars in Supabase with family_id
+                    if !sharedCalendars.isEmpty {
+                        print("📤 Creating \(sharedCalendars.count) shared calendars...")
+                        for calendar in sharedCalendars {
+                            _ = try await SupabaseManager.shared.createSharedCalendar(
+                                familyId: familyId,
+                                calendarId: calendar.calendarID ?? "",
+                                calendarName: calendar.calendarName ?? "",
+                                calendarColorHex: calendar.calendarColorHex ?? "#007AFF",
+                                token: SupabaseAuthManager.shared.accessToken
+                            )
+                        }
+                        print("✅ All shared calendars created")
+                    }
+
+                    // Step 5: Store family_id and setup info locally
+                    await MainActor.run {
+                        appSettingsManager.familyId = familyId
+                        appSettingsManager.familyName = familyName
+                        appSettingsManager.hasCompletedFamilySetup = true
+                        // linkedFamilyMemberId is already set in step 3b with the Supabase member ID
+
+                        UserDefaults.standard.set(familyId, forKey: "com.famcal.familyId")
+                        UserDefaults.standard.set(true, forKey: "hasCompletedFamilySetup")
+
+                        let context = viewContext
+                        do {
+                            try FamilyInfoStore.upsert(name: familyName, familyId: familyId, in: context)
+                        } catch {
+                            print("⚠️ Failed to persist family info locally: \(error)")
+                        }
+                    }
+
+                    // Step 6: Save settings to Supabase
+                    await appSettingsManager.saveSettings()
+                }
+
+                print("✅ Family setup completed successfully with family_id: \(familyId)")
+
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to complete setup: \(error.localizedDescription)"
+                    print("❌ Setup error: \(error)")
                 }
             }
-
-            // Save settings to Supabase if authenticated
-            if !SupabaseAuthManager.shared.isGuest {
-                await appSettingsManager.saveSettings()
-            }
-
-            // Sync family setup to cloud
-            await dataManager.syncFamilySetup()
-
-            print("✅ Family setup completed successfully")
         }
     }
 }

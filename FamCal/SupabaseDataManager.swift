@@ -317,20 +317,14 @@ class SupabaseDataManager: ObservableObject {
         }
 
         print("ℹ️ Creating family member: \(name)")
-        try await supabaseManager.createFamilyMember(userId: userId, name: name, colorHex: colorHex)
-        print("✅ Family member created in Supabase, refreshing data...")
+        let createdMember = try await supabaseManager.createFamilyMember(userId: userId, name: name, colorHex: colorHex)
+        print("✅ Family member '\(name)' created in Supabase with ID: \(createdMember.id)")
 
         // Refresh family members list
         await fetchUserData()
 
-        // Return the newly created member (it will be in the familyMembers array)
-        guard let newMember = familyMembers.first(where: { $0.name == name }) else {
-            print("❌ Family member '\(name)' not found after creation")
-            print("ℹ️ Current family members: \(familyMembers.map { $0.name }.joined(separator: ", "))")
-            throw NSError(domain: "MemberNotFound", code: -1, userInfo: ["message": "Family member was created but not found in the list. Please check your data."])
-        }
-        print("✅ Family member '\(newMember.name)' successfully created with ID: \(newMember.id)")
-        return newMember
+        print("✅ Family member '\(createdMember.name)' successfully created")
+        return createdMember
     }
 
     /// Create family member locally only (for guest mode - no Supabase sync)

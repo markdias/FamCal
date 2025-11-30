@@ -398,14 +398,7 @@ struct FamCalApp: App {
                 UserDefaults.standard.set(false, forKey: "hasCompletedFamilySetup")
             }
 
-            // Skip family setup if already completed AND data exists
-            if appSettingsManager.hasCompletedFamilySetup && hasExistingData {
-                print("ℹ️ Family setup already completed")
-                needsFamilySetup = false
-                return
-            }
-
-            // Skip family setup for invited members
+            // Check if user is an invited member (doesn't need to create a family)
             if authManager.isAuthenticated && !authManager.isGuest {
                 let isInvited = await dataManager.isCurrentUserInvitedMember()
                 if isInvited {
@@ -415,7 +408,32 @@ struct FamCalApp: App {
                 }
             }
 
-            // Show setup if no family data exists
+            // If authenticated and NOT an invited member, check if they have a valid family
+            if authManager.isAuthenticated && !authManager.isGuest {
+                // Check if user has a valid family in Supabase (familyId might be stale from previous user)
+                if let familyId = appSettingsManager.familyId {
+                    print("ℹ️ Local familyId found: \(familyId), verifying in Supabase...")
+                    // Verify the family actually exists and belongs to this user
+                    if let _ = try? await SupabaseManager.shared.getFamilyForOwner(userId: authManager.userId ?? "") {
+                        print("ℹ️ Authenticated user with valid family - skipping setup")
+                        needsFamilySetup = false
+                        return
+                    } else {
+                        print("⚠️ Family not found in Supabase, clearing stale familyId")
+                        await MainActor.run {
+                            appSettingsManager.familyId = nil
+                            UserDefaults.standard.removeObject(forKey: "com.famcal.familyId")
+                        }
+                    }
+                }
+
+                // No valid family found, show setup
+                print("ℹ️ Authenticated user with no valid family - showing family setup")
+                needsFamilySetup = true
+                return
+            }
+
+            // Show setup if no family data exists (guest or new user)
             if !hasExistingData {
                 print("ℹ️ New user detected - showing family setup")
                 needsFamilySetup = true

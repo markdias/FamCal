@@ -45,6 +45,7 @@ class AppSettingsManager: ObservableObject {
     // Family Setup
     @Published var familyName: String = ""
     @Published var hasCompletedFamilySetup: Bool = UserDefaults.standard.bool(forKey: "hasCompletedFamilySetup")
+    @Published var familyId: String? = UserDefaults.standard.string(forKey: "com.famcal.familyId")
 
     let supabaseManager: SupabaseManager
     let authManager: SupabaseAuthManager
@@ -71,7 +72,8 @@ class AppSettingsManager: ObservableObject {
         "linkedFamilyMemberId",
         "familyMemberOrder",
         "familyName",
-        "hasCompletedFamilySetup"
+        "hasCompletedFamilySetup",
+        "familyId"
     ]
     private var settingsId: String?
     private var cancellables = Set<AnyCancellable>()
@@ -426,18 +428,31 @@ class AppSettingsManager: ObservableObject {
         if case .bool(let value) = dict["widgetShowAttendees"] {
             widgetShowAttendees = value
         }
-        
+
         // Account Link
         if case .string(let value) = dict["linkedFamilyMemberId"] {
             linkedFamilyMemberId = value
         }
-        
+
         // Family Member Order
         if case .array(let value) = dict["familyMemberOrder"] {
             familyMemberOrder = value.compactMap { item in
                 if case .string(let str) = item { return str }
                 return nil
             }
+        }
+
+        // Family Setup (restore from Supabase)
+        if case .string(let value) = dict["familyId"] {
+            familyId = value
+            UserDefaults.standard.set(value, forKey: "com.famcal.familyId")
+        }
+        if case .string(let value) = dict["familyName"] {
+            familyName = value
+        }
+        if case .bool(let value) = dict["hasCompletedFamilySetup"] {
+            hasCompletedFamilySetup = value
+            UserDefaults.standard.set(value, forKey: "hasCompletedFamilySetup")
         }
     }
 
@@ -532,13 +547,17 @@ class AppSettingsManager: ObservableObject {
             "widgetShowTime": .bool(widgetShowTime),
             "widgetShowLocation": .bool(widgetShowLocation),
             "widgetShowAttendees": .bool(widgetShowAttendees),
-            
-            // Account Link
+
             // Account Link
             "linkedFamilyMemberId": linkedFamilyMemberId != nil ? .string(linkedFamilyMemberId!) : .null,
-            
+
             // Family Member Order
-            "familyMemberOrder": .array(familyMemberOrder.map { .string($0) })
+            "familyMemberOrder": .array(familyMemberOrder.map { .string($0) }),
+
+            // Family Setup
+            "familyId": familyId != nil ? .string(familyId!) : .null,
+            "familyName": .string(familyName),
+            "hasCompletedFamilySetup": .bool(hasCompletedFamilySetup)
         ]
     }
 
