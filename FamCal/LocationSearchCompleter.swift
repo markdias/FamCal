@@ -19,6 +19,16 @@ class LocationSearchCompleter: NSObject, ObservableObject {
         }
     }
     @Published var results: [MKLocalSearchCompletion] = []
+    
+    var region: MKCoordinateRegion? {
+        didSet {
+            if let region = region {
+                searchCompleter.region = region
+            } else {
+                searchCompleter.region = MKCoordinateRegion() // Reset to default
+            }
+        }
+    }
 
     private let searchCompleter = MKLocalSearchCompleter()
     private var searchDebounceTimer: Timer?
@@ -32,6 +42,11 @@ class LocationSearchCompleter: NSObject, ObservableObject {
     deinit {
         searchDebounceTimer?.invalidate()
     }
+    
+    func reset() {
+        query = ""
+        region = nil
+    }
 }
 
 extension LocationSearchCompleter: MKLocalSearchCompleterDelegate {
@@ -41,5 +56,18 @@ extension LocationSearchCompleter: MKLocalSearchCompleterDelegate {
 
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
         self.results = []
+    }
+    
+    func resolve(result: MKLocalSearchCompletion, completion: @escaping (MKMapItem?) -> Void) {
+        let searchRequest = MKLocalSearch.Request(completion: result)
+        let search = MKLocalSearch(request: searchRequest)
+        
+        search.start { response, error in
+            guard let item = response?.mapItems.first else {
+                completion(nil)
+                return
+            }
+            completion(item)
+        }
     }
 }

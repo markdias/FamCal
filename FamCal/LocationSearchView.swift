@@ -20,6 +20,12 @@ struct LocationSearchView: View {
     @State private var searchText = ""
     @FocusState private var isFocused: Bool
     
+    // Refinement State
+    @State private var showRefinementAlert = false
+    @State private var pendingMapItem: MKMapItem?
+    @State private var isRefiningSearch = false
+    @State private var refiningLocationName = ""
+    
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
     )
@@ -37,17 +43,23 @@ struct LocationSearchView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.gray)
-                    TextField("Search address or postcode", text: $searchText)
+                    TextField(isRefiningSearch ? "Search in \(refiningLocationName)" : "Search address or postcode", text: $searchText)
                         .focused($isFocused)
                         .onChange(of: searchText) { _, newValue in
                             searchCompleter.query = newValue
                         }
                         .submitLabel(.search)
                     
-                    if !searchText.isEmpty {
+                    if !searchText.isEmpty || isRefiningSearch {
                         Button(action: {
                             searchText = ""
-                            searchCompleter.query = ""
+                            if isRefiningSearch {
+                                isRefiningSearch = false
+                                refiningLocationName = ""
+                                searchCompleter.reset()
+                            } else {
+                                searchCompleter.query = ""
+                            }
                         }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.gray)
@@ -144,19 +156,117 @@ struct LocationSearchView: View {
             .onAppear {
                 isFocused = true
             }
+            .alert("Location Found", isPresented: $showRefinementAlert) {
+                Button("Search in this area") {
+                    if let mapItem = pendingMapItem {
+                        startRefinedSearch(in: mapItem)
+                    }
+                }
+                Button("Use as is") {
+                    if let mapItem = pendingMapItem {
+                        // Use the fallback title/subtitle from the original result if needed, 
+                        // but here we can just use the mapItem's name/address since we have it.
+                        // We'll reconstruct the fallback strings from the mapItem for simplicity
+                        // or pass empty strings since saveMapItem prioritizes mapItem content.
+                        saveMapItem(mapItem, fallbackTitle: mapItem.name ?? "", fallbackSubtitle: "")
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingMapItem = nil
+                }
+            } message: {
+                if let name = pendingMapItem?.name {
+                    Text("Do you want to use '\(name)' as your location, or search for a specific place nearby?")
+                } else {
+                    Text("Do you want to use this location, or search for a specific place nearby?")
+                }
+            }
         }
     }
     
     private func selectLocation(_ result: MKLocalSearchCompletion) {
+        searchCompleter.resolve(result: result) { mapItem in
+            guard let mapItem = mapItem else {
+                // Fallback to completion results if resolution fails
+                self.saveLocation(name: result.title, address: result.subtitle)
+                return
+            }
+            
+            // Check if address is "broad" (missing house number)
+            // We only offer refinement if we are NOT already refining
+            if mapItem.placemark.subThoroughfare == nil && !self.isRefiningSearch {
+                self.pendingMapItem = mapItem
+                self.showRefinementAlert = true
+                return
+            }
+            
+            self.saveMapItem(mapItem, fallbackTitle: result.title, fallbackSubtitle: result.subtitle)
+        }
+    }
+    
+    private func saveMapItem(_ mapItem: MKMapItem, fallbackTitle: String, fallbackSubtitle: String) {
+        let placemark = mapItem.placemark
+        let name = placemark.name ?? fallbackTitle
+        
+        // Construct full address from components
+        var addressComponents: [String] = []
+        
+        if let subThoroughfare = placemark.subThoroughfare {
+            addressComponents.append(subThoroughfare)
+        }
+        if let thoroughfare = placemark.thoroughfare {
+            addressComponents.append(thoroughfare)
+        }
+        if let locality = placemark.locality {
+            addressComponents.append(locality)
+        }
+        if let administrativeArea = placemark.administrativeArea {
+            addressComponents.append(administrativeArea)
+        }
+        if let postalCode = placemark.postalCode {
+            addressComponents.append(postalCode)
+        }
+        if let country = placemark.country {
+            addressComponents.append(country)
+        }
+        
+        let fullAddress = addressComponents.joined(separator: ", ")
+        let finalAddress = fullAddress.isEmpty ? fallbackSubtitle : fullAddress
+        
+        DispatchQueue.main.async {
+            self.saveLocation(name: name, address: finalAddress)
+        }
+    }
+    
+    private func startRefinedSearch(in mapItem: MKMapItem) {
+        isRefiningSearch = true
+        refiningLocationName = mapItem.name ?? "this area"
+        
+        // Set region to the selected location
+        if let location = mapItem.placemark.location {
+            // Create a small region around the point
+            let region = MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 500, longitudinalMeters: 500)
+            searchCompleter.region = region
+        }
+        
+        // Clear current search text to let user type new query
+        searchText = ""
+        searchCompleter.query = ""
+        
+        // Focus back on search field
+        isFocused = true
+    }
+    
+    private func saveLocation(name: String, address: String) {
         // Update bindings
-        locationName = result.title
-        locationAddress = result.subtitle
+        locationName = name
+        locationAddress = address
         
         // Save to Recent Searches
         let recent = RecentSearch(context: viewContext)
         recent.id = UUID()
-        recent.query = result.title
-        recent.address = result.subtitle
+        recent.query = name
+        recent.address = address
         recent.timestamp = Date()
         
         saveContext()

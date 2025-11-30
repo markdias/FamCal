@@ -481,7 +481,22 @@ struct AddEventView: View {
 
         // Create event in all target calendars
         var firstEventId: String? = nil
-        let locationValue = locationAddress.isEmpty ? nil : locationAddress
+        
+        // Construct location string with name if available
+        let locationValue: String?
+        if locationAddress.isEmpty {
+            locationValue = nil
+        } else if !locationName.isEmpty && locationName != locationAddress {
+            // Avoid duplication if name is part of address or identical
+            if locationAddress.contains(locationName) {
+                locationValue = locationAddress
+            } else {
+                locationValue = "\(locationName), \(locationAddress)"
+            }
+        } else {
+            locationValue = locationAddress
+        }
+        
         let notesValue = notes.isEmpty ? nil : notes
         for target in targets {
             var eventId: String?

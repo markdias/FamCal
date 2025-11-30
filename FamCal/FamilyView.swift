@@ -462,8 +462,7 @@ struct FamilyView: View {
                 LazyVGrid(columns: columns, spacing: spacing) {
                     ForEach(displayedEvents) { memberGroup in
                         if let nextEvent = memberGroup.nextEvent,
-                           !nextEvent.isAllDay,
-                           nextEvent.timeRange != nil,
+                           !isEffectivelyAllDay(nextEvent),
                            nextEvent.endDate > Date() {
                             Button(action: {
                                 spotlightMemberName = memberGroup.memberName
@@ -1282,13 +1281,16 @@ struct FamilyView: View {
                 let sortedGroupedEvents = groupedMemberEvents.sorted { $0.startDate < $1.startDate }
                 print("🔍 DEBUG: Member '\(member.name ?? "nil")' - sortedGroupedEvents count: \(sortedGroupedEvents.count)")
                 print("🔍 DEBUG: eventsPerPerson limit: \(eventsPerPerson)")
-                let limitedEvents = Array(sortedGroupedEvents.prefix(eventsPerPerson))
+
+                // Filter out all-day events for upcoming events display
+                let nonAllDayEvents = sortedGroupedEvents.filter { !isEffectivelyAllDay($0) }
+                let limitedEvents = Array(nonAllDayEvents.prefix(eventsPerPerson))
                 print("🔍 DEBUG: Member '\(member.name ?? "nil")' - limitedEvents count: \(limitedEvents.count)")
 
                 // Create member event group
                 let memberColor = Color.fromHex(member.colorHex ?? "#555555")
                 // Get next non-all-day event for spotlight
-                let nextNonAllDayEvent = sortedGroupedEvents.first { !$0.isAllDay && $0.timeRange != nil }
+                let nextNonAllDayEvent = sortedGroupedEvents.first { !isEffectivelyAllDay($0) }
                 let memberGroup = MemberEventGroup(
                     id: member.objectID,
                     memberName: member.name ?? "Unknown",
@@ -1500,6 +1502,21 @@ struct FamilyView: View {
         }
 
         return grouped.values.sorted { $0.startDate < $1.startDate }
+    }
+
+    /// Check if an event is effectively all-day (either marked as all-day or spans 00:00-23:59)
+    private func isEffectivelyAllDay(_ event: GroupedEvent) -> Bool {
+        // Check EventKit isAllDay flag
+        if event.isAllDay {
+            return true
+        }
+
+        // Check if it's a 00:00-23:59 event (all-day event formatted as timed)
+        if event.timeRange == "00:00 – 23:59" {
+            return true
+        }
+
+        return false
     }
 
     private func formatTimeRange(_ startDate: Date, _ endDate: Date) -> String? {

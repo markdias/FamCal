@@ -390,8 +390,34 @@ struct NextEventProvider: AppIntentTimelineProvider {
             let futureEvents = events.filter { $0.endDate > Date() }
 
             // Filter to find first non-all-day event (for widget display we want timed events)
-            guard let nextEvent = futureEvents.first(where: { !$0.isAllDay }) else {
-                return NextEventEntry(errorMessage: "No upcoming events for \(memberName)")
+            // Also exclude 00:00-23:59 events which are all-day events formatted as timed
+            guard let nextEvent = futureEvents.first(where: { event in
+                if event.isAllDay {
+                    return false
+                }
+                // Check for 00:00-23:59 pattern (all-day event formatted as timed)
+                let calendar = Calendar.current
+                let startComponents = calendar.dateComponents([.hour, .minute], from: event.startDate)
+                let endComponents = calendar.dateComponents([.hour, .minute], from: event.endDate)
+                if startComponents.hour == 0 && startComponents.minute == 0 &&
+                   endComponents.hour == 23 && endComponents.minute == 59 {
+                    return false
+                }
+                return true
+            }) else {
+                // Check if there are only all-day events
+                let hasAnyAllDayEvents = futureEvents.contains { event in
+                    if event.isAllDay {
+                        return true
+                    }
+                    let calendar = Calendar.current
+                    let startComponents = calendar.dateComponents([.hour, .minute], from: event.startDate)
+                    let endComponents = calendar.dateComponents([.hour, .minute], from: event.endDate)
+                    return startComponents.hour == 0 && startComponents.minute == 0 &&
+                           endComponents.hour == 23 && endComponents.minute == 59
+                }
+                let message = hasAnyAllDayEvents ? "No upcoming events" : "No upcoming events for \(memberName)"
+                return NextEventEntry(errorMessage: message)
             }
             
             // 4. Return Entry with MEMBER info

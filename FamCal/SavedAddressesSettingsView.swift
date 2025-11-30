@@ -191,11 +191,24 @@ struct AddSavedAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @Environment(\.managedObjectContext) private var viewContext
+
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(keyPath: \RecentSearch.timestamp, ascending: false)]
+    )
+    private var recentSearches: FetchedResults<RecentSearch>
 
     @State private var name = ""
     @State private var address = ""
     @StateObject private var searchCompleter = LocationSearchCompleter()
     @State private var isSearching = false
+    @FocusState private var isFocused: Bool
+    
+    // Refinement State
+    @State private var showRefinementAlert = false
+    @State private var pendingMapItem: MKMapItem?
+    @State private var isRefiningSearch = false
+    @State private var refiningLocationName = ""
     
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -243,8 +256,9 @@ struct AddSavedAddressView: View {
                                     .foregroundColor(secondaryTextColor)
                                     .padding(.horizontal, 16)
 
-                                TextField("Search address", text: $address)
+                                TextField(isRefiningSearch ? "Search in \(refiningLocationName)" : "Search address", text: $address)
                                     .font(.system(size: 16, weight: .regular))
+                                    .focused($isFocused)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
                                     .background(theme.cardBackground)
@@ -260,19 +274,31 @@ struct AddSavedAddressView: View {
                                             searchCompleter.query = newValue
                                         }
                                     }
+                                    .overlay(alignment: .trailing) {
+                                        if !address.isEmpty || isRefiningSearch {
+                                            Button(action: {
+                                                address = ""
+                                                if isRefiningSearch {
+                                                    isRefiningSearch = false
+                                                    refiningLocationName = ""
+                                                    searchCompleter.reset()
+                                                } else {
+                                                    searchCompleter.query = ""
+                                                }
+                                            }) {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .foregroundColor(.gray)
+                                                    .padding(.trailing, 28)
+                                            }
+                                        }
+                                    }
 
                                 // Search Results
                                 if !searchCompleter.results.isEmpty && !isSearching {
                                     VStack(spacing: 0) {
                                         ForEach(Array(searchCompleter.results.enumerated()), id: \.element.self) { index, result in
                                             Button(action: {
-                                                isSearching = true
-                                                address = result.title + ", " + result.subtitle
-                                                searchCompleter.query = ""
-                                                searchCompleter.results = []
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                                    isSearching = false
-                                                }
+                                                selectLocation(result)
                                             }) {
                                                 HStack(spacing: 12) {
                                                     Image(systemName: "mappin.circle.fill")
@@ -315,6 +341,65 @@ struct AddSavedAddressView: View {
                                     .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                                     .padding(.horizontal, 16)
                                }
+                               
+                                // Recent Searches
+                                if searchCompleter.results.isEmpty && !recentSearches.isEmpty && !isSearching {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Recent Searches")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(secondaryTextColor)
+                                            .padding(.horizontal, 16)
+                                            .padding(.top, 8)
+                                        
+                                        VStack(spacing: 0) {
+                                            ForEach(Array(recentSearches.prefix(5).enumerated()), id: \.element.self) { index, recent in
+                                                Button(action: {
+                                                    selectRecentSearch(recent)
+                                                }) {
+                                                    HStack(spacing: 12) {
+                                                        Image(systemName: "clock.fill")
+                                                            .font(.system(size: 16))
+                                                            .foregroundColor(.gray)
+                                                            .frame(width: 12, height: 12)
+                                                        
+                                                        VStack(alignment: .leading, spacing: 2) {
+                                                            Text(recent.query ?? "Unknown")
+                                                                .font(.system(size: 14, weight: .medium))
+                                                                .foregroundColor(primaryTextColor)
+                                                            
+                                                            if let address = recent.address, !address.isEmpty {
+                                                                Text(address)
+                                                                    .font(.system(size: 12))
+                                                                    .foregroundColor(secondaryTextColor)
+                                                                    .lineLimit(1)
+                                                            }
+                                                        }
+                                                        
+                                                        Spacer()
+                                                    }
+                                                    .padding(.vertical, 12)
+                                                    .contentShape(Rectangle())
+                                                }
+                                                .buttonStyle(.plain)
+                                                
+                                                if index < min(recentSearches.count, 5) - 1 {
+                                                    Divider()
+                                                        .padding(.leading, 56)
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(theme.cardBackground)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .stroke(theme.cardStroke, lineWidth: 1)
+                                        )
+                                        .cornerRadius(12)
+                                        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
+                                        .padding(.horizontal, 16)
+                                    }
+                                }
                            }
                        }
 
@@ -358,6 +443,27 @@ struct AddSavedAddressView: View {
             .padding(.bottom, 24)
             .background(theme.backgroundLayer())
         }
+        .alert("Location Found", isPresented: $showRefinementAlert) {
+            Button("Search in this area") {
+                if let mapItem = pendingMapItem {
+                    startRefinedSearch(in: mapItem)
+                }
+            }
+            Button("Use as is") {
+                if let mapItem = pendingMapItem {
+                    saveMapItem(mapItem, fallbackTitle: mapItem.name ?? "", fallbackSubtitle: "")
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingMapItem = nil
+            }
+        } message: {
+            if let name = pendingMapItem?.name {
+                Text("Do you want to use '\(name)' as your location, or search for a specific place nearby?")
+            } else {
+                Text("Do you want to use this location, or search for a specific place nearby?")
+            }
+        }
     }
 
     private func saveAddress() {
@@ -375,5 +481,114 @@ struct AddSavedAddressView: View {
                 dismiss()
             }
         }
+    }
+    
+    private func selectLocation(_ result: MKLocalSearchCompletion) {
+        searchCompleter.resolve(result: result) { mapItem in
+            guard let mapItem = mapItem else {
+                // Fallback
+                self.setAddress(result.title + ", " + result.subtitle)
+                return
+            }
+            
+            // Check for refinement
+            if mapItem.placemark.subThoroughfare == nil && !self.isRefiningSearch {
+                self.pendingMapItem = mapItem
+                self.showRefinementAlert = true
+                return
+            }
+            
+            self.saveMapItem(mapItem, fallbackTitle: result.title, fallbackSubtitle: result.subtitle)
+        }
+    }
+    
+    private func saveMapItem(_ mapItem: MKMapItem, fallbackTitle: String, fallbackSubtitle: String) {
+        let placemark = mapItem.placemark
+        let placeName = mapItem.name ?? fallbackTitle
+        
+        // Auto-populate name if empty
+        DispatchQueue.main.async {
+            if self.name.isEmpty {
+                self.name = placeName
+            }
+        }
+        
+        // Construct full address
+        var addressComponents: [String] = []
+        
+        if let subThoroughfare = placemark.subThoroughfare {
+            addressComponents.append(subThoroughfare)
+        }
+        if let thoroughfare = placemark.thoroughfare {
+            addressComponents.append(thoroughfare)
+        }
+        if let locality = placemark.locality {
+            addressComponents.append(locality)
+        }
+        if let administrativeArea = placemark.administrativeArea {
+            addressComponents.append(administrativeArea)
+        }
+        if let postalCode = placemark.postalCode {
+            addressComponents.append(postalCode)
+        }
+        if let country = placemark.country {
+            addressComponents.append(country)
+        }
+        
+        let fullAddress = addressComponents.joined(separator: ", ")
+        var finalAddress = fullAddress.isEmpty ? (fallbackTitle + ", " + fallbackSubtitle) : fullAddress
+        
+        // Prepend name if not already in address
+        if !placeName.isEmpty && !finalAddress.contains(placeName) {
+            finalAddress = "\(placeName), \(finalAddress)"
+        }
+        
+        DispatchQueue.main.async {
+            self.setAddress(finalAddress)
+        }
+    }
+    
+    private func setAddress(_ newAddress: String) {
+        isSearching = true
+        address = newAddress
+        searchCompleter.query = ""
+        searchCompleter.results = []
+        
+        // Use a slight delay to allow the UI to update before re-enabling search trigger
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isSearching = false
+        }
+    }
+    
+    private func startRefinedSearch(in mapItem: MKMapItem) {
+        isRefiningSearch = true
+        refiningLocationName = mapItem.name ?? "this area"
+        
+        if let location = mapItem.placemark.location {
+            let region = MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 500, longitudinalMeters: 500)
+            searchCompleter.region = region
+        }
+        
+        address = ""
+        searchCompleter.query = ""
+        isFocused = true
+    }
+    
+    private func selectRecentSearch(_ recent: RecentSearch) {
+        let query = recent.query ?? ""
+        let recentAddress = recent.address ?? ""
+        
+        name = query
+        
+        // Combine name and address if needed
+        if !query.isEmpty && !recentAddress.isEmpty && !recentAddress.contains(query) {
+            address = "\(query), \(recentAddress)"
+        } else {
+            address = recentAddress
+        }
+        
+        // Update timestamp
+        recent.timestamp = Date()
+        try? viewContext.save()
     }
 }

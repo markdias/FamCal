@@ -612,7 +612,24 @@ struct EditEventView: View {
         print("   Title: \(title)")
         print("   Start: \(eventStartDate)")
         print("   End: \(eventEndDate)")
-        print("   Location: \(locationAddress.isEmpty ? "(none)" : locationAddress)")
+        print("   End: \(eventEndDate)")
+        
+        // Construct location string with name if available
+        let locationValue: String?
+        if locationAddress.isEmpty {
+            locationValue = nil
+        } else if !locationName.isEmpty && locationName != locationAddress {
+            // Avoid duplication if name is part of address or identical
+            if locationAddress.contains(locationName) {
+                locationValue = locationAddress
+            } else {
+                locationValue = "\(locationName), \(locationAddress)"
+            }
+        } else {
+            locationValue = locationAddress
+        }
+        
+        print("   Location: \(locationValue ?? "(none)")")
 
         let recurrenceRule = selectedRecurrenceRule(startDate: eventStartDate)
         let updateSpan: EKSpan = (upcomingEvent.hasRecurrence || recurrenceRule != nil) ? .futureEvents : .thisEvent
@@ -624,7 +641,7 @@ struct EditEventView: View {
             title: title,
             startDate: eventStartDate,
             endDate: eventEndDate,
-            location: locationAddress.isEmpty ? nil : locationAddress,
+            location: locationValue,
             notes: notes.isEmpty ? nil : notes,
             isAllDay: isAllDay,
             recurrenceRule: recurrenceRule,
@@ -639,7 +656,7 @@ struct EditEventView: View {
                     title: title,
                     startDate: eventStartDate,
                     endDate: eventEndDate,
-                    location: locationAddress.isEmpty ? nil : locationAddress,
+                    location: locationValue,
                     notes: notes.isEmpty ? nil : notes,
                     isAllDay: isAllDay,
                     recurrenceRule: recurrenceRule,
