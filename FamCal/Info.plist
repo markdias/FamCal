@@ -60,5 +60,16 @@
 			</array>
 		</dict>
 	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.mdias.famcal.logout</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Sign Out</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeAccount</string>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -10,10 +10,52 @@ import CoreData
 import WidgetKit
 import EventKit
 import GoogleMobileAds
+import UIKit
 // import GoogleSignIn - Enable in Xcode GUI after uncommenting GoogleSignIn pod
+
+// MARK: - AppDelegate for Quick Actions
+class AppDelegate: NSObject, UIApplicationDelegate {
+    private static var pendingShortcutItem: UIApplicationShortcutItem?
+    static var quickActionHandler: ((UIApplicationShortcutItem) -> Void)? {
+        didSet {
+            deliverPendingQuickActionIfNeeded()
+        }
+    }
+
+    private static func deliverPendingQuickActionIfNeeded() {
+        guard let handler = quickActionHandler,
+              let pendingItem = pendingShortcutItem else {
+            return
+        }
+
+        pendingShortcutItem = nil
+        DispatchQueue.main.async {
+            handler(pendingItem)
+        }
+    }
+
+    func application(
+        _ application: UIApplication,
+        performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        print("🔔 AppDelegate.performActionFor called for: \(shortcutItem.type)")
+
+        // Call the handler set up by FamCalApp
+        if let handler = AppDelegate.quickActionHandler {
+            DispatchQueue.main.async {
+                handler(shortcutItem)
+            }
+        } else {
+            AppDelegate.pendingShortcutItem = shortcutItem
+        }
+        completionHandler(true)
+    }
+}
 
 @main
 struct FamCalApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     let persistenceController = PersistenceController.shared
     @StateObject private var authManager = SupabaseAuthManager.shared
     @StateObject private var themeManager = ThemeManager()
@@ -283,6 +325,11 @@ struct FamCalApp: App {
                 saveCalendarCheckStatus()
             }
             .onAppear {
+                // Set up quick action handler
+                AppDelegate.quickActionHandler = { shortcutItem in
+                    self.handleQuickAction(shortcutItem)
+                }
+
                 // Mark first load as complete after initial render
                 isFirstLoad = false
                 previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
@@ -375,6 +422,23 @@ struct FamCalApp: App {
             } else {
                 print("ℹ️ User has existing family data - skipping setup")
                 needsFamilySetup = false
+            }
+        }
+    }
+
+    /// Handle quick action from app icon
+    private func handleQuickAction(_ shortcutItem: UIApplicationShortcutItem) {
+        print("🔔 Quick action handled in onContinueUserActivity: \(shortcutItem.type)")
+        if shortcutItem.type == "com.mdias.famcal.logout" {
+            print("🔔 Sign Out quick action detected")
+            Task { @MainActor in
+                do {
+                    try await authManager.signOut()
+                    UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+                    print("✅ Sign out completed successfully from quick action")
+                } catch {
+                    print("❌ Sign out failed: \(error)")
+                }
             }
         }
     }
