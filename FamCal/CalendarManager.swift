@@ -24,6 +24,7 @@ struct UpcomingCalendarEvent: Identifiable, Equatable {
     let id: String
     let title: String
     let location: String?
+    let meetingLink: String?
     let startDate: Date
     let endDate: Date
     let calendarID: String
@@ -37,6 +38,7 @@ struct UpcomingCalendarEvent: Identifiable, Equatable {
         lhs.id == rhs.id &&
         lhs.title == rhs.title &&
         lhs.location == rhs.location &&
+        lhs.meetingLink == rhs.meetingLink &&
         lhs.startDate == rhs.startDate &&
         lhs.endDate == rhs.endDate &&
         lhs.calendarID == rhs.calendarID &&
@@ -308,6 +310,7 @@ final class CalendarManager {
                 id: event.eventIdentifier,
                 title: event.title,
                 location: event.location,
+                meetingLink: event.url?.absoluteString,
                 startDate: event.startDate,
                 endDate: event.endDate,
                 calendarID: event.calendar.calendarIdentifier,
@@ -385,7 +388,7 @@ final class CalendarManager {
         }
     }
 
-    func createEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil) -> String? {
+    func createEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, meetingLink: String? = nil, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil) -> String? {
         guard let calendar = eventStore.calendar(withIdentifier: calendarID) else { return nil }
 
         let event = EKEvent(eventStore: eventStore)
@@ -394,6 +397,7 @@ final class CalendarManager {
         event.endDate = endDate
         event.location = location
         event.notes = notes
+        event.url = MeetingLinkHelper.normalizedURL(from: meetingLink)
         event.isAllDay = isAllDay
         event.calendar = calendar
 
@@ -413,7 +417,7 @@ final class CalendarManager {
         }
     }
 
-    func createRecurringEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, recurrenceRule: EKRecurrenceRule, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil) -> String? {
+    func createRecurringEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, meetingLink: String? = nil, recurrenceRule: EKRecurrenceRule, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil) -> String? {
         guard let calendar = eventStore.calendar(withIdentifier: calendarID) else { return nil }
 
         let event = EKEvent(eventStore: eventStore)
@@ -422,6 +426,7 @@ final class CalendarManager {
         event.endDate = endDate
         event.location = location
         event.notes = notes
+        event.url = MeetingLinkHelper.normalizedURL(from: meetingLink)
         event.isAllDay = isAllDay
         event.addRecurrenceRule(recurrenceRule)
         event.calendar = calendar
@@ -450,6 +455,7 @@ final class CalendarManager {
                      endDate: Date,
                      location: String?,
                      notes: String?,
+                     meetingLink: String? = nil,
                      isAllDay: Bool = false,
                      recurrenceRule: EKRecurrenceRule? = nil,
                      updateRecurrence: Bool = false,
@@ -488,6 +494,7 @@ final class CalendarManager {
         event.endDate = endDate
         event.location = location
         event.notes = notes
+        event.url = MeetingLinkHelper.normalizedURL(from: meetingLink)
         event.isAllDay = isAllDay
         if updateRecurrence {
             if let recurrenceRule = recurrenceRule {

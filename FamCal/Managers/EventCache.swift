@@ -77,6 +77,7 @@ struct GroupedEventDTO: Codable {
     let title: String
     let timeRange: String?
     let location: String?
+    let meetingLink: String?
     let startDate: Date
     let endDate: Date
     let memberNames: [String]

@@ -216,6 +216,35 @@ struct EventDetailView: View {
                         }
                     }
 
+                    if let meetingLink = event.meetingLink,
+                       let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                        Link(destination: destination) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+                                    .frame(width: 20)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Meeting Link")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.gray)
+                                    Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(10)
+                            .padding(.horizontal, 20)
+                        }
+                    }
+
                     // Date and Time section with icons
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 12) {
@@ -896,6 +925,7 @@ struct EventDetailView: View {
                     id: identifier,
                     title: event.title,
                     location: event.location,
+                    meetingLink: nil,
                     startDate: startDate,
                     endDate: event.endDate,
                     calendarID: calendarId,
@@ -1059,6 +1089,7 @@ struct EventDetailView: View {
             endDate: newEndDate,
             location: event.location,
             notes: nil,
+            meetingLink: event.meetingLink,
             in: event.calendarID
         )
 
@@ -1246,19 +1277,20 @@ private struct AlertMenuButton: View {
 }
 
 #Preview {
-    let testEvent = UpcomingCalendarEvent(
-        id: "123",
-        title: "Knee Op",
-        location: "London Bridge Hospital",
-        startDate: Date().addingTimeInterval(3600),
-        endDate: Date().addingTimeInterval(7200),
-        calendarID: "work-calendar",
-        calendarColor: UIColor(red: 0.33, green: 0.33, blue: 0.33, alpha: 1.0),
-        calendarTitle: "Mark",
-        hasRecurrence: false,
-        recurrenceRule: nil,
-        isAllDay: false
-    )
+        let testEvent = UpcomingCalendarEvent(
+            id: "123",
+            title: "Knee Op",
+            location: "London Bridge Hospital",
+            meetingLink: nil,
+            startDate: Date().addingTimeInterval(3600),
+            endDate: Date().addingTimeInterval(7200),
+            calendarID: "work-calendar",
+            calendarColor: UIColor(red: 0.33, green: 0.33, blue: 0.33, alpha: 1.0),
+            calendarTitle: "Mark",
+            hasRecurrence: false,
+            recurrenceRule: nil,
+            isAllDay: false
+        )
 
     EventDetailView(event: testEvent)
 }

@@ -416,7 +416,7 @@ struct NextEventProvider: AppIntentTimelineProvider {
                     return startComponents.hour == 0 && startComponents.minute == 0 &&
                            endComponents.hour == 23 && endComponents.minute == 59
                 }
-                let message = hasAnyAllDayEvents ? "No upcoming events" : "No upcoming events for \(memberName)"
+                let message = hasAnyAllDayEvents ? "No upcoming events" : "No upcoming events"
                 return NextEventEntry(errorMessage: message)
             }
             

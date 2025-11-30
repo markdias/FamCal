@@ -17,6 +17,7 @@ struct EventNotificationView: View {
     let memberNames: String?
     let driver: String?
     let location: String?
+    let meetingLink: String?
 
     @State private var region: MKCoordinateRegion = MKCoordinateRegion()
     @State private var isLoadingLocation = false
@@ -114,6 +115,28 @@ struct EventNotificationView: View {
                         .foregroundColor(.white)
                         .cornerRadius(8)
                     }
+
+                    if let meetingLink = meetingLink,
+                       let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                        Link(destination: destination) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.blue)
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                    }
                 }
                 .onAppear {
                     geocodeLocation(location)
@@ -197,6 +220,7 @@ struct MapPreview: View {
         time: "6:30 PM",
         memberNames: "John, Sarah, Michael",
         driver: "John",
-        location: "123 Main St, San Francisco, CA"
+        location: "123 Main St, San Francisco, CA",
+        meetingLink: "https://zoom.us/j/1234567890"
     )
 }

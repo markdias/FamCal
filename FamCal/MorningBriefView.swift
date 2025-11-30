@@ -86,6 +86,7 @@ struct MorningBriefEvent {
     let location: String?
     let driver: String?
     let attendees: [String]
+    let meetingLink: String?
     let isAllDay: Bool
 
     var startTimeString: String {
@@ -190,6 +191,22 @@ struct MorningBriefEventRow: View {
                         .lineLimit(1)
                 }
             }
+
+            if let meetingLink = event.meetingLink,
+               let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                Link(destination: destination) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.blue)
+
+                        Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.black)
+                            .lineLimit(1)
+                    }
+                }
+            }
         }
     }
 }
@@ -204,6 +221,7 @@ struct MorningBriefEventRow: View {
                 location: "Central Park",
                 driver: "John",
                 attendees: ["Sarah", "Michael"],
+                meetingLink: nil,
                 isAllDay: false
             ),
             MorningBriefEvent(
@@ -213,6 +231,7 @@ struct MorningBriefEventRow: View {
                 location: "Downtown Restaurant",
                 driver: nil,
                 attendees: ["Everyone"],
+                meetingLink: nil,
                 isAllDay: false
             ),
             MorningBriefEvent(
@@ -222,6 +241,7 @@ struct MorningBriefEventRow: View {
                 location: "Music Studio",
                 driver: "Sarah",
                 attendees: ["Emma"],
+                meetingLink: nil,
                 isAllDay: false
             )
         ],

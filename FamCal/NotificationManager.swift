@@ -401,6 +401,7 @@ class NotificationManager: NSObject, ObservableObject {
                 location: event.location,
                 driver: nil,
                 attendees: [owner.displayName],
+                meetingLink: event.url?.absoluteString,
                 isAllDay: event.isAllDay
             )
             briefEvents.append(briefEvent)

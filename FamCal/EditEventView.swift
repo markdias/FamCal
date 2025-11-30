@@ -66,6 +66,7 @@ struct EditEventView: View {
     @State private var notes: String = ""
     @State private var locationName: String = ""
     @State private var locationAddress: String = ""
+    @State private var meetingLink: String = ""
     @State private var isAllDay: Bool = false
     @State private var showAsOption: ShowAsOption = .busy
     @State private var repeatOption: RepeatOption = .none
@@ -130,6 +131,11 @@ struct EditEventView: View {
         !eventTitle.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    private var meetingLinkValue: String? {
+        let trimmed = meetingLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     @ViewBuilder
     private var eventForm: some View {
         ZStack {
@@ -140,6 +146,7 @@ struct EditEventView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     titleSection
                     locationSection
+                    meetingLinkSection
                     timeSection
                     repeatSection
                     alertSection
@@ -152,6 +159,25 @@ struct EditEventView: View {
                 .padding(16)
             }
             .background(Color.clear)
+        }
+    }
+
+    @ViewBuilder
+    private var meetingLinkSection: some View {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionHeading("Meeting Link")
+
+                TextField("https://zoom.us/j/...", text: $meetingLink)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .font(.system(size: 16))
+                    .foregroundColor(primaryTextColor)
+                    .padding(10)
+                    .background(fieldBackground)
+                    .cornerRadius(10)
+            }
         }
     }
 
@@ -268,6 +294,7 @@ struct EditEventView: View {
                     locationName = upcomingEvent.location ?? ""
                     recurrenceConfig = RecurrenceConfiguration.none(anchor: upcomingEvent.startDate)
                     loadRecurrenceFromEventStore()
+                    meetingLink = upcomingEvent.meetingLink ?? ""
 
                     // Fetch calendar ID from CoreData
                     fetchCalendarId()
@@ -536,6 +563,7 @@ struct EditEventView: View {
         endDate: Date,
         location: String?,
         notes: String?,
+        meetingLink: String?,
         isAllDay: Bool,
         recurrenceRule: EKRecurrenceRule?,
         span: EKSpan,
@@ -552,15 +580,16 @@ struct EditEventView: View {
 
             let occurrenceDate = CalendarManager.shared.fetchEventDetails(withIdentifier: eventId)?.startDate
 
-            let success = CalendarManager.shared.updateEvent(
-                withIdentifier: eventId,
-                occurrenceStartDate: occurrenceDate,
-                in: calId,
-                title: title,
-                startDate: startDate,
-                endDate: endDate,
-                location: location,
-                notes: notes,
+                let success = CalendarManager.shared.updateEvent(
+                    withIdentifier: eventId,
+                    occurrenceStartDate: occurrenceDate,
+                    in: calId,
+                    title: title,
+                    startDate: startDate,
+                    endDate: endDate,
+                    location: location,
+                    notes: notes,
+                    meetingLink: meetingLink,
                 isAllDay: isAllDay,
                 recurrenceRule: recurrenceRule,
                 updateRecurrence: true,
@@ -643,6 +672,7 @@ struct EditEventView: View {
             endDate: eventEndDate,
             location: locationValue,
             notes: notes.isEmpty ? nil : notes,
+            meetingLink: meetingLinkValue,
             isAllDay: isAllDay,
             recurrenceRule: recurrenceRule,
             updateRecurrence: true,
@@ -658,6 +688,7 @@ struct EditEventView: View {
                     endDate: eventEndDate,
                     location: locationValue,
                     notes: notes.isEmpty ? nil : notes,
+                    meetingLink: meetingLinkValue,
                     isAllDay: isAllDay,
                     recurrenceRule: recurrenceRule,
                     span: updateSpan,
@@ -2085,6 +2116,7 @@ struct EditEventView: View {
         id: "123",
         title: "Team Meeting",
         location: "Conference Room",
+        meetingLink: nil,
         startDate: Date().addingTimeInterval(3600),
         endDate: Date().addingTimeInterval(7200),
         calendarID: "demo-calendar",

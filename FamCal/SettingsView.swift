@@ -358,7 +358,30 @@ struct SettingsView: View {
                             .padding(.vertical, 8)
                         }
 
-                        Spacer(minLength: 40)
+                        // App Footer
+                        VStack(spacing: 12) {
+                            if let uiImage = UIImage(named: "outline-icon") {
+                                Image(uiImage: uiImage)
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .foregroundColor(secondaryTextColor)
+                                    .frame(width: 48, height: 48)
+                            } else if let image = UIImage(contentsOfFile: Bundle.main.path(forResource: "outline-icon", ofType: "png") ?? "") {
+                                Image(uiImage: image)
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .foregroundColor(secondaryTextColor)
+                                    .frame(width: 48, height: 48)
+                            }
+
+                            Text("FamCal \(getAppVersion())")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(secondaryTextColor)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
                     }
                     .padding(.vertical, 20)
                 }
@@ -496,12 +519,19 @@ struct SettingsView: View {
            let member = dataManager.familyMembers.first(where: { $0.id == linkedId }) {
             return member.name
         }
-        
+
         if authManager.isGuest {
             return "Guest"
         }
-        
+
         return authManager.userEmail ?? "Unknown"
+    }
+
+    private func getAppVersion() -> String {
+        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            return version
+        }
+        return "1.0"
     }
 }
 

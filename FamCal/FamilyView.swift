@@ -84,6 +84,7 @@ struct FamilyView: View {
                             title: eventDTO.title,
                             timeRange: eventDTO.timeRange,
                             location: eventDTO.location,
+                            meetingLink: eventDTO.meetingLink,
                             startDate: eventDTO.startDate,
                             endDate: eventDTO.endDate,
                             memberNames: eventDTO.memberNames,
@@ -106,6 +107,7 @@ struct FamilyView: View {
                             title: eventDTO.title,
                             timeRange: eventDTO.timeRange,
                             location: eventDTO.location,
+                            meetingLink: eventDTO.meetingLink,
                             startDate: eventDTO.startDate,
                             endDate: eventDTO.endDate,
                             memberNames: eventDTO.memberNames,
@@ -598,6 +600,7 @@ struct FamilyView: View {
                 id: groupedEvent.eventIdentifier,
                 title: groupedEvent.title,
                 location: groupedEvent.location,
+                meetingLink: groupedEvent.meetingLink,
                 startDate: groupedEvent.startDate,
                 endDate: groupedEvent.endDate,
                 calendarID: groupedEvent.calendarID,
@@ -617,6 +620,7 @@ struct FamilyView: View {
                 id: groupedEvent.eventIdentifier,
                 title: groupedEvent.title,
                 location: groupedEvent.location,
+                meetingLink: groupedEvent.meetingLink,
                 startDate: groupedEvent.startDate,
                 endDate: groupedEvent.endDate,
                 calendarID: groupedEvent.calendarID,
@@ -729,7 +733,7 @@ struct FamilyView: View {
                 }
                 
                 // Location (only in 2-column view)
-                if nextEventColumns <= 2, let location = event.location {
+                if nextEventColumns <= 2, let location = event.location, !location.isEmpty {
                     let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
                     let savedAddress = getSavedAddress(for: firstLine)
                     let displayText = savedAddress?.name ?? firstLine
@@ -742,6 +746,20 @@ struct FamilyView: View {
                             .font(.system(size: detailSize, weight: .semibold))
                             .foregroundColor(secondaryTextColor)
                             .lineLimit(1)
+                    }
+                } else if nextEventColumns <= 2,
+                          let meetingLink = event.meetingLink,
+                          let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                    Link(destination: destination) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "video.fill")
+                                .font(.system(size: detailSize - 1, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                            Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                                .font(.system(size: detailSize, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .lineLimit(1)
+                        }
                     }
                 }
 
@@ -873,7 +891,7 @@ struct FamilyView: View {
                     }
 
                     // Location with end time
-                    if let location = groupedEvent.location {
+                    if let location = groupedEvent.location, !location.isEmpty {
                         let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
                         let savedAddress = getSavedAddress(for: firstLine)
                         let displayText = savedAddress?.name ?? firstLine
@@ -884,10 +902,10 @@ struct FamilyView: View {
                                 Image(systemName: "location.fill")
                                     .font(.system(size: 12))
                                     .foregroundColor(secondaryTextColor)
-                            Text(displayText)
-                                .font(.system(size: 11.5))
-                                .foregroundColor(secondaryTextColor)
-                                .lineLimit(1)
+                                Text(displayText)
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(secondaryTextColor)
+                                    .lineLimit(1)
 
                                 Spacer(minLength: 0)
 
@@ -903,8 +921,22 @@ struct FamilyView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                    } else if let meetingLink = groupedEvent.meetingLink,
+                              let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                        Link(destination: destination) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(secondaryTextColor)
+                                Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(secondaryTextColor)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     } else if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
-                        // Show time if no location
+                        // Show time if no location or link
                         let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                         HStack(spacing: 0) {
                             Spacer()
@@ -1252,6 +1284,7 @@ struct FamilyView: View {
                         eventIdentifier: event.id,
                         title: event.title,
                         location: event.location,
+                        meetingLink: event.meetingLink,
                         startDate: event.startDate,
                         endDate: event.endDate,
                         timeRange: timeRange,
@@ -1282,9 +1315,8 @@ struct FamilyView: View {
                 print("🔍 DEBUG: Member '\(member.name ?? "nil")' - sortedGroupedEvents count: \(sortedGroupedEvents.count)")
                 print("🔍 DEBUG: eventsPerPerson limit: \(eventsPerPerson)")
 
-                // Filter out all-day events for upcoming events display
-                let nonAllDayEvents = sortedGroupedEvents.filter { !isEffectivelyAllDay($0) }
-                let limitedEvents = Array(nonAllDayEvents.prefix(eventsPerPerson))
+                // Keep all events (including all-day) for upcoming events display
+                let limitedEvents = Array(sortedGroupedEvents.prefix(eventsPerPerson))
                 print("🔍 DEBUG: Member '\(member.name ?? "nil")' - limitedEvents count: \(limitedEvents.count)")
 
                 // Create member event group
@@ -1327,14 +1359,15 @@ struct FamilyView: View {
     /// Convert loaded member event groups to cacheable DTOs and save
     private func cacheLoadedEvents(_ memberEventGroups: [MemberEventGroup]) async {
         let dtos = memberEventGroups.map { group -> MemberEventGroupDTO in
-            let nextEventDTO = group.nextEvent.map { event -> GroupedEventDTO in
-                GroupedEventDTO(
-                    id: event.id,
-                    eventIdentifier: event.eventIdentifier,
-                    title: event.title,
-                    timeRange: event.timeRange,
-                    location: event.location,
-                    startDate: event.startDate,
+                let nextEventDTO = group.nextEvent.map { event -> GroupedEventDTO in
+                    GroupedEventDTO(
+                        id: event.id,
+                        eventIdentifier: event.eventIdentifier,
+                        title: event.title,
+                        timeRange: event.timeRange,
+                        location: event.location,
+                        meetingLink: event.meetingLink,
+                        startDate: event.startDate,
                     endDate: event.endDate,
                     memberNames: event.memberNames,
                     memberColorHex: event.memberColor.hex(),
@@ -1349,14 +1382,15 @@ struct FamilyView: View {
                 )
             }
 
-            let upcomingEventDTOs = group.upcomingEvents.map { event -> GroupedEventDTO in
-                GroupedEventDTO(
-                    id: event.id,
-                    eventIdentifier: event.eventIdentifier,
-                    title: event.title,
-                    timeRange: event.timeRange,
-                    location: event.location,
-                    startDate: event.startDate,
+                let upcomingEventDTOs = group.upcomingEvents.map { event -> GroupedEventDTO in
+                    GroupedEventDTO(
+                        id: event.id,
+                        eventIdentifier: event.eventIdentifier,
+                        title: event.title,
+                        timeRange: event.timeRange,
+                        location: event.location,
+                        meetingLink: event.meetingLink,
+                        startDate: event.startDate,
                     endDate: event.endDate,
                     memberNames: event.memberNames,
                     memberColorHex: event.memberColor.hex(),
@@ -1443,7 +1477,7 @@ struct FamilyView: View {
         for event in events {
             // Create a unique key based on event details and start time
             let startKey = String(event.startDate.timeIntervalSinceReferenceDate)
-            let key = "\(event.title)|\(startKey)|\(event.timeRange ?? "all-day")|\(event.location ?? "")"
+            let key = "\(event.title)|\(startKey)|\(event.timeRange ?? "all-day")|\(event.location ?? "")|\(event.meetingLink ?? "")"
 
             if let existing = grouped[key] {
                 // Build updated member names list
@@ -1465,6 +1499,7 @@ struct FamilyView: View {
                     title: existing.title,
                     timeRange: existing.timeRange,
                     location: existing.location,
+                    meetingLink: existing.meetingLink,
                     startDate: existing.startDate,
                     endDate: existing.endDate,
                     memberNames: updatedNames,
@@ -1485,6 +1520,7 @@ struct FamilyView: View {
                     title: event.title,
                     timeRange: event.timeRange,
                     location: event.location,
+                    meetingLink: event.meetingLink,
                     startDate: event.startDate,
                     endDate: event.endDate,
                     memberNames: [event.memberName],
@@ -1674,6 +1710,7 @@ struct FamilyView: View {
             endDate: newEndDate,
             location: event.location,
             notes: nil,
+            meetingLink: event.meetingLink,
             in: event.calendarID
         )
 
@@ -1759,6 +1796,7 @@ struct FamilyView: View {
                     id: identifier,
                     title: event.title,
                     location: event.location,
+                    meetingLink: event.meetingLink,
                     startDate: startDate,
                     endDate: event.endDate,
                     calendarID: calendarId,
@@ -1967,6 +2005,7 @@ private struct EventItem: Identifiable {
     let eventIdentifier: String
     let title: String
     let location: String?
+    let meetingLink: String?
     let startDate: Date
     let endDate: Date
     let timeRange: String?
@@ -1988,6 +2027,7 @@ private struct GroupedEvent: Identifiable {
     let title: String
     let timeRange: String?
     let location: String?
+    let meetingLink: String?
     let startDate: Date
     let endDate: Date
     var memberNames: [String]

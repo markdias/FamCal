@@ -80,6 +80,7 @@ struct AddEventView: View {
     @State private var showingCustomRepeatSheet = false
     @State private var alertOption: AlertOption = .none
     @State private var notes: String = ""
+    @State private var meetingLink: String = ""
     @State private var locationName: String = ""
     @State private var locationAddress: String = ""
     @State private var isAllDay: Bool = false
@@ -153,6 +154,11 @@ struct AddEventView: View {
         return hasTitle && hasAttendees && hasCalendar
     }
 
+    private var meetingLinkValue: String? {
+        let trimmed = meetingLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     struct CalendarOption: Identifiable {
         let id = UUID()
         let calendarID: String
@@ -182,6 +188,7 @@ struct AddEventView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         titleSection
                         locationSection
+                        meetingLinkSection
                         timeSection
                         attendeesSection
                         calendarSection
@@ -512,6 +519,7 @@ struct AddEventView: View {
                     endDate: eventEndDate,
                     location: locationValue,
                     notes: notesValue,
+                    meetingLink: meetingLinkValue,
                     recurrenceRule: recurrenceRule,
                     isAllDay: isAllDay,
                     in: target.calendarID,
@@ -524,6 +532,7 @@ struct AddEventView: View {
                     endDate: eventEndDate,
                     location: locationValue,
                     notes: notesValue,
+                    meetingLink: meetingLinkValue,
                     isAllDay: isAllDay,
                     in: target.calendarID,
                     alertOption: alertOption
@@ -538,15 +547,16 @@ struct AddEventView: View {
 
                 // Ensure recurrence is applied in every target calendar (may recreate with a new ID)
                 if let recurrenceRule = recurrenceRule {
-                    finalEventId = enforceRecurringSeries(
-                        eventId: eventId,
-                        calendarId: target.calendarID,
-                        title: title,
-                        startDate: eventStartDate,
-                        endDate: eventEndDate,
-                        location: locationValue,
-                        notes: notesValue,
-                        isAllDay: isAllDay,
+                finalEventId = enforceRecurringSeries(
+                    eventId: eventId,
+                    calendarId: target.calendarID,
+                    title: title,
+                    startDate: eventStartDate,
+                    endDate: eventEndDate,
+                    location: locationValue,
+                    notes: notesValue,
+                    meetingLink: meetingLinkValue,
+                    isAllDay: isAllDay,
                         recurrenceRule: recurrenceRule,
                         alertOption: alertOption
                     )
@@ -937,6 +947,25 @@ struct AddEventView: View {
         .sheet(isPresented: $showingLocationSearch) {
             LocationSearchView(locationName: $locationName, locationAddress: $locationAddress)
                 .environment(\.managedObjectContext, viewContext)
+        }
+    }
+
+    @ViewBuilder
+    private var meetingLinkSection: some View {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionHeading("Meeting Link")
+
+                TextField("https://zoom.us/j/...", text: $meetingLink)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .font(.system(size: 16))
+                    .foregroundColor(primaryTextColor)
+                    .padding(10)
+                    .background(fieldBackground)
+                    .cornerRadius(10)
+            }
         }
     }
 
@@ -1804,6 +1833,7 @@ struct AddEventView: View {
         endDate: Date,
         location: String?,
         notes: String?,
+        meetingLink: String?,
         isAllDay: Bool,
         recurrenceRule: EKRecurrenceRule,
         alertOption: AlertOption?
@@ -1849,6 +1879,7 @@ struct AddEventView: View {
             endDate: endDate,
             location: location,
             notes: notes,
+            meetingLink: meetingLink,
             recurrenceRule: recurrenceRule,
             isAllDay: isAllDay,
             in: calendarId,

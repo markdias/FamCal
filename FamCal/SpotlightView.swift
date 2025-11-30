@@ -120,6 +120,7 @@ struct SpotlightView: View {
                                             id: event.eventIdentifier,
                                             title: event.title,
                                             location: event.location,
+                                            meetingLink: event.meetingLink,
                                             startDate: event.startDate,
                                             endDate: event.endDate,
                                             calendarID: event.calendarID,
@@ -263,13 +264,13 @@ struct SpotlightView: View {
                         }
                     }
 
-                    if let location = event.location {
-                        let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
-                        let savedAddress = getSavedAddress(for: firstLine)
-                        let displayText = savedAddress?.name ?? firstLine
-                        let mapAddress = savedAddress?.address ?? firstLine
-                        
-                        Button(action: { MapsUtility.openLocation(mapAddress, in: defaultMapsApp) }) {
+                        if let location = event.location {
+                            let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
+                            let savedAddress = getSavedAddress(for: firstLine)
+                            let displayText = savedAddress?.name ?? firstLine
+                            let mapAddress = savedAddress?.address ?? firstLine
+                            
+                            Button(action: { MapsUtility.openLocation(mapAddress, in: defaultMapsApp) }) {
                             HStack(spacing: 6) {
                                 Image(systemName: "location.fill")
                                     .font(.system(size: 12))
@@ -304,6 +305,23 @@ struct SpotlightView: View {
                                 .lineLimit(1)
                                 .frame(width: 36, alignment: .trailing)
                         }
+                    }
+
+                    if let meetingLink = event.meetingLink,
+                       let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                        Link(destination: destination) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                                Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(.gray)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     if let driverName = event.driverName {
@@ -499,12 +517,13 @@ struct SpotlightView: View {
 
             let displayID = "\(event.id)|\(event.startDate.timeIntervalSince1970)"
             let driverName = fetchDriverForEvent(event.id)
-            eventItems.append(EventItem(
-                id: displayID,
-                eventIdentifier: event.id,
-                title: event.title,
-                location: event.location,
-                startDate: event.startDate,
+                eventItems.append(EventItem(
+                    id: displayID,
+                    eventIdentifier: event.id,
+                    title: event.title,
+                    location: event.location,
+                    meetingLink: event.meetingLink,
+                    startDate: event.startDate,
                 endDate: event.endDate,
                 timeRange: timeRange,
                 memberName: member.name ?? "Unknown",
@@ -563,19 +582,20 @@ struct SpotlightView: View {
 
         for event in events {
             let startKey = String(event.startDate.timeIntervalSinceReferenceDate)
-            let key = "\(event.title)|\(startKey)|\(event.timeRange ?? "all-day")|\(event.location ?? "")"
+            let key = "\(event.title)|\(startKey)|\(event.timeRange ?? "all-day")|\(event.location ?? "")|\(event.meetingLink ?? "")"
 
             if let existing = grouped[key] {
                 var updatedNames = existing.memberNames
                 updatedNames.append(event.memberName)
 
-                grouped[key] = GroupedEvent(
-                    id: existing.id,
-                    eventIdentifier: existing.eventIdentifier,
-                    title: existing.title,
-                    timeRange: existing.timeRange,
-                    location: existing.location,
-                    startDate: existing.startDate,
+                    grouped[key] = GroupedEvent(
+                        id: existing.id,
+                        eventIdentifier: existing.eventIdentifier,
+                        title: existing.title,
+                        timeRange: existing.timeRange,
+                        location: existing.location,
+                        meetingLink: existing.meetingLink,
+                        startDate: existing.startDate,
                     endDate: existing.endDate,
                     memberNames: updatedNames,
                     memberColor: existing.memberColor,
@@ -593,6 +613,7 @@ struct SpotlightView: View {
                     title: event.title,
                     timeRange: event.timeRange,
                     location: event.location,
+                    meetingLink: event.meetingLink,
                     startDate: event.startDate,
                     endDate: event.endDate,
                     memberNames: [event.memberName],
@@ -654,6 +675,7 @@ private struct EventItem: Identifiable {
     let eventIdentifier: String
     let title: String
     let location: String?
+    let meetingLink: String?
     let startDate: Date
     let endDate: Date
     let timeRange: String?
@@ -673,6 +695,7 @@ private struct GroupedEvent: Identifiable {
     let title: String
     let timeRange: String?
     let location: String?
+    let meetingLink: String?
     let startDate: Date
     let endDate: Date
     var memberNames: [String]

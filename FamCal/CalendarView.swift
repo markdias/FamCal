@@ -526,6 +526,22 @@ struct CalendarView: View {
                             .opacity(isPast ? 0.5 : 1.0)
                         }
 
+                        if let meetingLink = groupedEvent.meetingLink,
+                           let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                            Link(destination: destination) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "video.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(secondaryTextColor)
+                                    Text(MeetingLinkHelper.displayLabel(for: meetingLink))
+                                        .font(.system(size: 11.5))
+                                        .foregroundColor(secondaryTextColor)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .opacity(isPast ? 0.5 : 1.0)
+                        }
+
                         // Driver (if available)
                         if let driverName = groupedEvent.driverName {
                             let driverPhone = fetchDriverPhoneForEvent(groupedEvent.eventIdentifier)
@@ -595,6 +611,7 @@ struct CalendarView: View {
             id: groupedEvent.eventIdentifier,
             title: groupedEvent.title,
             location: groupedEvent.location,
+            meetingLink: groupedEvent.meetingLink,
             startDate: groupedEvent.startDate,
             endDate: groupedEvent.endDate,
             calendarID: groupedEvent.calendarID,
@@ -678,7 +695,7 @@ struct CalendarView: View {
         var grouped: [String: GroupedDayEvent] = [:]
 
         for event in events {
-            let key = "\(event.title)|\(event.timeRange ?? "all-day")|\(event.location ?? "")"
+            let key = "\(event.title)|\(event.timeRange ?? "all-day")|\(event.location ?? "")|\(event.meetingLink ?? "")"
 
             if var existing = grouped[key] {
                 existing.memberNames.append(contentsOf: event.memberNames)
@@ -693,6 +710,7 @@ struct CalendarView: View {
                     title: event.title,
                     timeRange: event.timeRange,
                     location: event.location,
+                    meetingLink: event.meetingLink,
                     memberNames: event.memberNames,
                     memberInitials: event.memberInitials,
                     memberColor: event.memberColor,
@@ -1036,6 +1054,7 @@ struct CalendarView: View {
                         title: event.title,
                         timeRange: timeRange,
                         location: event.location,
+                        meetingLink: event.meetingLink,
                         memberNames: [member.name ?? "Unknown"],
                         memberIDs: [member.objectID],
                         memberInitials: initials,
@@ -1156,6 +1175,7 @@ struct CalendarView: View {
             endDate: newEndDate,
             location: event.location,
             notes: nil,
+            meetingLink: event.meetingLink,
             in: event.calendarID
         )
 
@@ -1239,11 +1259,12 @@ struct CalendarView: View {
                 guard let identifier = familyEvent.eventIdentifier,
                       let calendarId = familyEvent.calendarId else { return nil }
                 let startDate = CalendarManager.shared.fetchEventDetails(withIdentifier: identifier)?.startDate ?? event.startDate
-                return UpcomingCalendarEvent(
-                    id: identifier,
-                    title: event.title,
-                    location: event.location,
-                    startDate: startDate,
+                    return UpcomingCalendarEvent(
+                        id: identifier,
+                        title: event.title,
+                        location: event.location,
+                        meetingLink: event.meetingLink,
+                        startDate: startDate,
                     endDate: event.endDate,
                     calendarID: calendarId,
                     calendarColor: event.calendarColor,
@@ -1338,6 +1359,7 @@ struct DayEventItem: Identifiable {
     let title: String
     let timeRange: String?
     let location: String?
+    let meetingLink: String?
     var memberNames: [String]
     var memberIDs: [NSManagedObjectID]
     let memberInitials: String
@@ -1365,6 +1387,7 @@ struct GroupedDayEvent: Identifiable {
     let title: String
     let timeRange: String?
     let location: String?
+    let meetingLink: String?
     var memberNames: [String]
     let memberInitials: String
     let memberColor: UIColor

@@ -116,13 +116,27 @@ struct EventSearchView: View {
         } else {
             List {
                 ForEach(filteredEvents) { result in
-                    Button(action: {
-                        selectedEvent = result.event
-                        showingEventDetail = true
-                    }) {
-                        resultRow(for: result)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button(action: {
+                            selectedEvent = result.event
+                            showingEventDetail = true
+                        }) {
+                            resultRow(for: result)
+                        }
+                        .buttonStyle(.plain)
+
+                        if let link = result.event.meetingLink,
+                           let destination = MeetingLinkHelper.normalizedURL(from: link) {
+                            Link(destination: destination) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "video.fill")
+                                    Text(MeetingLinkHelper.displayLabel(for: link))
+                                }
+                                .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundColor(.blue)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .listStyle(.plain)
@@ -238,6 +252,7 @@ private struct SearchEvent: Identifiable {
         let haystack: [String] = [
             event.title,
             event.location ?? "",
+            event.meetingLink ?? "",
             event.calendarTitle,
             owners.joined(separator: " ")
         ]
