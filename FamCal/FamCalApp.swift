@@ -337,6 +337,9 @@ struct FamCalApp: App {
                 isFirstLoad = false
                 previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
 
+                // Ensure morning brief is scheduled on app launch
+                NotificationManager.shared.ensureMorningBriefScheduled()
+
                 // Validate session on app launch if user is authenticated
                 if authManager.isAuthenticated && !authManager.isGuest {
                     Task {

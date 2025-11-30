@@ -14,6 +14,9 @@ struct NotificationSettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
+    @State private var showingDebugView = false
+    @State private var showingMorningBriefPreview = false
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
@@ -118,6 +121,82 @@ struct NotificationSettingsView: View {
                                     morningBriefSection
                                 }
                             }
+
+                            // Morning Brief Preview
+                            if appSettingsManager.morningBriefEnabled {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Preview")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(secondaryTextColor)
+                                        .padding(.horizontal, 16)
+
+                                    settingsContainer {
+                                        Button(action: { showingMorningBriefPreview = true }) {
+                                            HStack(spacing: 16) {
+                                                Image(systemName: "eye.fill")
+                                                    .font(.system(size: 20))
+                                                    .foregroundColor(theme.accentColor)
+                                                    .frame(width: 24, height: 24)
+
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text("Preview Events")
+                                                        .font(.system(size: 16, weight: .medium))
+                                                        .foregroundColor(primaryTextColor)
+
+                                                    Text("See what will be in your morning brief")
+                                                        .font(.system(size: 13))
+                                                        .foregroundColor(secondaryTextColor)
+                                                }
+
+                                                Spacer()
+
+                                                Image(systemName: "chevron.right")
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundColor(.gray)
+                                            }
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 12)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Debug Section (Testing)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Testing")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(secondaryTextColor)
+                                    .padding(.horizontal, 16)
+
+                                settingsContainer {
+                                    Button(action: { showingDebugView = true }) {
+                                        HStack(spacing: 16) {
+                                            Image(systemName: "wrench.and.screwdriver")
+                                                .font(.system(size: 20))
+                                                .foregroundColor(theme.accentColor)
+                                                .frame(width: 24, height: 24)
+
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Notification Debug")
+                                                    .font(.system(size: 16, weight: .medium))
+                                                    .foregroundColor(primaryTextColor)
+
+                                                Text("Test notifications and view logs")
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(secondaryTextColor)
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(.gray)
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                    }
+                                }
+                            }
                         }
 
                         Spacer()
@@ -140,6 +219,16 @@ struct NotificationSettingsView: View {
                             .foregroundColor(primaryTextColor)
                     }
                 }
+            }
+            .sheet(isPresented: $showingDebugView) {
+                NotificationDebugView()
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
+            }
+            .sheet(isPresented: $showingMorningBriefPreview) {
+                MorningBriefPreviewView()
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
             }
         }
     }

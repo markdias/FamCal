@@ -63,6 +63,10 @@ class NotificationManager: NSObject, ObservableObject {
                 AppSettingsManager.shared.notificationsEnabled = granted
                 if granted {
                     saveSettings()
+                    // Also auto-enable morning brief when user grants notification permission
+                    AppSettingsManager.shared.morningBriefEnabled = true
+                    Task { await AppSettingsManager.shared.saveSettings() }
+                    print("✅ Notifications enabled. Auto-enabling morning brief...")
                 }
             }
             return granted
@@ -210,6 +214,13 @@ class NotificationManager: NSObject, ObservableObject {
         // Schedule a local notification for immediate feedback
         let triggerDate = calculateTriggerDate(from: event.startDate, alertOption: alertOption)
 
+        // Validate trigger date is in the future
+        let now = Date()
+        guard triggerDate > now else {
+            print("⚠️ Event notification skipped - trigger date (\(triggerDate)) is in the past (now: \(now))")
+            return
+        }
+
         // Build notification content
         let title = event.title ?? "Event"
 
@@ -311,28 +322,33 @@ class NotificationManager: NSObject, ObservableObject {
             fetchRequest.relationshipKeyPathsForPrefetching = ["memberCalendars", "sharedCalendars"]
 
             if let members = try? context.fetch(fetchRequest) {
+                print("ℹ️ Morning brief: Found \(members.count) family member(s)")
                 for member in members {
                     let memberId = member.id
                     let name = member.name ?? "Family Member"
+                    print("  → \(name):")
 
                     if let linkedCalendarID = member.linkedCalendarID, !linkedCalendarID.isEmpty {
                         lookup[linkedCalendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                        print("    - Linked calendar: \(linkedCalendarID)")
                     }
 
                     if let calendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
                         for calendar in calendars {
-                            if let calendarName = calendar.calendarName, !calendarName.isEmpty {
-                                lookup[calendarName] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                            if let calendarID = calendar.calendarID, !calendarID.isEmpty {
+                                lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                                print("    - Member calendar: \(calendarID)")
                             }
                         }
                     }
 
                     if let sharedCalendars = member.sharedCalendars as? Set<SharedCalendar> {
                         for shared in sharedCalendars {
-                            if let calendarName = shared.calendarName, !calendarName.isEmpty {
-                                if lookup[calendarName] == nil {
+                            if let calendarID = shared.calendarID, !calendarID.isEmpty {
+                                if lookup[calendarID] == nil {
                                     let displayName = shared.calendarName ?? "Shared Calendar"
-                                    lookup[calendarName] = CalendarOwnerInfo(memberId: nil, displayName: displayName)
+                                    lookup[calendarID] = CalendarOwnerInfo(memberId: nil, displayName: displayName)
+                                    print("    - Shared calendar: \(calendarID)")
                                 }
                             }
                         }
@@ -343,10 +359,11 @@ class NotificationManager: NSObject, ObservableObject {
             }
         }
 
+        print("ℹ️ Morning brief: Calendar lookup has \(lookup.count) entries")
         return lookup
     }
 
-    private func fetchMorningBriefEvents() -> [MorningBriefEvent] {
+    func fetchMorningBriefEvents() -> [MorningBriefEvent] {
         let calendarLookup = fetchCalendarOwners()
         guard !calendarLookup.isEmpty else {
             print("⚠️ Morning brief: No calendar mappings found for family members")
@@ -367,11 +384,21 @@ class NotificationManager: NSObject, ObservableObject {
         }
 
         let eventStore = EKEventStore()
-        let calendars = eventStore.calendars(for: .event)
+        let allCalendars = eventStore.calendars(for: .event)
+        print("ℹ️ Morning brief: Device has \(allCalendars.count) calendar(s)")
+
+        let calendars = allCalendars
             .filter { calendarLookup[$0.calendarIdentifier] != nil }
+
+        print("ℹ️ Morning brief: \(calendars.count) calendar(s) match our lookup")
+        for cal in calendars {
+            print("  → \(cal.title) [\(cal.calendarIdentifier)]")
+        }
 
         guard !calendars.isEmpty else {
             print("⚠️ Morning brief: No matching calendars found on device")
+            print("  Device calendars: \(allCalendars.map { $0.calendarIdentifier })")
+            print("  Lookup keys: \(Array(calendarLookup.keys))")
             return []
         }
 
@@ -433,7 +460,15 @@ class NotificationManager: NSObject, ObservableObject {
                 saveSettings()
             }
 
-            guard await ensureNotificationPermission(), notificationsEnabled && morningBriefEnabled else {
+            print("📋 scheduleMorningBrief() called")
+            print("   notificationsEnabled: \(notificationsEnabled)")
+            print("   morningBriefEnabled: \(morningBriefEnabled)")
+
+            let hasPermission = await ensureNotificationPermission()
+            print("   hasPermission: \(hasPermission)")
+
+            guard hasPermission, notificationsEnabled && morningBriefEnabled else {
+                print("⚠️ scheduleMorningBrief cancelled - permission:\(hasPermission), enabled:\(notificationsEnabled), briefEnabled:\(morningBriefEnabled)")
                 cancelMorningBrief()
                 return
             }
@@ -441,17 +476,16 @@ class NotificationManager: NSObject, ObservableObject {
             // Cancel existing morning brief first
             notificationCenter.removePendingNotificationRequests(withIdentifiers: ["morningBrief"])
 
-            var components = DateComponents()
-            components.hour = morningBriefTime.hour
-            components.minute = morningBriefTime.minute
-
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-
             let content = UNMutableNotificationContent()
             content.title = "Good Morning"
 
             // Build body based on events
             let briefEvents = events.isEmpty ? fetchMorningBriefEvents() : events
+
+            print("📅 Found \(briefEvents.count) event(s) for morning brief")
+            for (i, event) in briefEvents.enumerated() {
+                print("   \(i+1). \(event.title) at \(event.startTimeString)")
+            }
 
             if briefEvents.isEmpty {
                 content.body = "No events scheduled for today. Open FamCal to add one."
@@ -499,18 +533,76 @@ class NotificationManager: NSObject, ObservableObject {
             content.categoryIdentifier = "MORNING_BRIEF"
             content.interruptionLevel = .timeSensitive
 
-            let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
+            // Schedule two notifications:
+            // 1. An immediate notification to test delivery now
+            // 2. A repeating daily notification at the set time
+
             do {
+                // Send immediate notification for testing
+                let immediateContent = UNMutableNotificationContent()
+                immediateContent.title = content.title
+                immediateContent.body = content.body
+                immediateContent.sound = content.sound
+                immediateContent.userInfo = content.userInfo
+                immediateContent.categoryIdentifier = content.categoryIdentifier
+                immediateContent.interruptionLevel = content.interruptionLevel
+
+                let immediateTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+                let immediateRequest = UNNotificationRequest(identifier: "morningBrief_immediate", content: immediateContent, trigger: immediateTrigger)
+                try await notificationCenter.add(immediateRequest)
+                print("✅ Morning brief notification sent immediately")
+
+                // Also schedule the daily repeating notification
+                var components = DateComponents()
+                components.hour = morningBriefTime.hour
+                components.minute = morningBriefTime.minute
+
+                let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+                let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
+
                 try await notificationCenter.add(request)
-                print("✅ Morning brief scheduled for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
+                print("✅ Morning brief also scheduled daily for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
             } catch {
-                print("Error scheduling morning brief: \(error)")
+                print("❌ Error scheduling morning brief: \(error)")
             }
         }
     }
 
     func cancelMorningBrief() {
         notificationCenter.removePendingNotificationRequests(withIdentifiers: ["morningBrief"])
+    }
+
+    /// Re-schedule morning brief with current settings
+    /// Call this on app launch to ensure morning brief is scheduled if enabled
+    @MainActor
+    func ensureMorningBriefScheduled() {
+        print("ℹ️ Checking if morning brief needs to be scheduled...")
+        // Sync with app settings
+        let appSettings = AppSettingsManager.shared
+        Task {
+            await MainActor.run {
+                notificationsEnabled = appSettings.notificationsEnabled
+                morningBriefEnabled = appSettings.morningBriefEnabled
+                morningBriefTime = TimeComponents(hour: appSettings.morningBriefTimeHour, minute: appSettings.morningBriefTimeMinute)
+            }
+
+            if notificationsEnabled && morningBriefEnabled {
+                print("✅ Scheduling morning brief from ensureMorningBriefScheduled")
+                scheduleMorningBrief()
+            } else {
+                print("ℹ️ Morning brief not enabled (notificationsEnabled: \(notificationsEnabled), morningBriefEnabled: \(morningBriefEnabled))")
+            }
+        }
+    }
+
+    /// Fetch pending notifications (for debugging)
+    func getPendingNotifications() async -> [UNNotificationRequest] {
+        return await notificationCenter.pendingNotificationRequests()
+    }
+
+    /// Fetch delivered notifications (for debugging)
+    func getDeliveredNotifications() async -> [UNNotification] {
+        return await notificationCenter.deliveredNotifications()
     }
 
     // MARK: - Helper Methods
