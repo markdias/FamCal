@@ -154,11 +154,32 @@ class SupabaseManager: @unchecked Sendable {
             throw NSError(domain: "CreateFamilyMember", code: statusCode)
         }
 
-        let createdMembers = try JSONDecoder().decode([FamilyMemberDTO].self, from: data)
-        guard let createdMember = createdMembers.first else {
-            throw NSError(domain: "CreateFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Created member not found in response"])
+        // If response has data, decode it directly; otherwise fetch by name
+        if !data.isEmpty {
+            let createdMembers = try JSONDecoder().decode([FamilyMemberDTO].self, from: data)
+            guard let createdMember = createdMembers.first else {
+                throw NSError(domain: "CreateFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Created member not found in response"])
+            }
+            return createdMember
+        } else {
+            // Empty response - fetch the newly created member by name and family_id
+            print("ℹ️ Empty response from createFamilyMember, fetching created member by name...")
+            let queryItems = [
+                URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+                URLQueryItem(name: "name", value: "eq.\(name)")
+            ]
+            let (fetchData, fetchStatusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
+
+            guard fetchStatusCode == 200 else {
+                throw NSError(domain: "CreateFamilyMember", code: fetchStatusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to fetch created member"])
+            }
+
+            let members = try JSONDecoder().decode([FamilyMemberDTO].self, from: fetchData)
+            guard let createdMember = members.first else {
+                throw NSError(domain: "CreateFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Created member not found after creation"])
+            }
+            return createdMember
         }
-        return createdMember
     }
 
     func getFamilyMember(id: String, token: String? = nil) async throws -> FamilyMemberDTO? {
