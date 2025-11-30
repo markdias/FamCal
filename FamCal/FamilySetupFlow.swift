@@ -18,8 +18,8 @@ struct FamilySetupFlow: View {
     }
 
     @Environment(\.managedObjectContext) var viewContext
-    @StateObject private var appSettingsManager = AppSettingsManager.shared
-    @StateObject private var dataManager = SupabaseDataManager.shared
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
     @State private var currentStep: SetupStep = .familyName
     @State private var familyName: String = ""
     @State private var familyMembers: [FamilyMember] = []

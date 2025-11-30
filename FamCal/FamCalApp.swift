@@ -196,6 +196,9 @@ struct FamCalApp: App {
                             .environmentObject(appSettingsManager)
                             .onAppear {
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                                Task {
+                                    await appSettingsManager.loadSettings()
+                                }
                             }
                     }
                     // If authenticated (non-guest) but calendars/family setup needed, block until ready
