@@ -128,6 +128,21 @@ class SupabaseManager: @unchecked Sendable {
             throw NSError(domain: "CreateFamilyMember", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id (no profile/family found). Please ensure profiles.family_id is set for the owner."])
         }
 
+        // Check if member already exists in this family before attempting creation
+        let queryItems = [
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "name", value: "eq.\(name)")
+        ]
+        let (checkData, checkStatusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
+
+        if checkStatusCode == 200 {
+            let members = try JSONDecoder().decode([FamilyMemberDTO].self, from: checkData)
+            if let existingMember = members.first {
+                print("ℹ️ Family member '\(name)' already exists in family, returning existing member...")
+                return existingMember
+            }
+        }
+
         let body: [String: String] = [
             "user_id": userId,
             "family_id": familyId,
@@ -140,13 +155,21 @@ class SupabaseManager: @unchecked Sendable {
         guard statusCode == 201 else {
             logErrorResponse(data, statusCode: statusCode, operation: "createFamilyMember")
 
-            // If we got 409 (conflict), it's likely a duplicate name constraint
+            // If we got 409 (conflict), try to fetch and return the existing member
             if statusCode == 409 {
                 if let errorResponse = String(data: data, encoding: .utf8) {
                     print("ℹ️ 409 Conflict details: \(errorResponse)")
                     if errorResponse.contains("unique") || errorResponse.contains("family_member") {
-                        print("⚠️ Duplicate family member name. Names must be unique per user.")
-                        print("ℹ️ Family member '\(name)' already exists for this user.")
+                        print("⚠️ Family member '\(name)' already exists in this family.")
+                        // Try fetching the existing member
+                        let (fetchData, fetchStatusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
+                        if fetchStatusCode == 200 {
+                            let members = try JSONDecoder().decode([FamilyMemberDTO].self, from: fetchData)
+                            if let existingMember = members.first {
+                                print("ℹ️ Returning existing family member...")
+                                return existingMember
+                            }
+                        }
                     }
                 }
             }
@@ -164,10 +187,6 @@ class SupabaseManager: @unchecked Sendable {
         } else {
             // Empty response - fetch the newly created member by name and family_id
             print("ℹ️ Empty response from createFamilyMember, fetching created member by name...")
-            let queryItems = [
-                URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
-                URLQueryItem(name: "name", value: "eq.\(name)")
-            ]
             let (fetchData, fetchStatusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
 
             guard fetchStatusCode == 200 else {
