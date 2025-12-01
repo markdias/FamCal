@@ -130,11 +130,12 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             return
         }
 
-        // Build subscription message according to Supabase Realtime protocol
+        // Build subscription message according to Supabase Realtime protocol v1
+        // Reference: https://github.com/supabase/realtime/blob/master/server/README.md
         let subscriptionMessage = """
         {
           "type": "subscribe",
-          "id": 1,
+          "id": "1",
           "payload": {
             "schema": "public",
             "table": "family_activity_log",
@@ -145,12 +146,13 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
         """
 
-        print("📡 Sending Realtime subscription for family_activity_log (id: 1)...")
-        print("📋 Message: \(subscriptionMessage)")
+        print("📡 Sending Realtime subscription for family_activity_log...")
+        print("📋 Subscription ID: 1")
         do {
             try await webSocket.send(.string(subscriptionMessage))
             isSubscribed = true
             print("✅ Successfully sent subscription to family_activity_log table")
+            print("👂 Waiting for subscription confirmation from server...")
             updateStatus(.connected)
         } catch {
             isSubscribed = false
@@ -185,22 +187,6 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             return
         }
 
-        // Try sending a ping to verify connection is active
-        print("⏳ Testing WebSocket connection with initial message...")
-        do {
-            let testMessage = """
-            {
-              "type": "ping"
-            }
-            """
-            try await webSocket.send(.string(testMessage))
-            print("✅ WebSocket connection is active (ping sent)")
-        } catch {
-            print("❌ WebSocket connection failed on test message: \(error.localizedDescription)")
-            updateStatus(.error("WebSocket connection failed: \(error.localizedDescription)"))
-            return
-        }
-
         print("✅ Starting message receive loop")
         self.isWebSocketConnected = true
         updateStatus(.syncing)
@@ -212,11 +198,11 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
 
                 switch message {
                 case .string(let text):
-                    print("📨 Received string message: \(text.prefix(100))...")
+                    print("📨 Received string message: \(text.prefix(150))...")
                     await handleMessage(text, familyId: familyId)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        print("📨 Received data message: \(text.prefix(100))...")
+                        print("📨 Received data message: \(text.prefix(150))...")
                         await handleMessage(text, familyId: familyId)
                     }
                 @unknown default:
@@ -247,8 +233,21 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
 
         // Try to decode as Realtime message
-        if let realtimeMessage = try? JSONDecoder().decode(RealtimeMessage.self, from: data) {
-            await processRealtimeMessage(realtimeMessage, familyId: familyId)
+        do {
+            if let realtimeMessage = try? JSONDecoder().decode(RealtimeMessage.self, from: data) {
+                print("✅ Successfully decoded Realtime message with event: \(realtimeMessage.event)")
+                await processRealtimeMessage(realtimeMessage, familyId: familyId)
+            } else {
+                // Try to parse as generic JSON to see what structure we got
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    print("📊 Received unknown message structure: \(json.keys)")
+                    if let msgType = json["type"] as? String {
+                        print("   Message type: \(msgType)")
+                    }
+                }
+            }
+        } catch {
+            print("⚠️ Failed to decode message: \(error.localizedDescription)")
         }
     }
 
