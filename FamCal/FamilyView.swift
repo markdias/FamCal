@@ -1276,7 +1276,19 @@ struct FamilyView: View {
                 for event in upcomingEvents {
                     // Each EKEvent occurrence from EventKit already respects cancelled/edited instances,
                     // so use it directly instead of manually expanding recurrence rules.
-                    let timeRange = formatTimeRange(event.startDate, event.endDate)
+
+                    // For recurring events, calculate the correct endDate based on the event duration
+                    // EventKit may return incorrect endDate for recurring occurrences, so we fix it here
+                    var correctedEndDate = event.endDate
+                    if event.hasRecurrence {
+                        // Find the first occurrence of this recurring event to determine duration
+                        if let firstOccurrence = upcomingEvents.first(where: { $0.id == event.id }) {
+                            let duration = firstOccurrence.endDate.timeIntervalSince(firstOccurrence.startDate)
+                            correctedEndDate = event.startDate.addingTimeInterval(duration)
+                        }
+                    }
+
+                    let timeRange = formatTimeRange(event.startDate, correctedEndDate)
                     let displayID = "\(event.id)|\(event.startDate.timeIntervalSince1970)"
                     let driverName = fetchDriverForEvent(event.id)
                     memberEventItems.append(EventItem(
@@ -1286,7 +1298,7 @@ struct FamilyView: View {
                         location: event.location,
                         meetingLink: event.meetingLink,
                         startDate: event.startDate,
-                        endDate: event.endDate,
+                        endDate: correctedEndDate,
                         timeRange: timeRange,
                         memberName: member.name ?? "Unknown",
                         memberColor: event.calendarColor,
@@ -1606,7 +1618,7 @@ struct FamilyView: View {
     }
 
     private func getEventStatus(_ event: GroupedEvent) -> (status: String, color: Color) {
-        let now = currentTime
+        let now = Date()
 
         // Check if event is in progress
         if event.startDate <= now && now < event.endDate {
@@ -1624,7 +1636,7 @@ struct FamilyView: View {
     }
 
     private func timeBubble(for event: GroupedEvent) -> (text: String, background: Color, foreground: Color)? {
-        let now = currentTime
+        let now = Date()
         let calendar = Calendar.current
 
         if now < event.startDate {

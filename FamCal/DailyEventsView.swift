@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreData
+import EventKit
 
 struct DailyEventsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
@@ -14,6 +15,12 @@ struct DailyEventsView: View {
     @State private var selectedMemberIDs: [NSManagedObjectID] = []
     @State private var currentTime = Date()
     @State private var timer: Timer?
+    @State private var editingEvent: DayEventItem?
+    @State private var showingEditSheet = false
+    @State private var showingDeleteConfirmation = false
+    @State private var eventToDelete: DayEventItem?
+    @State private var selectedEventForDetail: UpcomingCalendarEvent?
+    @State private var showingEventDetail = false
 
     private let timeColumnWidth: CGFloat = 60
     private let hourHeight: CGFloat = 60
@@ -126,6 +133,49 @@ struct DailyEventsView: View {
         .onDisappear {
             stopTimeUpdates()
         }
+        .sheet(isPresented: $showingEditSheet) {
+            if let event = editingEvent {
+                let upcomingEvent = UpcomingCalendarEvent(
+                    id: event.eventIdentifier,
+                    title: event.title,
+                    location: event.location,
+                    meetingLink: event.meetingLink,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    calendarID: event.calendarID,
+                    calendarColor: event.calendarColor,
+                    calendarTitle: event.calendarTitle,
+                    hasRecurrence: event.hasRecurrence,
+                    recurrenceRule: nil,
+                    isAllDay: event.isAllDay
+                )
+                EditEventView(upcomingEvent: upcomingEvent)
+            }
+        }
+        .confirmationDialog("Delete Event", isPresented: $showingDeleteConfirmation, presenting: eventToDelete) { event in
+            Button("Delete", role: .destructive) {
+                deleteEvent(event)
+            }
+        } message: { event in
+            Text("Are you sure you want to delete '\(event.title)'?")
+        }
+        .sheet(isPresented: $showingEventDetail) {
+            if let event = selectedEventForDetail {
+                EventDetailView(event: event)
+            }
+        }
+    }
+
+    private func deleteEvent(_ event: DayEventItem) {
+        let store = EKEventStore()
+        if let ekEvent = store.event(withIdentifier: event.eventIdentifier) {
+            do {
+                try store.remove(ekEvent, span: .thisEvent, commit: true)
+            } catch {
+                print("❌ Failed to delete event: \(error.localizedDescription)")
+            }
+        }
+        eventToDelete = nil
     }
 
     private var currentActiveMembers: [FamilyMember] {
@@ -228,12 +278,37 @@ struct DailyEventsView: View {
                         .frame(width: layout.width, height: layout.height)
                         .offset(x: layout.x, y: layout.y)
                         .onTapGesture {
-                            withAnimation {
-                                if tappedEvent == layout.event {
-                                    tappedEvent = nil
-                                } else {
-                                    tappedEvent = layout.event
-                                }
+                            let event = layout.event
+                            let upcomingEvent = UpcomingCalendarEvent(
+                                id: event.eventIdentifier,
+                                title: event.title,
+                                location: event.location,
+                                meetingLink: event.meetingLink,
+                                startDate: event.startDate,
+                                endDate: event.endDate,
+                                calendarID: event.calendarID,
+                                calendarColor: event.calendarColor,
+                                calendarTitle: event.calendarTitle,
+                                hasRecurrence: event.hasRecurrence,
+                                recurrenceRule: nil,
+                                isAllDay: event.isAllDay
+                            )
+                            selectedEventForDetail = upcomingEvent
+                            showingEventDetail = true
+                        }
+                        .contextMenu {
+                            Button(action: {
+                                editingEvent = layout.event
+                                showingEditSheet = true
+                            }) {
+                                Label("Edit", systemImage: "pencil")
+                            }
+
+                            Button(role: .destructive, action: {
+                                eventToDelete = layout.event
+                                showingDeleteConfirmation = true
+                            }) {
+                                Label("Delete", systemImage: "trash")
                             }
                         }
                 }
@@ -312,6 +387,39 @@ struct DailyEventsView: View {
         .background(Color(event.color).opacity(isPast ? 0.10 : 0.15))
         .cornerRadius(6)
         .padding(.horizontal, 8)
+        .onTapGesture {
+            let upcomingEvent = UpcomingCalendarEvent(
+                id: event.eventIdentifier,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.meetingLink,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendarID,
+                calendarColor: event.calendarColor,
+                calendarTitle: event.calendarTitle,
+                hasRecurrence: event.hasRecurrence,
+                recurrenceRule: nil,
+                isAllDay: event.isAllDay
+            )
+            selectedEventForDetail = upcomingEvent
+            showingEventDetail = true
+        }
+        .contextMenu {
+            Button(action: {
+                editingEvent = event
+                showingEditSheet = true
+            }) {
+                Label("Edit", systemImage: "pencil")
+            }
+
+            Button(role: .destructive, action: {
+                eventToDelete = event
+                showingDeleteConfirmation = true
+            }) {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private func eventCell(for event: DayEventItem, isTapped: Bool) -> some View {

@@ -130,6 +130,132 @@ struct EventDetailView: View {
         return formatter
     }()
 
+    private func formatRecurrenceRule(_ rule: EKRecurrenceRule) -> String {
+        let frequency: String
+        switch rule.frequency {
+        case .daily:
+            frequency = "Daily"
+        case .weekly:
+            frequency = "Weekly"
+        case .monthly:
+            frequency = "Monthly"
+        case .yearly:
+            frequency = "Yearly"
+        @unknown default:
+            frequency = "Repeats"
+        }
+
+        var recurrenceText = frequency
+        if rule.interval > 1 {
+            recurrenceText += " every \(rule.interval) \(frequency.lowercased())"
+        }
+
+        if let endDate = rule.recurrenceEnd?.endDate {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d, yyyy"
+            recurrenceText += " until \(formatter.string(from: endDate))"
+        }
+
+        return recurrenceText
+    }
+
+    private func getLinkedCalendars(for eventItem: UpcomingCalendarEvent) -> [String]? {
+        var linkedCalendars: [String] = []
+
+        // Get all family member calendars
+        for member in familyMembers {
+            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                for cal in memberCals {
+                    if let calName = cal.calendarName, !linkedCalendars.contains(calName) {
+                        // Check if this calendar contains the event
+                        if let calId = cal.calendarID {
+                            let store = EKEventStore()
+                            if let calendar = store.calendar(withIdentifier: calId) {
+                                let predicate = store.predicateForEvents(withStart: eventItem.startDate.addingTimeInterval(-86400), end: eventItem.startDate.addingTimeInterval(86400), calendars: [calendar])
+                                let events = store.events(matching: predicate).filter { $0.title == eventItem.title }
+                                if !events.isEmpty {
+                                    linkedCalendars.append(calName)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check shared calendars
+        if let sharedCals = familyMembers.first?.sharedCalendars as? Set<SharedCalendar> {
+            for sharedCal in sharedCals {
+                if let calName = sharedCal.calendarName, !linkedCalendars.contains(calName) {
+                    if let calId = sharedCal.calendarID {
+                        let store = EKEventStore()
+                        if let calendar = store.calendar(withIdentifier: calId) {
+                            let predicate = store.predicateForEvents(withStart: eventItem.startDate.addingTimeInterval(-86400), end: eventItem.startDate.addingTimeInterval(86400), calendars: [calendar])
+                            let events = store.events(matching: predicate).filter { $0.title == eventItem.title }
+                            if !events.isEmpty {
+                                linkedCalendars.append(calName)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return linkedCalendars.isEmpty ? nil : linkedCalendars
+    }
+
+    private var recurringEventSection: some View {
+        Group {
+            if event.hasRecurrence {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "repeat.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+
+                        Text("Recurring Event")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.gray)
+                    }
+
+                    if let recurrenceRule = event.recurrenceRule {
+                        Text(formatRecurrenceRule(recurrenceRule))
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                            .padding(.leading, 28)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    private var linkedCalendarsSection: some View {
+        Group {
+            if let linkedCalendars = getLinkedCalendars(for: event), !linkedCalendars.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar.badge.plus")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+
+                        Text("Linked Calendars")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.gray)
+                    }
+
+                    ForEach(linkedCalendars, id: \.self) { calendarName in
+                        Text("• \(calendarName)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                            .padding(.leading, 28)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -390,19 +516,8 @@ struct EventDetailView: View {
                         }
                     }
 
-                    // Recurring indicator
-                    if event.hasRecurrence {
-                        HStack(spacing: 8) {
-                            Image(systemName: "repeat.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-
-                            Text("This is a recurring event")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.horizontal, 20)
-                    }
+                    recurringEventSection
+                    linkedCalendarsSection
 
                     // Delete button
                     Button(action: handleDeleteTap) {

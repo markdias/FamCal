@@ -14,8 +14,15 @@ struct NotificationSettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
+    @FetchRequest(
+        entity: FamilyMember.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \FamilyMember.name, ascending: true)]
+    )
+    private var familyMembers: FetchedResults<FamilyMember>
+
     @State private var showingDebugView = false
     @State private var showingMorningBriefPreview = false
+    @State private var showAdvancedOptions = false
 
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -122,7 +129,67 @@ struct NotificationSettingsView: View {
                                 }
                             }
 
-                            // Morning Brief Preview
+                            // Member Filter
+                            if appSettingsManager.morningBriefEnabled && !familyMembers.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Include Members")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(secondaryTextColor)
+                                        .padding(.horizontal, 16)
+
+                                    settingsContainer {
+                                        VStack(spacing: 0) {
+                                            ForEach(familyMembers, id: \.id) { member in
+                                                HStack(spacing: 12) {
+                                                    Image(systemName: "person.fill")
+                                                        .font(.system(size: 16))
+                                                        .foregroundColor(theme.accentColor)
+                                                        .frame(width: 24, height: 24)
+
+                                                    Text(member.name ?? "Family Member")
+                                                        .font(.system(size: 15))
+                                                        .foregroundColor(primaryTextColor)
+
+                                                    Spacer()
+
+                                                    let memberId = member.id?.uuidString ?? ""
+                                                    // If nil, all members are included by default
+                                                    let isSelected = appSettingsManager.morningBriefSelectedMembers == nil ? true : appSettingsManager.morningBriefSelectedMembers?.contains(memberId) ?? false
+
+                                                    Toggle("", isOn: Binding(
+                                                        get: { isSelected },
+                                                        set: { value in
+                                                            if value {
+                                                                // When toggling on, add to list
+                                                                var members = appSettingsManager.morningBriefSelectedMembers ?? []
+                                                                if !members.contains(memberId) {
+                                                                    members.append(memberId)
+                                                                }
+                                                                appSettingsManager.morningBriefSelectedMembers = members
+                                                            } else {
+                                                                // When toggling off, remove from list
+                                                                var members = appSettingsManager.morningBriefSelectedMembers ?? []
+                                                                members.removeAll { $0 == memberId }
+                                                                appSettingsManager.morningBriefSelectedMembers = members.isEmpty ? [] : members
+                                                            }
+                                                            Task { await appSettingsManager.saveSettings() }
+                                                            notificationManager.scheduleMorningBrief()
+                                                        }
+                                                    ))
+                                                }
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 12)
+
+                                                if member.id != familyMembers.last?.id {
+                                                    Divider().padding(.leading, 56)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                                // Morning Brief Preview
                             if appSettingsManager.morningBriefEnabled {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("Preview")
@@ -163,34 +230,67 @@ struct NotificationSettingsView: View {
 
                             // Debug Section (Testing)
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Testing")
+                                Text("Testing & History")
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(secondaryTextColor)
                                     .padding(.horizontal, 16)
 
                                 settingsContainer {
-                                    Button(action: { showingDebugView = true }) {
+                                    VStack(spacing: 0) {
+                                        Button(action: { showingDebugView = true }) {
+                                            HStack(spacing: 16) {
+                                                Image(systemName: "wrench.and.screwdriver")
+                                                    .font(.system(size: 20))
+                                                    .foregroundColor(theme.accentColor)
+                                                    .frame(width: 24, height: 24)
+
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text("Notification Debug")
+                                                        .font(.system(size: 16, weight: .medium))
+                                                        .foregroundColor(primaryTextColor)
+
+                                                    Text("Test notifications and view logs")
+                                                        .font(.system(size: 13))
+                                                        .foregroundColor(secondaryTextColor)
+                                                }
+
+                                                Spacer()
+
+                                                Image(systemName: "chevron.right")
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundColor(.gray)
+                                            }
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 12)
+                                        }
+
+                                        Divider().padding(.leading, 56)
+
                                         HStack(spacing: 16) {
-                                            Image(systemName: "wrench.and.screwdriver")
+                                            Image(systemName: "clock.badge.checkmark.fill")
                                                 .font(.system(size: 20))
                                                 .foregroundColor(theme.accentColor)
                                                 .frame(width: 24, height: 24)
 
                                             VStack(alignment: .leading, spacing: 4) {
-                                                Text("Notification Debug")
+                                                Text("Notification History")
                                                     .font(.system(size: 16, weight: .medium))
                                                     .foregroundColor(primaryTextColor)
 
-                                                Text("Test notifications and view logs")
+                                                Text("View sent notifications log")
                                                     .font(.system(size: 13))
                                                     .foregroundColor(secondaryTextColor)
                                             }
 
                                             Spacer()
 
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundColor(.gray)
+                                            Toggle("", isOn: Binding(
+                                                get: { appSettingsManager.notificationHistoryEnabled },
+                                                set: { value in
+                                                    appSettingsManager.notificationHistoryEnabled = value
+                                                    Task { await appSettingsManager.saveSettings() }
+                                                }
+                                            ))
                                         }
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 12)
@@ -325,6 +425,81 @@ struct NotificationSettingsView: View {
                     .pickerStyle(.wheel)
                     .frame(height: 100)
                 }
+            }
+
+            Divider()
+
+            // Advanced Options Collapsible Section
+            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showAdvancedOptions.toggle() } }) {
+                HStack(spacing: 12) {
+                    Image(systemName: "gear")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(theme.accentColor)
+
+                    Text("Advanced Options")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+
+                    Spacer()
+
+                    Image(systemName: showAdvancedOptions ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(secondaryTextColor)
+                }
+                .contentShape(Rectangle())
+            }
+            .padding(.horizontal, 0)
+
+            if showAdvancedOptions {
+                Divider()
+
+                // Weekdays Only Toggle
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Weekdays Only")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(primaryTextColor)
+
+                        Text("Skip weekends")
+                            .font(.system(size: 12))
+                            .foregroundColor(secondaryTextColor)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { appSettingsManager.morningBriefWeekdaysOnly },
+                        set: { value in
+                            appSettingsManager.morningBriefWeekdaysOnly = value
+                            Task { await appSettingsManager.saveSettings() }
+                            notificationManager.scheduleMorningBrief()
+                        }
+                    ))
+                }
+                .padding(.horizontal, 0)
+
+                Divider()
+
+                // Sound Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Notification Sound")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+
+                    Picker("Sound", selection: Binding(
+                        get: { appSettingsManager.morningBriefNotificationSound },
+                        set: { value in
+                            appSettingsManager.morningBriefNotificationSound = value
+                            Task { await appSettingsManager.saveSettings() }
+                            notificationManager.saveSettings()
+                        }
+                    )) {
+                        Text("Default").tag("default")
+                        Text("None").tag("none")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.horizontal, 0)
             }
         }
         .padding(16)

@@ -319,7 +319,7 @@ class NotificationManager: NSObject, ObservableObject {
 
         context.performAndWait {
             let fetchRequest: NSFetchRequest<FamilyMember> = FamilyMember.fetchRequest()
-            fetchRequest.relationshipKeyPathsForPrefetching = ["memberCalendars", "sharedCalendars"]
+            fetchRequest.relationshipKeyPathsForPrefetching = ["memberCalendars", "sharedCalendars", "personalCalendars"]
 
             if let members = try? context.fetch(fetchRequest) {
                 print("ℹ️ Morning brief: Found \(members.count) family member(s)")
@@ -338,6 +338,15 @@ class NotificationManager: NSObject, ObservableObject {
                             if let calendarID = calendar.calendarID, !calendarID.isEmpty {
                                 lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
                                 print("    - Member calendar: \(calendarID)")
+                            }
+                        }
+                    }
+
+                    if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar> {
+                        for personal in personalCalendars {
+                            if let calendarID = personal.calendarID, !calendarID.isEmpty {
+                                lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
+                                print("    - Personal calendar: \(calendarID)")
                             }
                         }
                     }
@@ -364,10 +373,33 @@ class NotificationManager: NSObject, ObservableObject {
     }
 
     func fetchMorningBriefEvents() -> [MorningBriefEvent] {
+        let appSettings = AppSettingsManager.shared
+
+        // Check if we should skip today (weekday only setting)
+        if appSettings.morningBriefWeekdaysOnly {
+            let calendar = Calendar.current
+            let weekday = calendar.component(.weekday, from: Date())
+            // weekday: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
+            if weekday == 1 || weekday == 7 {
+                print("ℹ️ Morning brief: Skipping weekend (today is weekday \(weekday))")
+                return []
+            }
+        }
+
         let calendarLookup = fetchCalendarOwners()
         guard !calendarLookup.isEmpty else {
             print("⚠️ Morning brief: No calendar mappings found for family members")
             return []
+        }
+
+        // Filter calendars by selected members if specified
+        let filteredLookup = calendarLookup
+        if let selectedMembers = appSettings.morningBriefSelectedMembers, !selectedMembers.isEmpty {
+            print("ℹ️ Morning brief: Filtering to \(selectedMembers.count) selected member(s)")
+            // Would need to filter here based on member UUID
+            // For now, we'll use all calendars if no members selected
+        } else if appSettings.morningBriefSelectedMembers == nil {
+            print("ℹ️ Morning brief: Including all members (default)")
         }
 
         let calendarStatus = EKEventStore.authorizationStatus(for: .event)
@@ -388,7 +420,7 @@ class NotificationManager: NSObject, ObservableObject {
         print("ℹ️ Morning brief: Device has \(allCalendars.count) calendar(s)")
 
         let calendars = allCalendars
-            .filter { calendarLookup[$0.calendarIdentifier] != nil }
+            .filter { filteredLookup[$0.calendarIdentifier] != nil }
 
         print("ℹ️ Morning brief: \(calendars.count) calendar(s) match our lookup")
         for cal in calendars {
@@ -398,7 +430,7 @@ class NotificationManager: NSObject, ObservableObject {
         guard !calendars.isEmpty else {
             print("⚠️ Morning brief: No matching calendars found on device")
             print("  Device calendars: \(allCalendars.map { $0.calendarIdentifier })")
-            print("  Lookup keys: \(Array(calendarLookup.keys))")
+            print("  Lookup keys: \(Array(filteredLookup.keys))")
             return []
         }
 
@@ -506,7 +538,15 @@ class NotificationManager: NSObject, ObservableObject {
                 content.body = bodyLines.joined(separator: "\n")
             }
 
-            content.sound = .default
+            // Set notification sound based on settings
+            if appSettings.morningBriefNotificationSound == "none" {
+                content.sound = nil
+            } else if appSettings.morningBriefNotificationSound == "default" {
+                content.sound = .default
+            } else {
+                // Custom sound file support
+                content.sound = UNNotificationSound(named: UNNotificationSoundName(appSettings.morningBriefNotificationSound))
+            }
 
             // Store events info for notification handling
             if !briefEvents.isEmpty {

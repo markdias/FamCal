@@ -460,10 +460,10 @@ struct AddEventView: View {
         var targets: [(calendarID: String, member: FamilyMember?)] = []
 
         if selectEveryone {
-            // Everyone selected: use the selected shared calendar
+            // Everyone selected: use the shared family calendar
             targets = [(selectedCalendarID, nil)]
         } else {
-            // Specific people selected: add to each person's selected calendar
+            // Specific people selected: add to each person's selected calendar so it can be edited/updated across them
             for memberID in selectedMembers {
                 if let member = familyMembers.first(where: { $0.objectID == memberID }) {
                     if let selected = getSelectedCalendarForMemberCombined(member: member) {
@@ -644,12 +644,26 @@ struct AddEventView: View {
 
         // Schedule ONE consolidated notification for all attendees
         if let eventId = firstEventId {
+            // Deduplicate attendees by ID to prevent duplicates
+            var uniqueAttendees: [FamilyMember] = []
+            var seenIds = Set<UUID>()
+            for attendee in allAttendees {
+                if let attendeeId = attendee.id {
+                    if !seenIds.contains(attendeeId) {
+                        uniqueAttendees.append(attendee)
+                        seenIds.insert(attendeeId)
+                    }
+                } else {
+                    uniqueAttendees.append(attendee)
+                }
+            }
+
             print("🔔 Scheduling ONE consolidated notification for event: \(eventId)")
-            print("📋 Attendees: \(allAttendees.map { $0.name ?? "Unknown" }.joined(separator: ", "))")
+            print("📋 Attendees: \(uniqueAttendees.map { $0.name ?? "Unknown" }.joined(separator: ", "))")
             print("📍 Location: \(locationAddress.isEmpty ? "None" : locationAddress)")
             scheduleNotificationForCreatedEvent(
                 eventIdentifier: eventId,
-                attendingMembers: allAttendees,
+                attendingMembers: uniqueAttendees,
                 location: locationAddress.isEmpty ? nil : locationAddress
             )
         } else {

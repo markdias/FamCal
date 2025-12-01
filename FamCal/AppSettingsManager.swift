@@ -28,6 +28,10 @@ class AppSettingsManager: ObservableObject {
     @Published var morningBriefEnabled: Bool = false
     @Published var morningBriefTimeHour: Int = 8
     @Published var morningBriefTimeMinute: Int = 0
+    @Published var morningBriefWeekdaysOnly: Bool = false
+    @Published var morningBriefSelectedMembers: [String]? // Array of member UUIDs to include (nil = all members)
+    @Published var morningBriefNotificationSound: String = "default" // "default", "none", custom sound
+    @Published var notificationHistoryEnabled: Bool = true
 
     // Widget Settings
     @Published var widgetShowEventsCount: Int = 3
@@ -64,6 +68,10 @@ class AppSettingsManager: ObservableObject {
         "morningBriefEnabled",
         "morningBriefTimeHour",
         "morningBriefTimeMinute",
+        "morningBriefWeekdaysOnly",
+        "morningBriefSelectedMembers",
+        "morningBriefNotificationSound",
+        "notificationHistoryEnabled",
         "widgetShowEventsCount",
         "widgetShowOwnCalendarsOnly",
         "widgetShowTime",
@@ -241,6 +249,18 @@ class AppSettingsManager: ObservableObject {
         if defaults.object(forKey: "morningBriefTimeMinute") != nil {
             morningBriefTimeMinute = defaults.integer(forKey: "morningBriefTimeMinute")
         }
+        if defaults.object(forKey: "morningBriefWeekdaysOnly") != nil {
+            morningBriefWeekdaysOnly = defaults.bool(forKey: "morningBriefWeekdaysOnly")
+        }
+        if let value = defaults.array(forKey: "morningBriefSelectedMembers") as? [String] {
+            morningBriefSelectedMembers = value
+        }
+        if let value = defaults.string(forKey: "morningBriefNotificationSound") {
+            morningBriefNotificationSound = value
+        }
+        if defaults.object(forKey: "notificationHistoryEnabled") != nil {
+            notificationHistoryEnabled = defaults.bool(forKey: "notificationHistoryEnabled")
+        }
         if defaults.object(forKey: "widgetShowEventsCount") != nil {
             widgetShowEventsCount = defaults.integer(forKey: "widgetShowEventsCount")
         }
@@ -285,6 +305,14 @@ class AppSettingsManager: ObservableObject {
         defaults.set(morningBriefEnabled, forKey: "morningBriefEnabled")
         defaults.set(morningBriefTimeHour, forKey: "morningBriefTimeHour")
         defaults.set(morningBriefTimeMinute, forKey: "morningBriefTimeMinute")
+        defaults.set(morningBriefWeekdaysOnly, forKey: "morningBriefWeekdaysOnly")
+        if let members = morningBriefSelectedMembers {
+            defaults.set(members, forKey: "morningBriefSelectedMembers")
+        } else {
+            defaults.removeObject(forKey: "morningBriefSelectedMembers")
+        }
+        defaults.set(morningBriefNotificationSound, forKey: "morningBriefNotificationSound")
+        defaults.set(notificationHistoryEnabled, forKey: "notificationHistoryEnabled")
         defaults.set(widgetShowEventsCount, forKey: "widgetShowEventsCount")
         defaults.set(widgetShowOwnCalendarsOnly, forKey: "widgetShowOwnCalendarsOnly")
         defaults.set(widgetShowTime, forKey: "widgetShowTime")

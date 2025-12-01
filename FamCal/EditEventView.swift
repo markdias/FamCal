@@ -86,6 +86,11 @@ struct EditEventView: View {
     @State private var driverTravelTimeMinutes: Int = 15
     @State private var shouldCreateTravelEvent: Bool = false
 
+    // Attendee selection
+    @State private var selectedAttendees: Set<NSManagedObjectID> = []
+    @State private var selectEveryone: Bool = false
+    @State private var showingAttendeePicker: Bool = false
+
     // UI state
     @State private var showingStartDatePicker = false
     @State private var showingEndDatePicker = false
@@ -136,6 +141,18 @@ struct EditEventView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private var attendeesSummary: String {
+        if selectEveryone {
+            return "Everyone"
+        }
+        if selectedAttendees.isEmpty {
+            return "None"
+        }
+        let selected = familyMembers.filter { selectedAttendees.contains($0.objectID) }
+        let names = selected.map { $0.name ?? "Unknown" }
+        return names.joined(separator: ", ")
+    }
+
     @ViewBuilder
     private var eventForm: some View {
         ZStack {
@@ -148,10 +165,11 @@ struct EditEventView: View {
                     locationSection
                     meetingLinkSection
                     timeSection
+                    attendeesSection
+                    driverSection
                     repeatSection
                     alertSection
                     calendarSection
-                    driverSection
                     notesSection
                     Spacer()
                         .frame(height: 20)
@@ -224,20 +242,39 @@ struct EditEventView: View {
                     Text("Are you sure you want to delete this event? This cannot be undone.")
                 }
                 .confirmationDialog("Update Linked Calendars?", isPresented: $showingUpdateScopeDialog, titleVisibility: .visible) {
-                    Button("Update all linked calendars") {
-                        Task { await saveEvent(applyToGroup: true) }
+                    if upcomingEvent.hasRecurrence {
+                        Button("Update all linked calendars (this event only)") {
+                            Task { await saveEvent(applyToGroup: true) }
+                        }
+                        Button("Update all linked calendars (this & future)") {
+                            // Store that we want to update all future events when saving
+                            Task { await saveEvent(applyToGroup: true) }
+                        }
+                    } else {
+                        Button("Update all linked calendars") {
+                            Task { await saveEvent(applyToGroup: true) }
+                        }
                     }
                     Button("Update only this calendar") {
                         Task { await saveEvent(applyToGroup: false) }
                     }
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    if externalEditCalendars.isEmpty {
-                        Text("This event exists in multiple calendars. Do you want to apply these changes to all linked copies?")
-                    } else {
-                        let calendars = externalEditCalendars.joined(separator: ", ")
-                        Text("This event exists in multiple calendars. Changes were detected outside this app on: \(calendars). Overwrite them with your updates?")
+                    let linkedCalendars = getLinkedCalendarNames()
+                    var messageText = "This event exists in \(linkedCalendars.count) calendars"
+
+                    if !linkedCalendars.isEmpty {
+                        messageText += ": " + linkedCalendars.joined(separator: ", ")
                     }
+
+                    if !externalEditCalendars.isEmpty {
+                        let external = externalEditCalendars.joined(separator: ", ")
+                        messageText += "\n\nChanges were detected outside this app on: \(external). Overwrite them with your updates?"
+                    } else {
+                        messageText += ". Do you want to apply these changes to all linked copies?"
+                    }
+
+                    return Text(messageText)
                 }
                 .confirmationDialog("Delete Linked Copies?", isPresented: $showingLinkedDeleteOptions, titleVisibility: .visible) {
                     Button("Delete only in this calendar", role: .destructive) {
@@ -311,6 +348,9 @@ struct EditEventView: View {
                     // Clean up stale selected members (in case they were deleted)
                     let validMemberIDs = Set(familyMembers.map { $0.objectID })
                     selectedMemberCalendars = selectedMemberCalendars.filter { validMemberIDs.contains($0.key) }
+
+                    // Load existing attendees from CoreData
+                    loadExistingAttendees()
                 }
                 .alert("Error", isPresented: $showingError) {
                     Button("OK") { }
@@ -450,17 +490,24 @@ struct EditEventView: View {
         fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", upcomingEvent.id)
 
         do {
-            if let current = try viewContext.fetch(fetchRequest).first {
-                var results: [FamilyEvent] = [current]
+            let results = try viewContext.fetch(fetchRequest)
+            print("🔗 DEBUG: Found \(results.count) FamilyEvent(s) with identifier '\(upcomingEvent.id)'")
+
+            if let current = results.first {
+                var allLinked: [FamilyEvent] = [current]
+
+                print("🔗 DEBUG: Current event groupId: \(current.eventGroupId?.uuidString ?? "nil")")
 
                 if let groupId = current.eventGroupId {
                     let groupFetch = FamilyEvent.fetchRequest()
                     groupFetch.predicate = NSPredicate(format: "eventGroupId == %@", groupId as CVarArg)
-                    results = try viewContext.fetch(groupFetch)
+                    let groupResults = try viewContext.fetch(groupFetch)
+                    print("🔗 DEBUG: Found \(groupResults.count) events in group")
+                    allLinked = groupResults
                 }
 
                 // Deduplicate and keep only entries with identifiers
-                let keyed: [(String, FamilyEvent)] = results.compactMap { familyEvent in
+                let keyed: [(String, FamilyEvent)] = allLinked.compactMap { familyEvent in
                     guard let identifier = familyEvent.eventIdentifier else { return nil }
                     return (identifier, familyEvent)
                 }
@@ -473,12 +520,128 @@ struct EditEventView: View {
                 linkedFamilyEvents = unique
                 print("🔗 Loaded \(linkedFamilyEvents.count) linked event(s) for group.")
             } else {
+                print("🔗 DEBUG: No FamilyEvent found with eventIdentifier - checking if this event exists in CoreData at all")
+                // Try fetching all FamilyEvents to understand data state
+                let allFetch = FamilyEvent.fetchRequest()
+                let allEvents = try viewContext.fetch(allFetch)
+                print("🔗 DEBUG: Total FamilyEvents in database: \(allEvents.count)")
                 linkedFamilyEvents = []
             }
         } catch {
             print("❌ Failed to load linked events: \(error.localizedDescription)")
             linkedFamilyEvents = []
         }
+    }
+
+    private func loadExistingAttendees() {
+        var attendeeIDs = Set<NSManagedObjectID>()
+        let store = EKEventStore()
+
+        // First, find all linked event identifiers (events with the same title)
+        var linkedEventIdentifiers = Set<String>()
+        linkedEventIdentifiers.insert(upcomingEvent.id) // Include the main event
+
+        // Scan all calendars to find linked events with the same title
+        for member in familyMembers {
+            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                for memberCal in memberCals {
+                    if let calendarId = memberCal.calendarID {
+                        if let calendar = store.calendar(withIdentifier: calendarId) {
+                            let predicate = store.predicateForEvents(
+                                withStart: upcomingEvent.startDate.addingTimeInterval(-86400),
+                                end: upcomingEvent.startDate.addingTimeInterval(86400),
+                                calendars: [calendar]
+                            )
+                            let events = store.events(matching: predicate).filter { $0.title == upcomingEvent.title }
+                            for ekEvent in events {
+                                if let eventId = ekEvent.eventIdentifier {
+                                    linkedEventIdentifiers.insert(eventId)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Also check shared calendars for linked events
+            if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
+                for sharedCal in sharedCals {
+                    if let calendarId = sharedCal.calendarID {
+                        if let calendar = store.calendar(withIdentifier: calendarId) {
+                            let predicate = store.predicateForEvents(
+                                withStart: upcomingEvent.startDate.addingTimeInterval(-86400),
+                                end: upcomingEvent.startDate.addingTimeInterval(86400),
+                                calendars: [calendar]
+                            )
+                            let events = store.events(matching: predicate).filter { $0.title == upcomingEvent.title }
+                            for ekEvent in events {
+                                if let eventId = ekEvent.eventIdentifier {
+                                    linkedEventIdentifiers.insert(eventId)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        print("📋 Found \(linkedEventIdentifiers.count) linked event(s) with matching title")
+
+        // Now check which family members have any of these linked events in their calendars
+        for member in familyMembers {
+            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                for memberCal in memberCals {
+                    if let calendarId = memberCal.calendarID {
+                        if let calendar = store.calendar(withIdentifier: calendarId) {
+                            let predicate = store.predicateForEvents(
+                                withStart: upcomingEvent.startDate.addingTimeInterval(-86400),
+                                end: upcomingEvent.startDate.addingTimeInterval(86400),
+                                calendars: [calendar]
+                            )
+                            let events = store.events(matching: predicate)
+                            for ekEvent in events {
+                                if let eventId = ekEvent.eventIdentifier, linkedEventIdentifiers.contains(eventId) {
+                                    attendeeIDs.insert(member.objectID)
+                                    print("📋 Found linked event in \(member.name ?? "Unknown")'s calendar")
+                                    break // Found in this member's calendar, move to next member
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Skip checking shared calendars if already found in personal calendars
+            if attendeeIDs.contains(member.objectID) {
+                continue
+            }
+
+            // Also check shared calendars
+            if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
+                for sharedCal in sharedCals {
+                    if let calendarId = sharedCal.calendarID {
+                        if let calendar = store.calendar(withIdentifier: calendarId) {
+                            let predicate = store.predicateForEvents(
+                                withStart: upcomingEvent.startDate.addingTimeInterval(-86400),
+                                end: upcomingEvent.startDate.addingTimeInterval(86400),
+                                calendars: [calendar]
+                            )
+                            let events = store.events(matching: predicate)
+                            for ekEvent in events {
+                                if let eventId = ekEvent.eventIdentifier, linkedEventIdentifiers.contains(eventId) {
+                                    attendeeIDs.insert(member.objectID)
+                                    print("📋 Found linked event in shared calendar for \(member.name ?? "Unknown")")
+                                    break // Found in shared calendar, move to next member
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        selectedAttendees = attendeeIDs
+        print("📋 Loaded \(selectedAttendees.count) total attendees from all linked events")
     }
 
     private func applyDriverChange(span: EKSpan) {
@@ -493,13 +656,80 @@ struct EditEventView: View {
         }
     }
 
+    private func getLinkedCalendarNames() -> [String] {
+        return linkedFamilyEvents.compactMap { familyEvent in
+            // Try to get the calendar title from EventKit
+            let eventKit = EKEventStore()
+            if let calendarId = familyEvent.calendarId,
+               let calendar = eventKit.calendar(withIdentifier: calendarId) {
+                return calendar.title
+            }
+            return nil
+        }
+    }
+
     private func handleSaveTapped() {
         externalEditCalendars = []
 
         if linkedFamilyEvents.count > 1 {
+            // Found linked events via CoreData
             externalEditCalendars = detectExternalChanges(in: linkedFamilyEvents)
             showingUpdateScopeDialog = true
         } else {
+            // No CoreData linked events found, check EventKit for events with same title in other calendars
+            checkForLinkedEventsInEventKit()
+        }
+    }
+
+    private func checkForLinkedEventsInEventKit() {
+        // Get all family member calendars
+        var allMemberCalendars: [(calendarId: String, calendarName: String)] = []
+
+        for member in familyMembers {
+            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                for cal in memberCals {
+                    if let calId = cal.calendarID, let calName = cal.calendarName {
+                        allMemberCalendars.append((calId, calName))
+                    }
+                }
+            }
+        }
+
+        // Also check shared calendars
+        if let sharedCals = familyMembers.first?.sharedCalendars as? Set<SharedCalendar> {
+            for sharedCal in sharedCals {
+                if let calId = sharedCal.calendarID, let calName = sharedCal.calendarName {
+                    allMemberCalendars.append((calId, calName))
+                }
+            }
+        }
+
+        // Search for linked events in other calendars
+        var foundLinkedCalendars: [String] = []
+
+        for (calendarId, calendarName) in allMemberCalendars {
+            let store = EKEventStore()
+            if let calendar = store.calendar(withIdentifier: calendarId) {
+                let predicate = store.predicateForEvents(withStart: upcomingEvent.startDate.addingTimeInterval(-86400), end: upcomingEvent.startDate.addingTimeInterval(86400), calendars: [calendar])
+                let events = store.events(matching: predicate).filter { $0.title == upcomingEvent.title }
+
+                for ekEvent in events {
+                    if ekEvent.eventIdentifier != upcomingEvent.id {
+                        foundLinkedCalendars.append(calendarName)
+                        print("🔗 Found linked event in calendar: \(calendarName)")
+                        break // Only add each calendar once
+                    }
+                }
+            }
+        }
+
+        if !foundLinkedCalendars.isEmpty {
+            // Found linked events - show the dialog
+            externalEditCalendars = foundLinkedCalendars
+            showingUpdateScopeDialog = true
+            print("🔗 Found \(foundLinkedCalendars.count) calendar(s) with linked event")
+        } else {
+            // No linked events found - save normally
             Task { await saveEvent(applyToGroup: false) }
         }
     }
@@ -569,8 +799,84 @@ struct EditEventView: View {
         span: EKSpan,
         alertOption: AlertOption?
     ) async {
+        // First try to use FamilyEvent records from CoreData
         let otherEvents = linkedFamilyEvents.filter { $0.eventIdentifier != upcomingEvent.id }
-        guard !otherEvents.isEmpty else { return }
+
+        // If no other FamilyEvent records found, search EventKit directly for this event in all family member calendars
+        if otherEvents.isEmpty {
+            print("🔗 No FamilyEvent records found for linked events. Searching EventKit...")
+
+            // Get all family member calendars
+            var allMemberCalendars: [(calendarId: String, member: FamilyMember?)] = []
+
+            for member in familyMembers {
+                if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                    for cal in memberCals {
+                        if let calId = cal.calendarID {
+                            allMemberCalendars.append((calId, member))
+                        }
+                    }
+                }
+            }
+
+            // Also check shared calendars
+            if let sharedCals = familyMembers.first?.sharedCalendars as? Set<SharedCalendar> {
+                for sharedCal in sharedCals {
+                    if let calId = sharedCal.calendarID {
+                        allMemberCalendars.append((calId, nil))
+                    }
+                }
+            }
+
+            // Search each calendar for the event by title
+            for (calendarId, _) in allMemberCalendars {
+                let store = EKEventStore()
+                if let calendar = store.calendar(withIdentifier: calendarId) {
+                    let predicate = store.predicateForEvents(withStart: upcomingEvent.startDate.addingTimeInterval(-86400), end: upcomingEvent.startDate.addingTimeInterval(86400), calendars: [calendar])
+                    let events = store.events(matching: predicate).filter { $0.title == upcomingEvent.title }
+
+                    for ekEvent in events {
+                        if ekEvent.eventIdentifier != upcomingEvent.id {
+                            let eventTitle = ekEvent.title
+                            let eventId = ekEvent.eventIdentifier ?? "unknown"
+                            let calendarTitle = calendar.title
+                            print("🔗 Found linked event '\(eventTitle)' with ID '\(eventId)' in calendar '\(calendarTitle)'")
+
+                            // Use the linked event's occurrence date, not the original event's date
+                            guard let linkedEventOccurrenceDate = ekEvent.startDate else { continue }
+
+                            let success = CalendarManager.shared.updateEvent(
+                                withIdentifier: ekEvent.eventIdentifier,
+                                occurrenceStartDate: linkedEventOccurrenceDate,
+                                in: calendarId,
+                                title: title,
+                                startDate: startDate,
+                                endDate: endDate,
+                                location: location,
+                                notes: notes,
+                                meetingLink: meetingLink,
+                                isAllDay: isAllDay,
+                                recurrenceRule: recurrenceRule,
+                                updateRecurrence: true,
+                                span: span,
+                                alertOption: alertOption
+                            )
+
+                            if success {
+                                let dateFormatter = DateFormatter()
+                                dateFormatter.dateStyle = .medium
+                                dateFormatter.timeStyle = .short
+                                let occurrenceDateStr = dateFormatter.string(from: linkedEventOccurrenceDate)
+                                print("✅ Updated linked event in calendar: \(calendar.title) (occurrence: \(occurrenceDateStr))")
+                            } else {
+                                print("⚠️ Failed to update linked event in calendar: \(calendar.title)")
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
 
         print("🔗 Propagating updates to \(otherEvents.count) linked event(s)")
 
@@ -816,6 +1122,16 @@ struct EditEventView: View {
                 // No driver selected - clear the driver
                 familyEvent.driver = nil
                 familyEvent.driverFamilyMemberId = nil
+            }
+
+            // Update attendees
+            if selectEveryone {
+                familyEvent.attendees = NSSet(array: Array(familyMembers))
+                print("📋 Set all family members as attendees")
+            } else {
+                let selectedAttendeesArray = familyMembers.filter { selectedAttendees.contains($0.objectID) }
+                familyEvent.attendees = NSSet(array: selectedAttendeesArray)
+                print("📋 Set \(selectedAttendeesArray.count) attendees")
             }
 
             print("   Driver assigned: \(familyEvent.driver?.name ?? "nil")")
@@ -1975,6 +2291,130 @@ struct EditEventView: View {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    private var attendeesSection: some View {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Attendees")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(primaryTextColor)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "person.2")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(secondaryTextColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(attendeesSummary)
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(primaryTextColor)
+                            if !selectedAttendees.isEmpty && !selectEveryone {
+                                let selectedCount = selectedAttendees.count
+                                Text("Currently attending: \(selectedCount)")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundColor(secondaryTextColor)
+                            } else if selectEveryone {
+                                Text("Currently attending: \(familyMembers.count)")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundColor(secondaryTextColor)
+                            }
+                        }
+                        Spacer()
+                        Button(action: {
+                            withAnimation {
+                                showingAttendeePicker.toggle()
+                            }
+                        }) {
+                            Image(systemName: showingAttendeePicker ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                        }
+                    }
+                    .padding(12)
+                    .background(fieldBackground)
+                    .cornerRadius(12)
+
+                    if showingAttendeePicker {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle(isOn: Binding(
+                                get: { selectEveryone },
+                                set: { isSelected in
+                                    selectEveryone = isSelected
+                                    if isSelected {
+                                        // Select all members and their calendars
+                                        selectedAttendees = Set(familyMembers.map { $0.objectID })
+                                        for member in familyMembers {
+                                            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar>,
+                                               let firstCal = memberCals.first,
+                                               let calendarID = firstCal.calendarID {
+                                                selectedMemberCalendars[member.objectID] = calendarID
+                                            }
+                                        }
+                                    } else {
+                                        selectedAttendees.removeAll()
+                                        selectedMemberCalendars.removeAll()
+                                    }
+                                }
+                            )) {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(accentColor.opacity(0.9))
+                                        .frame(width: 32, height: 32)
+                                        .overlay(Text("👥").font(.system(size: 18)))
+                                    Text("Everyone")
+                                        .font(.system(size: 16, weight: .regular))
+                                        .foregroundColor(primaryTextColor)
+                                }
+                            }
+                            .tint(accentColor)
+
+                            if !selectEveryone {
+                                ForEach(familyMembers, id: \.objectID) { member in
+                                    Toggle(isOn: Binding(
+                                        get: { selectedAttendees.contains(member.objectID) },
+                                        set: { isSelected in
+                                            if isSelected {
+                                                selectedAttendees.insert(member.objectID)
+                                                // Auto-select the member's first calendar
+                                                if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar>,
+                                                   let firstCal = memberCals.first,
+                                                   let calendarID = firstCal.calendarID {
+                                                    selectedMemberCalendars[member.objectID] = calendarID
+                                                }
+                                            } else {
+                                                selectedAttendees.remove(member.objectID)
+                                                selectedMemberCalendars.removeValue(forKey: member.objectID)
+                                            }
+                                        }
+                                    )) {
+                                        HStack(spacing: 12) {
+                                            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar>,
+                                               let firstCal = memberCals.first,
+                                               let colorHex = firstCal.calendarColorHex {
+                                                Circle()
+                                                    .fill(Color.fromHex(colorHex))
+                                                    .frame(width: 12, height: 12)
+                                            } else {
+                                                Circle()
+                                                    .fill(Color.fromHex(member.colorHex ?? "#555555"))
+                                                    .frame(width: 12, height: 12)
+                                            }
+                                            Text(member.name ?? "Unknown")
+                                                .font(.system(size: 16, weight: .regular))
+                                                .foregroundColor(primaryTextColor)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(fieldBackground)
+                        .cornerRadius(12)
                     }
                 }
             }
