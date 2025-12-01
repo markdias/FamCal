@@ -22,6 +22,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
     private var isSubscribed = false
     private var receiveTask: Task<Void, Never>?
     private var isWebSocketConnected = false
+    private var currentAccessToken: String?
 
     enum RealtimeSyncStatus: Equatable {
         case connected
@@ -64,6 +65,9 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         // Disconnect existing connection
         await disconnect()
 
+        // Store the access token for RLS authorization
+        self.currentAccessToken = accessToken
+
         print("ℹ️ Subscribing to family activities for family: \(familyId), user: \(userId)")
         print("🔗 Supabase URL: \(supabaseURL)")
 
@@ -72,11 +76,11 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
 
-        // Use JWT token for authentication if available, otherwise fall back to anon key
-        let authKey = accessToken ?? anonKey
-        let authKeyDisplay = accessToken != nil ? "JWT" : "anonKey"
-        let realtimeURL = "\(wsURL)/realtime/v1?apikey=\(authKey)"
-        print("🔗 WebSocket URL: \(realtimeURL.prefix(50))...apikey=*** (auth: \(authKeyDisplay))")
+        // For Supabase Realtime, use the anonymous key in the URL
+        // JWT token should be passed via the payload after connection is established
+        let realtimeURL = "\(wsURL)/realtime/v1?apikey=\(anonKey)"
+        print("🔗 WebSocket URL: \(realtimeURL.prefix(50))...apikey=***")
+        print("🔐 Using JWT token for RLS authorization (will be sent after connection)")
 
         guard let url = URL(string: realtimeURL) else {
             print("❌ Failed to create URL from: \(realtimeURL)")
@@ -134,18 +138,25 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("🔄 Preparing subscription message...")
 
         // Build subscription message according to Supabase Realtime protocol v1
-        // Filter by family_id to only receive changes for the current family
+        // Include JWT token for RLS authorization
+        var payload: [String: Any] = [
+            "schema": "public",
+            "table": "family_activity_log",
+            "configs": [
+                "scope": "postgres_changes",
+                "filter": "family_id=eq.\(familyId)"
+            ]
+        ]
+
+        // Add access token if available for RLS authorization
+        if let token = currentAccessToken {
+            payload["access_token"] = token
+        }
+
         let subscriptionPayload: [String: Any] = [
             "type": "subscribe",
             "id": "1",
-            "payload": [
-                "schema": "public",
-                "table": "family_activity_log",
-                "configs": [
-                    "scope": "postgres_changes",
-                    "filter": "family_id=eq.\(familyId)"
-                ]
-            ]
+            "payload": payload
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: subscriptionPayload),
