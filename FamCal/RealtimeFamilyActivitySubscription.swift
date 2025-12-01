@@ -255,6 +255,30 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
     }
 
+    // MARK: - Helper Functions
+
+    /// Execute an async operation with a timeout
+    private func withTimeoutSeconds<T>(_ seconds: Int, operation: @escaping () async throws -> T) async -> T? {
+        try? await withThrowingTaskGroup(of: T.self) { group in
+            // Start the actual operation
+            group.addTask {
+                try await operation()
+            }
+
+            // Start a timeout task
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+                throw URLError(.timedOut)
+            }
+
+            // Return first result (either success or timeout)
+            for try await result in group {
+                return result
+            }
+            return nil
+        }
+    }
+
     // MARK: - WebSocket Message Handling
 
     private func receiveMessages(familyId: String) async {
@@ -265,16 +289,36 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
 
         print("✅ Starting message receive loop")
+        print("📌 WebSocket state: checking if connection is open...")
 
         var messageCount = 0
         var isFirstConnection = true
         var consecutiveErrors = 0
         let maxInitialRetries = 10 // Give up after 10 attempts on initial connection
+        var totalAttempts = 0
 
         while !Task.isCancelled {
             do {
-                print("👂 Listening for WebSocket messages... (count: \(messageCount))")
-                let message = try await webSocket.receive()
+                totalAttempts += 1
+                print("👂 Listening for WebSocket messages... (count: \(messageCount), attempt: \(totalAttempts))")
+                print("   ⏱️ About to call webSocket.receive() with timeout...")
+
+                // Add timeout to detect hanging connections
+                let receiveTask = Task {
+                    try await webSocket.receive()
+                }
+
+                // Wait with timeout (10 seconds per receive attempt)
+                let result = await withTimeoutSeconds(10) {
+                    try await receiveTask.value
+                }
+
+                guard let message = result else {
+                    print("❌ webSocket.receive() timed out after 10 seconds")
+                    throw URLError(.timedOut)
+                }
+
+                print("   ✅ webSocket.receive() returned successfully")
                 messageCount += 1
                 consecutiveErrors = 0 // Reset error count on successful receive
                 isFirstConnection = false
