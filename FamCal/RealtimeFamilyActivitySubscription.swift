@@ -114,19 +114,21 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("⏳ WebSocket connection initiated (resuming)")
         updateStatus(.syncing)
 
+        // Start receiving messages immediately to keep the WebSocket alive
+        // We'll handle subscription after we confirm the connection works
+        print("📌 Starting receiveMessages task immediately...")
+        receiveTask = Task {
+            await receiveMessages(familyId: familyId)
+        }
+
         // Subscribe to the table after connection is verified
         // Wait longer to ensure Supabase Realtime server handshake is complete
-        print("📌 Scheduling subscription task with 3 second delay...")
+        print("📌 Scheduling subscription task with 1 second delay...")
         Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 second delay for full handshake
+            print("⏳ Waiting 1 second for WebSocket to be ready...")
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+            print("✅ Calling subscribeToTable...")
             await subscribeToTable(familyId: familyId)
-
-            // IMPORTANT: Only start receiving messages AFTER subscription is sent
-            // This ensures the WebSocket is fully ready
-            print("📌 Starting receiveMessages task...")
-            self.receiveTask = Task {
-                await self.receiveMessages(familyId: familyId)
-            }
         }
     }
 
@@ -247,8 +249,6 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
 
         print("✅ Starting message receive loop")
-        self.isWebSocketConnected = true
-        updateStatus(.syncing)
 
         var messageCount = 0
 
@@ -274,15 +274,27 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                 }
             } catch {
                 if !Task.isCancelled {
-                    print("❌ WebSocket receive error after \(messageCount) messages: \(error.localizedDescription)")
+                    let errorStr = error.localizedDescription
+                    print("❌ WebSocket receive error after \(messageCount) messages: \(errorStr)")
                     print("🔍 Error type: \(type(of: error))")
-                    print("🔍 NSError details: \((error as NSError).userInfo)")
-                    self.isWebSocketConnected = false
-                    updateStatus(.error("Connection lost: \(error.localizedDescription)"))
 
-                    // Wait before retrying
-                    print("⏳ Waiting 5 seconds before reconnect attempt...")
-                    try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 second retry delay
+                    // Check if it's a "not connected" error - these are expected during initial connection
+                    if errorStr.contains("Socket is not connected") && messageCount == 0 {
+                        print("⏳ Socket not yet connected (expected), retrying in 1 second...")
+                        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second retry for initial connection
+                    } else {
+                        print("🔍 NSError details: \((error as NSError).userInfo)")
+                        self.isWebSocketConnected = false
+                        if messageCount == 0 {
+                            updateStatus(.error("Failed to connect: \(errorStr)"))
+                        } else {
+                            updateStatus(.error("Connection lost: \(errorStr)"))
+                        }
+
+                        // Wait before retrying
+                        print("⏳ Waiting 5 seconds before reconnect attempt...")
+                        try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 second retry delay
+                    }
                 } else {
                     print("ℹ️ WebSocket receive task cancelled after \(messageCount) messages")
                     break
