@@ -46,7 +46,7 @@ SELECT
     p.pubname,
     c.relname as table_name
 FROM pg_publication p
-JOIN pg_publication_rel pr ON p.oid = pr.prpublic
+JOIN pg_publication_rel pr ON p.oid = pr.prpubid
 JOIN pg_class c ON pr.prrelid = c.oid
 WHERE p.pubname = 'supabase_realtime'
 AND c.relname = 'family_activity_log';

@@ -39,7 +39,7 @@ SELECT
     p.pubname,
     r.relname as table_name
 FROM pg_publication p
-JOIN pg_publication_rel pr ON p.oid = pr.prpublic
+JOIN pg_publication_rel pr ON p.oid = pr.prpubid
 JOIN pg_class r ON pr.prrelid = r.oid
 WHERE p.pubname = 'supabase_realtime';
 ```
@@ -191,7 +191,7 @@ SELECT
     c.relname as table_name,
     c.relreplident as replica_identity
 FROM pg_publication p
-JOIN pg_publication_rel pr ON p.oid = pr.prpublic
+JOIN pg_publication_rel pr ON p.oid = pr.prpubid
 JOIN pg_class c ON pr.prrelid = c.oid
 JOIN pg_namespace n ON c.relnamespace = n.oid
 WHERE p.pubname = 'supabase_realtime'
