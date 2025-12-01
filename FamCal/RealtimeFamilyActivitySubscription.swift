@@ -17,6 +17,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
 
     private let supabaseURL: String
     private let anonKey: String
+    private var urlSession: URLSession?
     private var webSocket: URLSessionWebSocketTask?
     private var isSubscribed = false
     private var receiveTask: Task<Void, Never>?
@@ -74,8 +75,14 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             return
         }
 
+        // Create a URLSession that will persist for the lifetime of this connection
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 300
+        self.urlSession = URLSession(configuration: config)
+
         let request = URLRequest(url: url)
-        webSocket = URLSession.shared.webSocketTask(with: request)
+        webSocket = self.urlSession?.webSocketTask(with: request)
         webSocket?.resume()
 
         print("✅ WebSocket connection initiated")
@@ -134,6 +141,8 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         await MainActor.run {
             webSocket?.cancel(with: .goingAway, reason: nil)
             webSocket = nil
+            urlSession?.invalidateAndCancel()
+            urlSession = nil
             updateStatus(.disconnected)
         }
     }
