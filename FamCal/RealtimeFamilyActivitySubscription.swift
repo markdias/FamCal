@@ -114,18 +114,19 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("⏳ WebSocket connection initiated (resuming)")
         updateStatus(.syncing)
 
-        // Start receiving messages (this runs indefinitely)
-        print("📌 Starting receiveMessages task...")
-        receiveTask = Task {
-            await receiveMessages(familyId: familyId)
-        }
-
         // Subscribe to the table after connection is verified
         // Wait longer to ensure Supabase Realtime server handshake is complete
         print("📌 Scheduling subscription task with 3 second delay...")
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 second delay for full handshake
             await subscribeToTable(familyId: familyId)
+
+            // IMPORTANT: Only start receiving messages AFTER subscription is sent
+            // This ensures the WebSocket is fully ready
+            print("📌 Starting receiveMessages task...")
+            self.receiveTask = Task {
+                await self.receiveMessages(familyId: familyId)
+            }
         }
     }
 
@@ -174,6 +175,10 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             isSubscribed = true
             print("✅ Successfully sent subscription to family_activity_log table")
             print("👂 Waiting for subscription confirmation from server...")
+
+            // Wait a moment for the server to process the subscription
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
+
             updateStatus(.connected)
 
             // Start sending periodic keep-alive pings to maintain connection
