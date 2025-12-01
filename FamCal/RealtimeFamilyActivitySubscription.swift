@@ -24,6 +24,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
     private var isWebSocketConnected = false
     private var currentAccessToken: String?
     private var pingTask: Task<Void, Never>?
+    private var isWebSocketReadyForSubscription = false
 
     enum RealtimeSyncStatus: Equatable {
         case connected
@@ -114,20 +115,18 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("⏳ WebSocket connection initiated (resuming)")
         updateStatus(.syncing)
 
-        // Wait a moment for the initial WebSocket handshake before starting to receive
-        print("📌 Waiting 2 seconds for WebSocket handshake before starting receive...")
+        // Start receiving messages immediately to keep the WebSocket alive
+        // This MUST happen before subscription or the connection won't stay open
+        print("📌 Starting receiveMessages task (must run before subscription)...")
+        self.receiveTask = Task {
+            await self.receiveMessages(familyId: familyId)
+        }
+
+        // Subscribe to the table after initial receive is running
+        // This gives the WebSocket time to handshake and be ready
+        print("📌 Waiting 3 seconds for WebSocket handshake before subscribing...")
         Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second initial handshake delay
-
-            // Start receiving messages to keep the WebSocket alive
-            print("📌 Starting receiveMessages task after handshake delay...")
-            self.receiveTask = Task {
-                await self.receiveMessages(familyId: familyId)
-            }
-
-            // Subscribe to the table after connection is verified
-            print("📌 Waiting additional 1 second before subscription...")
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 more second
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 second handshake delay
             print("✅ Calling subscribeToTable...")
             await subscribeToTable(familyId: familyId)
         }
@@ -141,6 +140,22 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
 
         print("🔄 Preparing subscription message...")
+
+        // Wait until WebSocket is actually ready (received initial message)
+        var waitCount = 0
+        while !self.isWebSocketReadyForSubscription && waitCount < 20 {
+            print("⏳ Waiting for WebSocket to be ready... (attempt \(waitCount + 1)/20)")
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+            waitCount += 1
+        }
+
+        if !self.isWebSocketReadyForSubscription {
+            print("❌ WebSocket did not become ready for subscription")
+            updateStatus(.error("WebSocket failed to establish - see logs for details"))
+            return
+        }
+
+        print("✅ WebSocket is ready! Sending subscription...")
 
         // Build subscription message according to Supabase Realtime protocol v1
         // Include JWT token for RLS authorization
@@ -268,6 +283,11 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                 case .string(let text):
                     print("📨 [\(messageCount)] Received string message (\(text.count) chars)")
                     print("   Content: \(text.prefix(200))...")
+                    // Mark that WebSocket is ready for subscription after first message
+                    if messageCount == 1 {
+                        self.isWebSocketReadyForSubscription = true
+                        print("✅ WebSocket is ready for subscription (received initial message)")
+                    }
                     await handleMessage(text, familyId: familyId)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
