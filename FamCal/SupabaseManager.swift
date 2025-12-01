@@ -1359,13 +1359,18 @@ class SupabaseManager: @unchecked Sendable {
             let longitude: Double
         }
 
+        print("ℹ️ Creating saved address: \(name)")
+
         // Resolve family_id for shared visibility
         let familyId: String
         if let profile = try? await getProfile(userId: userId, token: token), let fid = profile.family_id {
+            print("ℹ️ Got family_id from profile: \(fid)")
             familyId = fid
         } else if let family = try? await getCurrentFamily(token: token) {
+            print("ℹ️ Got family_id from getCurrentFamily: \(family.id)")
             familyId = family.id
         } else {
+            print("❌ Failed to resolve family_id - no family found on profile or currentFamily")
             throw NSError(domain: "CreateSavedAddress", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id on profile"])
         }
 
@@ -1379,12 +1384,16 @@ class SupabaseManager: @unchecked Sendable {
         )
 
         let userToken = token ?? authManager.accessToken
+        print("ℹ️ Posting saved address to Supabase: userId=\(userId), familyId=\(familyId), name=\(name), address=\(address)")
         let (data, statusCode) = try await makeRequest("POST", path: "rest/v1/saved_addresses", body: body, userToken: userToken)
 
         guard statusCode == 201 else {
+            print("❌ CreateSavedAddress failed with status \(statusCode)")
             logErrorResponse(data, statusCode: statusCode, operation: "createSavedAddress")
             throw NSError(domain: "CreateSavedAddress", code: statusCode)
         }
+
+        print("✅ Saved address created successfully in Supabase")
     }
 
     func deleteSavedAddress(id: String, token: String? = nil) async throws {
@@ -1532,6 +1541,105 @@ class SupabaseManager: @unchecked Sendable {
 
         print("❌ UpsertCalendarEventMetadata failed with status \(statusCode)")
         throw NSError(domain: "UpsertCalendarEventMetadata", code: statusCode)
+    }
+
+    // MARK: - Family Activity Log
+
+    /// Fetch recent family activity log entries
+    func getFamilyActivityLog(
+        familyId: String,
+        limit: Int = 20,
+        token: String? = nil
+    ) async throws -> [FamilyActivityDTO] {
+        let userToken = token ?? authManager.accessToken
+
+        let queryItems = [
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "order", value: "created_at.desc"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/family_activity_log",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getFamilyActivityLog")
+            throw NSError(domain: "GetFamilyActivityLog", code: statusCode)
+        }
+
+        let activities = try JSONDecoder().decode([FamilyActivityDTO].self, from: data)
+        print("✅ Fetched \(activities.count) family activities")
+        return activities
+    }
+
+    /// Fetch family activities within a date range
+    func getFamilyActivityLogInRange(
+        familyId: String,
+        startDate: Date,
+        endDate: Date,
+        token: String? = nil
+    ) async throws -> [FamilyActivityDTO] {
+        let userToken = token ?? authManager.accessToken
+
+        let isoFormatter = ISO8601DateFormatter()
+        let startDateStr = isoFormatter.string(from: startDate)
+        let endDateStr = isoFormatter.string(from: endDate)
+
+        let queryItems = [
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "created_at", value: "gte.\(startDateStr)"),
+            URLQueryItem(name: "created_at", value: "lte.\(endDateStr)"),
+            URLQueryItem(name: "order", value: "created_at.desc")
+        ]
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/family_activity_log",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getFamilyActivityLogInRange")
+            throw NSError(domain: "GetFamilyActivityLogInRange", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([FamilyActivityDTO].self, from: data)
+    }
+
+    /// Fetch activities for a specific action type
+    func getFamilyActivitiesByType(
+        familyId: String,
+        actionType: String,
+        limit: Int = 20,
+        token: String? = nil
+    ) async throws -> [FamilyActivityDTO] {
+        let userToken = token ?? authManager.accessToken
+
+        let queryItems = [
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "action_type", value: "eq.\(actionType)"),
+            URLQueryItem(name: "order", value: "created_at.desc"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/family_activity_log",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getFamilyActivitiesByType")
+            throw NSError(domain: "GetFamilyActivitiesByType", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([FamilyActivityDTO].self, from: data)
     }
 }
 
@@ -1687,6 +1795,106 @@ struct SavedAddressDTO: Codable {
         case longitude
         case created_at
         case updated_at
+    }
+}
+
+struct FamilyActivityDTO: Codable, Identifiable {
+    let id: String
+    let family_id: String
+    let action_by_user_id: String
+    let action_by_member_id: String?
+    let action_type: String
+    let action_subject_id: String
+    let action_subject_type: String
+    let subject_name: String
+    let action_details: [String: AnyCodable]?
+    let created_at: String
+    let updated_at: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case family_id
+        case action_by_user_id
+        case action_by_member_id
+        case action_type
+        case action_subject_id
+        case action_subject_type
+        case subject_name
+        case action_details
+        case created_at
+        case updated_at
+    }
+
+    /// Generate human-readable activity summary
+    var actionSummary: String {
+        let actor = action_by_member_id ?? "Family member"
+
+        switch action_type {
+        case "member_added":
+            return "\(actor) added \(subject_name) to Family"
+        case "member_edited":
+            return "\(actor) updated \(subject_name)'s info"
+        case "member_deleted":
+            return "\(actor) removed \(subject_name) from Family"
+        case "member_linked":
+            return "\(subject_name) linked their account"
+        case "driver_created":
+            return "New driver: \(subject_name)"
+        case "driver_updated":
+            return "\(actor) updated \(subject_name)'s info"
+        case "driver_deleted":
+            return "\(actor) removed driver \(subject_name)"
+        case "address_added":
+            return "\(actor) saved location: \(subject_name)"
+        case "address_updated":
+            return "\(actor) updated location: \(subject_name)"
+        case "address_deleted":
+            return "\(actor) removed location: \(subject_name)"
+        case "calendar_shared":
+            return "\(actor) shared \(subject_name) calendar"
+        case "calendar_removed":
+            return "\(actor) removed \(subject_name) calendar"
+        default:
+            return "\(actor) \(action_type.replacingOccurrences(of: "_", with: " "))"
+        }
+    }
+
+    /// Get appropriate icon for this activity
+    var iconName: String {
+        switch action_type {
+        case "member_added", "member_linked":
+            return "person.badge.plus"
+        case "member_edited":
+            return "pencil.circle"
+        case "member_deleted":
+            return "person.badge.minus"
+        case "driver_created", "driver_updated":
+            return "car.fill"
+        case "driver_deleted":
+            return "car.badge.xmark"
+        case "address_added", "address_updated":
+            return "location.fill"
+        case "address_deleted":
+            return "location.slash"
+        case "calendar_shared":
+            return "calendar.badge.plus"
+        case "calendar_removed":
+            return "calendar.badge.minus"
+        default:
+            return "info.circle"
+        }
+    }
+
+    /// Get color for this activity type
+    var tintColor: String {
+        switch action_type {
+        case "member_added", "member_linked", "driver_created", "address_added", "calendar_shared":
+            return "green"
+        case "member_deleted", "driver_deleted", "address_deleted", "calendar_removed":
+            return "red"
+        default:
+            return "blue"
+        }
     }
 }
 

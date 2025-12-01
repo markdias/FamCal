@@ -297,6 +297,130 @@ struct NotificationSettingsView: View {
                                     }
                                 }
                             }
+
+                            // Family Activity Notifications Section
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Family Activity")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(secondaryTextColor)
+                                    .padding(.horizontal, 16)
+
+                                settingsContainer {
+                                    VStack(spacing: 0) {
+                                        // Master toggle
+                                        HStack(spacing: 16) {
+                                            Image(systemName: "bell.badge.fill")
+                                                .font(.system(size: 20))
+                                                .foregroundColor(theme.accentColor)
+                                                .frame(width: 24, height: 24)
+
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Family Updates")
+                                                    .font(.system(size: 16, weight: .medium))
+                                                    .foregroundColor(primaryTextColor)
+
+                                                Text("Get notified when family makes changes")
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(secondaryTextColor)
+                                            }
+
+                                            Spacer()
+
+                                            Toggle("", isOn: Binding(
+                                                get: { appSettingsManager.familyActivityNotificationsEnabled },
+                                                set: { value in
+                                                    appSettingsManager.familyActivityNotificationsEnabled = value
+                                                    Task { await appSettingsManager.saveSettings() }
+                                                }
+                                            ))
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+
+                                        if appSettingsManager.familyActivityNotificationsEnabled {
+                                            Divider().padding(.leading, 56)
+
+                                            // Member changes
+                                            activityTypeToggle(
+                                                icon: "person.fill",
+                                                title: "Member Changes",
+                                                subtitle: "When members are added or edited",
+                                                binding: Binding(
+                                                    get: { appSettingsManager.notifyOnMemberChanges },
+                                                    set: { value in
+                                                        appSettingsManager.notifyOnMemberChanges = value
+                                                        Task { await appSettingsManager.saveSettings() }
+                                                    }
+                                                )
+                                            )
+
+                                            Divider().padding(.leading, 56)
+
+                                            // Driver changes
+                                            activityTypeToggle(
+                                                icon: "car.fill",
+                                                title: "Driver Updates",
+                                                subtitle: "When driver info changes",
+                                                binding: Binding(
+                                                    get: { appSettingsManager.notifyOnDriverChanges },
+                                                    set: { value in
+                                                        appSettingsManager.notifyOnDriverChanges = value
+                                                        Task { await appSettingsManager.saveSettings() }
+                                                    }
+                                                )
+                                            )
+
+                                            Divider().padding(.leading, 56)
+
+                                            // Location changes
+                                            activityTypeToggle(
+                                                icon: "location.fill",
+                                                title: "Location Changes",
+                                                subtitle: "When addresses are saved",
+                                                binding: Binding(
+                                                    get: { appSettingsManager.notifyOnLocationChanges },
+                                                    set: { value in
+                                                        appSettingsManager.notifyOnLocationChanges = value
+                                                        Task { await appSettingsManager.saveSettings() }
+                                                    }
+                                                )
+                                            )
+
+                                            Divider().padding(.leading, 56)
+
+                                            // Calendar changes
+                                            activityTypeToggle(
+                                                icon: "calendar.fill",
+                                                title: "Calendar Changes",
+                                                subtitle: "When calendars are shared",
+                                                binding: Binding(
+                                                    get: { appSettingsManager.notifyOnCalendarChanges },
+                                                    set: { value in
+                                                        appSettingsManager.notifyOnCalendarChanges = value
+                                                        Task { await appSettingsManager.saveSettings() }
+                                                    }
+                                                )
+                                            )
+
+                                            Divider().padding(.leading, 56)
+
+                                            // Online status (optional)
+                                            activityTypeToggle(
+                                                icon: "circle.fill",
+                                                title: "Online Status",
+                                                subtitle: "When members come online (optional)",
+                                                binding: Binding(
+                                                    get: { appSettingsManager.notifyOnPresenceChanges },
+                                                    set: { value in
+                                                        appSettingsManager.notifyOnPresenceChanges = value
+                                                        Task { await appSettingsManager.saveSettings() }
+                                                    }
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         Spacer()
@@ -503,6 +627,36 @@ struct NotificationSettingsView: View {
             }
         }
         .padding(16)
+    }
+
+    private func activityTypeToggle(
+        icon: String,
+        title: String,
+        subtitle: String,
+        binding: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(theme.accentColor)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15))
+                    .foregroundColor(primaryTextColor)
+
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundColor(secondaryTextColor)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: binding)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func settingsContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {

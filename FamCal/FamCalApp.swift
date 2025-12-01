@@ -61,6 +61,8 @@ struct FamCalApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
     @StateObject private var appSettingsManager = AppSettingsManager.shared
+    @StateObject private var activityManager = FamilyActivityManager.shared
+    @StateObject private var realtimeActivitySubscription = RealtimeFamilyActivitySubscription()
     @Environment(\.scenePhase) private var scenePhase
     @State private var hasCompletedOnboarding: Bool = false
     @State private var deepLinkEventTitle: String?
@@ -165,234 +167,238 @@ struct FamCalApp: App {
         return true
     }
 
-    var body: some Scene {
-        WindowGroup {
-            SystemColorSchemeUpdater(themeManager: themeManager) {
-            Group {
-                // While session is being checked, show loading screen
-                if isCheckingSession {
-                    ZStack {
-                        Color(.systemBackground)
-                            .ignoresSafeArea()
-                        ProgressView()
-                    }
-                }
-                // Check if user is authenticated or guest
-                else if authManager.isAuthenticated || authManager.isGuest {
-                    // Check if family setup is needed for new users
-                    if isCheckingFamilySetup {
-                        ZStack {
-                            Color(.systemBackground)
-                                .ignoresSafeArea()
-                            ProgressView()
-                        }
-                    }
-                    // Show family setup flow for new users
-                    else if needsFamilySetup {
-                        FamilySetupFlow()
-                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                            .environmentObject(authManager)
-                            .environmentObject(dataManager)
-                            .environmentObject(appSettingsManager)
-                            .onAppear {
-                                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
-                                Task {
-                                    await appSettingsManager.loadSettings()
-                                }
-                            }
-                    }
-                    // If authenticated (non-guest) but calendars/family setup needed, block until ready
-                    else if authManager.isAuthenticated && !authManager.isGuest && !isCalendarCheckReady {
-                        NavigationView {
-                            CalendarGateView(
-                                status: $calendarCheckStatus,
-                                onRetry: { runCalendarCheck() },
-                                onLogout: { Task { try? await authManager.signOut() } },
-                                theme: themeManager.selectedTheme,
-                                familyMembers: dataManager.familyMembers
-                            )
-                        }
-                        .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                        .environmentObject(themeManager)
-                        .environmentObject(authManager)
-                        .environmentObject(dataManager)
-                        .environmentObject(appSettingsManager)
-                        .onAppear {
-                            print("📱 Calendar Gate View appearing")
-                            dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+    // MARK: - Content Views
 
-                            Task {
-                                await appSettingsManager.loadSettings()
-                                await dataManager.fetchUserData()
-                                print("✅ User data fetched. Family members: \(dataManager.familyMembers.count), Calendars: \(dataManager.familyMemberCalendars.count)")
-                                // Only run calendar check if not already in ready state (avoid re-running on app resume)
-                                await MainActor.run {
-                                    if case .unknown = calendarCheckStatus {
-                                        runCalendarCheck()
-                                        print("📊 Calendar check status: running check")
-                                    } else {
-                                        print("📊 Calendar check already completed or loaded - skipping re-check")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // For authenticated users or returning guests with completed onboarding, go straight to main app
-                    // Skip onboarding entirely if data exists (family members or shared calendars)
-                    else if hasCompletedOnboarding || userHasExistingData(persistenceController) {
-                        MainTabView()
-                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                            .environmentObject(themeManager)
-                            .environmentObject(authManager)
-                            .environmentObject(dataManager)
-                            .environmentObject(appSettingsManager)
-                            .onAppear {
-                                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
-                                Task {
-                                    await appSettingsManager.loadSettings()
-                                }
-                            }
-                    } else {
-                        // Only show onboarding for brand new users with no existing data
-                        OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
-                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                            .environmentObject(themeManager)
-                            .environmentObject(authManager)
-                            .environmentObject(dataManager)
-                            .environmentObject(appSettingsManager)
-                            .onAppear {
-                                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
-                                Task {
-                                    await appSettingsManager.loadSettings()
-                                }
-                            }
-                    }
-                } else {
-                    // User not authenticated and not guest
-                    if hasCompletedOnboarding {
-                        // Show login after onboarding is completed
-                        LoginView()
-                            .environmentObject(authManager)
-                            .environmentObject(themeManager)
-                    } else {
-                        // Always show startup flow first on fresh installs
-                        OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
-                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                            .environmentObject(themeManager)
-                            .environmentObject(authManager)
-                            .environmentObject(dataManager)
-                            .environmentObject(appSettingsManager)
+    @ViewBuilder
+    private var contentView: some View {
+        Group {
+            if isCheckingSession {
+                loadingView
+            } else if authManager.isAuthenticated || authManager.isGuest {
+                authenticatedOrGuestView
+            } else {
+                unauthenticatedView
+            }
+        }
+        .onChange(of: authManager.isAuthenticated, handleAuthenticationChange)
+        .onChange(of: authManager.isGuest) { oldValue, newValue in
+            if !isFirstLoad && oldValue != newValue {
+                hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+                print("ℹ️ Guest mode change - onboarding flag: \(hasCompletedOnboarding)")
+            }
+        }
+        .onChange(of: calendarCheckStatus) { _, _ in
+            saveCalendarCheckStatus()
+        }
+        .onAppear {
+            AppDelegate.quickActionHandler = { shortcutItem in
+                self.handleQuickAction(shortcutItem)
+            }
+            isFirstLoad = false
+            previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
+            NotificationManager.shared.ensureMorningBriefScheduled()
+
+            // Stop loading screen if session check is complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isCheckingSession = false
+            }
+
+            if authManager.isAuthenticated && !authManager.isGuest {
+                Task {
+                    let isValid = await authManager.validateSessionOnAppLaunch()
+                    if !isValid {
+                        print("⚠️ Session validation failed on app launch - user may need to re-authenticate")
                     }
                 }
             }
-            .preferredColorScheme(themeManager.preferredColorScheme)
-            .sheet(isPresented: $showResetPasswordSheet) {
-                ResetPasswordSheet(email: resetPasswordEmail)
-                    .environmentObject(authManager)
-                    .environmentObject(themeManager)
-            }
-            .onOpenURL(perform: handleDeepLink(_:))
-            .onChange(of: scenePhase) { _, phase in
-                print("📱 ScenePhase changed to: \(phase)")
-                if phase == .active {
-                    print("🔄 App became active - calling resetStore()")
-                    CalendarManager.shared.resetStore()
-                    // NOTE: We only reset the EventKit store here. Data syncing happens via:
-                    // 1. Automatic refresh timer (set by AppSettingsManager)
-                    // 2. Manual pull-to-refresh in calendar views
-                    // 3. Initial app load and after user actions (adding/editing calendars)
-                    // This avoids unnecessary Supabase fetches on every app resume.
-                }
-            }
-            .onChange(of: authManager.isAuthenticated) { oldValue, newValue in
-                // Only handle actual state changes, not first load
-                if !isFirstLoad && oldValue != newValue {
-                    if newValue {
-                        // User just logged in
-                        // If transitioning from guest to authenticated, clear guest family setup
-                        if previousAuthState?.isGuest == true && !authManager.isGuest {
-                            print("🔄 Transitioning from guest to authenticated user - resetting family setup")
-                            UserDefaults.standard.set(false, forKey: "hasCompletedFamilySetup")
-                            UserDefaults.standard.removeObject(forKey: "com.famcal.familyId")
-                            needsFamilySetup = true
-                            // Note: Guest CoreData family members will be overwritten by auth user's data
-                        }
-                        previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
-                    } else {
-                        // User just logged out - only reset state variables, not the device-level flag
-                        // (calendar check should only run once per device)
-                        calendarCheckStatus = .unknown
-                        previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
-                    }
-                }
-            }
-            .onChange(of: authManager.isGuest) { oldValue, newValue in
-                // Only handle actual state changes, not first load
-                if !isFirstLoad && oldValue != newValue {
-                    hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-                    print("ℹ️ Guest mode change - onboarding flag: \(hasCompletedOnboarding)")
-                }
-            }
-            .onChange(of: calendarCheckStatus) { _, _ in
-                // Persist calendar check status when it changes
-                saveCalendarCheckStatus()
-            }
+        }
+    }
+
+    @ViewBuilder
+    private var loadingView: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+            ProgressView()
+        }
+    }
+
+    @ViewBuilder
+    private var authenticatedOrGuestView: some View {
+        if isCheckingFamilySetup {
+            loadingView
+        } else if needsFamilySetup {
+            familySetupView
+        } else if authManager.isAuthenticated && !authManager.isGuest && !isCalendarCheckReady {
+            calendarGateView
+        } else if hasCompletedOnboarding || userHasExistingData(persistenceController) {
+            mainTabView
+        } else {
+            onboardingView
+        }
+    }
+
+    @ViewBuilder
+    private var unauthenticatedView: some View {
+        if hasCompletedOnboarding {
+            LoginView()
+                .environmentObject(authManager)
+                .environmentObject(themeManager)
+        } else {
+            onboardingView
+        }
+    }
+
+    private var familySetupView: some View {
+        FamilySetupFlow()
+            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            .environmentObject(authManager)
+            .environmentObject(dataManager)
+            .environmentObject(appSettingsManager)
             .onAppear {
-                // Set up quick action handler
-                AppDelegate.quickActionHandler = { shortcutItem in
-                    self.handleQuickAction(shortcutItem)
+                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                Task {
+                    await appSettingsManager.loadSettings()
                 }
+            }
+    }
 
-                // Mark first load as complete after initial render
-                isFirstLoad = false
-                previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
-
-                // Ensure morning brief is scheduled on app launch
-                NotificationManager.shared.ensureMorningBriefScheduled()
-
-                // Validate session on app launch if user is authenticated
-                if authManager.isAuthenticated && !authManager.isGuest {
-                    Task {
-                        let isValid = await authManager.validateSessionOnAppLaunch()
-                        if !isValid {
-                            print("⚠️ Session validation failed on app launch - user may need to re-authenticate")
-                        }
+    private var calendarGateView: some View {
+        NavigationView {
+            CalendarGateView(
+                status: $calendarCheckStatus,
+                onRetry: { runCalendarCheck() },
+                onLogout: { Task { try? await authManager.signOut() } },
+                theme: themeManager.selectedTheme,
+                familyMembers: dataManager.familyMembers
+            )
+        }
+        .environment(\.managedObjectContext, persistenceController.container.viewContext)
+        .environmentObject(themeManager)
+        .environmentObject(authManager)
+        .environmentObject(dataManager)
+        .environmentObject(appSettingsManager)
+        .onAppear {
+            print("📱 Calendar Gate View appearing")
+            dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+            Task {
+                await appSettingsManager.loadSettings()
+                await dataManager.fetchUserData()
+                print("✅ User data fetched. Family members: \(dataManager.familyMembers.count), Calendars: \(dataManager.familyMemberCalendars.count)")
+                await MainActor.run {
+                    if case .unknown = calendarCheckStatus {
+                        runCalendarCheck()
+                        print("📊 Calendar check status: running check")
+                    } else {
+                        print("📊 Calendar check already completed or loaded - skipping re-check")
                     }
                 }
+            }
+        }
+    }
 
-                // Stop showing loading screen after a short delay to allow session check to complete
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    isCheckingSession = false
+    private var mainTabView: some View {
+        MainTabView()
+            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            .environmentObject(themeManager)
+            .environmentObject(authManager)
+            .environmentObject(dataManager)
+            .environmentObject(appSettingsManager)
+            .environmentObject(activityManager)
+            .onAppear {
+                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                Task {
+                    await appSettingsManager.loadSettings()
                 }
             }
             .onChange(of: authManager.isAuthenticated) { _, newValue in
-                // Session changed, stop loading
-                isCheckingSession = false
-                // Check family setup when user authenticates
-                if newValue {
-                    checkFamilySetupNeeded()
-                } else {
-                    needsFamilySetup = false
+                if newValue, let userId = authManager.userId, (appSettingsManager.familyId?.isEmpty ?? true) == false {
+                    Task { @MainActor in
+                        print("📡 Setting up family activity Realtime subscription...")
+                        await realtimeActivitySubscription.subscribeToFamilyActivities(
+                            familyId: appSettingsManager.familyId ?? "",
+                            userId: userId
+                        )
+                        realtimeActivitySubscription.onActivityCreated = { activity in
+                            print("🔔 Activity received via Realtime: \(activity.actionSummary)")
+                            activityManager.handleNewActivity(activity)
+                        }
+                    }
                 }
             }
-            .onChange(of: authManager.isGuest) { _, newValue in
-                // Session changed, stop loading
-                isCheckingSession = false
-                if newValue {
-                    calendarCheckStatus = .ready
-                    // Check family setup for guest users
-                    checkFamilySetupNeeded()
-                } else {
-                    needsFamilySetup = false
+    }
+
+    private var onboardingView: some View {
+        OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
+            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+            .environmentObject(themeManager)
+            .environmentObject(authManager)
+            .environmentObject(dataManager)
+            .environmentObject(appSettingsManager)
+            .onAppear {
+                dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                Task {
+                    await appSettingsManager.loadSettings()
                 }
             }
-            .onChange(of: appSettingsManager.hasCompletedFamilySetup) { _, newValue in
-                // When family setup completes, dismiss the setup flow
-                if newValue {
-                    print("✅ Family setup completion detected - dismissing setup flow")
-                    needsFamilySetup = false
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            SystemColorSchemeUpdater(themeManager: themeManager) {
+                contentView
+                    .preferredColorScheme(themeManager.preferredColorScheme)
+                    .sheet(isPresented: $showResetPasswordSheet) {
+                        ResetPasswordSheet(email: resetPasswordEmail)
+                            .environmentObject(authManager)
+                            .environmentObject(themeManager)
+                    }
+                    .onOpenURL(perform: handleDeepLink(_:))
+                    .onChange(of: scenePhase, handleScenePhaseChange)
+            }
+        }
+    }
+
+    // MARK: - Event Handlers
+
+    private func handleScenePhaseChange(_ oldValue: ScenePhase, _ newValue: ScenePhase) {
+        print("📱 ScenePhase changed to: \(newValue)")
+        if newValue == .active {
+            print("🔄 App became active - calling resetStore()")
+            CalendarManager.shared.resetStore()
+
+            if authManager.isAuthenticated, let userId = authManager.userId, (appSettingsManager.familyId?.isEmpty ?? true) == false {
+                Task { @MainActor in
+                    print("📡 Re-establishing family activity Realtime subscription on app resume...")
+                    await realtimeActivitySubscription.subscribeToFamilyActivities(
+                        familyId: appSettingsManager.familyId ?? "",
+                        userId: userId
+                    )
                 }
             }
+        } else if newValue == .background {
+            print("🌙 App going to background - maintaining Realtime connection")
+        }
+    }
+
+    private func handleAuthenticationChange(_ oldValue: Bool, _ newValue: Bool) {
+        if !isFirstLoad && oldValue != newValue {
+            if newValue {
+                if previousAuthState?.isGuest == true && !authManager.isGuest {
+                    print("🔄 Transitioning from guest to authenticated user - resetting family setup")
+                    UserDefaults.standard.set(false, forKey: "hasCompletedFamilySetup")
+                    UserDefaults.standard.removeObject(forKey: "com.famcal.familyId")
+                    needsFamilySetup = true
+                }
+                previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
+            } else {
+                calendarCheckStatus = .unknown
+                previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
+                Task {
+                    print("🔌 Disconnecting from Realtime and clearing activity data...")
+                    await realtimeActivitySubscription.disconnect()
+                    activityManager.clearActivities()
+                }
             }
         }
     }

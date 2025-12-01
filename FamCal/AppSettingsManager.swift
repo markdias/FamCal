@@ -33,6 +33,15 @@ class AppSettingsManager: ObservableObject {
     @Published var morningBriefNotificationSound: String = "default" // "default", "none", custom sound
     @Published var notificationHistoryEnabled: Bool = true
 
+    // Family Activity Notifications
+    @Published var familyActivityNotificationsEnabled: Bool = true
+    @Published var notifyOnMemberChanges: Bool = true
+    @Published var notifyOnDriverChanges: Bool = true
+    @Published var notifyOnLocationChanges: Bool = true
+    @Published var notifyOnCalendarChanges: Bool = true
+    @Published var notifyOnPresenceChanges: Bool = false // opt-in, can be frequent
+    @Published var familyActivityNotificationSound: String = "default"
+
     // Widget Settings
     @Published var widgetShowEventsCount: Int = 3
     @Published var widgetShowOwnCalendarsOnly: Bool = false
@@ -72,6 +81,13 @@ class AppSettingsManager: ObservableObject {
         "morningBriefSelectedMembers",
         "morningBriefNotificationSound",
         "notificationHistoryEnabled",
+        "familyActivityNotificationsEnabled",
+        "notifyOnMemberChanges",
+        "notifyOnDriverChanges",
+        "notifyOnLocationChanges",
+        "notifyOnCalendarChanges",
+        "notifyOnPresenceChanges",
+        "familyActivityNotificationSound",
         "widgetShowEventsCount",
         "widgetShowOwnCalendarsOnly",
         "widgetShowTime",

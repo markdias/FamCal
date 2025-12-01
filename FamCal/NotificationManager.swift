@@ -645,6 +645,96 @@ class NotificationManager: NSObject, ObservableObject {
         return await notificationCenter.deliveredNotifications()
     }
 
+    // MARK: - Family Activity Notifications
+
+    /// Schedule notification for a family activity (member added, driver updated, etc.)
+    func scheduleFamilyActivityNotification(
+        activity: FamilyActivityDTO,
+        shouldNotify: Bool = true
+    ) {
+        guard shouldNotify else {
+            print("ℹ️ Family activity notification skipped (notifications disabled for this type)")
+            return
+        }
+
+        Task {
+            guard await ensureNotificationPermission() else {
+                print("⚠️ Cannot schedule family activity notification - permission denied")
+                return
+            }
+
+            scheduleFamilyActivityNotificationNow(activity: activity)
+        }
+    }
+
+    /// Check if user wants to be notified about a specific activity type
+    func shouldNotifyForActivity(_ activity: FamilyActivityDTO) -> Bool {
+        guard AppSettingsManager.shared.familyActivityNotificationsEnabled else {
+            return false
+        }
+
+        switch activity.action_type {
+        case "member_added", "member_edited", "member_deleted", "member_linked":
+            return AppSettingsManager.shared.notifyOnMemberChanges
+        case "driver_created", "driver_updated", "driver_deleted":
+            return AppSettingsManager.shared.notifyOnDriverChanges
+        case "address_added", "address_updated", "address_deleted":
+            return AppSettingsManager.shared.notifyOnLocationChanges
+        case "calendar_shared", "calendar_removed":
+            return AppSettingsManager.shared.notifyOnCalendarChanges
+        case "member_online":
+            return AppSettingsManager.shared.notifyOnPresenceChanges
+        default:
+            return true // Default to notifying for unknown types
+        }
+    }
+
+    private func scheduleFamilyActivityNotificationNow(activity: FamilyActivityDTO) {
+        let content = UNMutableNotificationContent()
+
+        // Set title and body
+        content.title = "Family Update"
+        content.body = activity.actionSummary
+        content.sound = .default
+
+        // Set category for custom actions
+        content.categoryIdentifier = "FAMILY_ACTIVITY_NOTIFICATION"
+
+        // Set badge
+        content.badge = NSNumber(value: UIApplication.shared.applicationIconBadgeNumber + 1)
+
+        // Add user info for deep linking
+        content.userInfo = [
+            "activityId": activity.id,
+            "actionType": activity.action_type,
+            "familyId": activity.family_id,
+            "actionSummary": activity.actionSummary,
+            "deepLink": "fam-cal://family/activity/\(activity.id)"
+        ]
+
+        // Set sound preference
+        let soundPreference = AppSettingsManager.shared.familyActivityNotificationSound
+        if soundPreference != "none" {
+            content.sound = UNNotificationSound.default
+        }
+
+        // Create trigger for immediate notification (1 second delay)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "family-activity-\(activity.id)",
+            content: content,
+            trigger: trigger
+        )
+
+        notificationCenter.add(request) { error in
+            if let error = error {
+                print("❌ Failed to schedule family activity notification: \(error.localizedDescription)")
+            } else {
+                print("✅ Family activity notification scheduled: \(activity.actionSummary)")
+            }
+        }
+    }
+
     // MARK: - Helper Methods
 
     private func calculateTriggerDate(from eventDate: Date, alertOption: AlertOption) -> Date {
