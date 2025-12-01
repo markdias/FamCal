@@ -53,7 +53,8 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
     /// Subscribe to family activity changes via Realtime
     func subscribeToFamilyActivities(
         familyId: String,
-        userId: String
+        userId: String,
+        accessToken: String? = nil
     ) async {
         guard !familyId.isEmpty, !userId.isEmpty else {
             print("❌ Cannot subscribe: missing familyId or userId")
@@ -66,12 +67,16 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("ℹ️ Subscribing to family activities for family: \(familyId), user: \(userId)")
         print("🔗 Supabase URL: \(supabaseURL)")
 
-        // Build Realtime WebSocket URL
+        // Build Realtime WebSocket URL with authentication
         let wsURL = supabaseURL
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
-        let realtimeURL = "\(wsURL)/realtime/v1?apikey=\(anonKey)"
-        print("🔗 WebSocket URL: \(realtimeURL.prefix(50))...apikey=***")
+
+        // Use JWT token for authentication if available, otherwise fall back to anon key
+        let authKey = accessToken ?? anonKey
+        let authKeyDisplay = accessToken != nil ? "JWT" : "anonKey"
+        let realtimeURL = "\(wsURL)/realtime/v1?apikey=\(authKey)"
+        print("🔗 WebSocket URL: \(realtimeURL.prefix(50))...apikey=*** (auth: \(authKeyDisplay))")
 
         guard let url = URL(string: realtimeURL) else {
             print("❌ Failed to create URL from: \(realtimeURL)")

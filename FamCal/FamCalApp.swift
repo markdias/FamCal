@@ -317,7 +317,8 @@ struct FamCalApp: App {
                         print("📡 Setting up family activity Realtime subscription...")
                         await realtimeActivitySubscription.subscribeToFamilyActivities(
                             familyId: appSettingsManager.familyId ?? "",
-                            userId: userId
+                            userId: userId,
+                            accessToken: authManager.accessToken
                         )
                         realtimeActivitySubscription.onActivityCreated = { activity in
                             print("🔔 Activity received via Realtime: \(activity.actionSummary)")
@@ -372,7 +373,8 @@ struct FamCalApp: App {
                     print("📡 Re-establishing family activity Realtime subscription on app resume...")
                     await realtimeActivitySubscription.subscribeToFamilyActivities(
                         familyId: appSettingsManager.familyId ?? "",
-                        userId: userId
+                        userId: userId,
+                        accessToken: authManager.accessToken
                     )
                 }
             }
