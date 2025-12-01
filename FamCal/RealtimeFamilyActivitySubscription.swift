@@ -116,9 +116,10 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
 
         // Subscribe to the table after connection is verified
-        print("📌 Scheduling subscription task with 2 second delay...")
+        // Wait longer to ensure Supabase Realtime server handshake is complete
+        print("📌 Scheduling subscription task with 3 second delay...")
         Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay for handshake
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 second delay for full handshake
             await subscribeToTable(familyId: familyId)
         }
     }
@@ -131,7 +132,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
 
         // Build subscription message according to Supabase Realtime protocol v1
-        // Reference: https://github.com/supabase/realtime/blob/master/server/README.md
+        // Filter by family_id to only receive changes for the current family
         let subscriptionMessage = """
         {
           "type": "subscribe",
@@ -140,14 +141,15 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             "schema": "public",
             "table": "family_activity_log",
             "configs": {
-              "scope": "postgres_changes"
+              "scope": "postgres_changes",
+              "filter": "family_id=eq.\(familyId)"
             }
           }
         }
         """
 
         print("📡 Sending Realtime subscription for family_activity_log...")
-        print("📋 Subscription ID: 1")
+        print("📋 Subscription ID: 1, Family ID: \(familyId)")
         do {
             try await webSocket.send(.string(subscriptionMessage))
             isSubscribed = true
