@@ -91,7 +91,12 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         delegateQueue.maxConcurrentOperationCount = 1
         self.urlSession = URLSession(configuration: config, delegate: nil, delegateQueue: delegateQueue)
 
-        let request = URLRequest(url: url)
+        var request = URLRequest(url: url)
+        // Add necessary headers for Supabase Realtime
+        request.setValue("websocket", forHTTPHeaderField: "Connection")
+        request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
+
+        print("🚀 Creating WebSocket task...")
         webSocket = self.urlSession?.webSocketTask(with: request)
         print("🚀 Calling webSocket.resume()...")
         webSocket?.resume()
@@ -105,10 +110,10 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             await receiveMessages(familyId: familyId)
         }
 
-        // Subscribe to the table after a longer delay to ensure connection is fully established
-        print("📌 Scheduling subscription task with 1.5 second delay...")
+        // Subscribe to the table after connection is verified
+        print("📌 Scheduling subscription task with 2 second delay...")
         Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 second delay
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay for handshake
             await subscribeToTable(familyId: familyId)
         }
     }
@@ -175,9 +180,21 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             return
         }
 
-        // Wait a bit longer for WebSocket handshake to complete
-        print("⏳ Waiting for WebSocket handshake to complete...")
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second wait
+        // Try sending a ping to verify connection is active
+        print("⏳ Testing WebSocket connection with initial message...")
+        do {
+            let testMessage = """
+            {
+              "type": "ping"
+            }
+            """
+            try await webSocket.send(.string(testMessage))
+            print("✅ WebSocket connection is active (ping sent)")
+        } catch {
+            print("❌ WebSocket connection failed on test message: \(error.localizedDescription)")
+            updateStatus(.error("WebSocket connection failed: \(error.localizedDescription)"))
+            return
+        }
 
         print("✅ Starting message receive loop")
         self.isWebSocketConnected = true
