@@ -21,6 +21,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
     private var webSocket: URLSessionWebSocketTask?
     private var isSubscribed = false
     private var receiveTask: Task<Void, Never>?
+    private var isWebSocketConnected = false
 
     enum RealtimeSyncStatus: Equatable {
         case connected
@@ -62,40 +63,52 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         // Disconnect existing connection
         await disconnect()
 
-        print("ℹ️ Subscribing to family activities for family: \(familyId)")
+        print("ℹ️ Subscribing to family activities for family: \(familyId), user: \(userId)")
+        print("🔗 Supabase URL: \(supabaseURL)")
 
         // Build Realtime WebSocket URL
         let wsURL = supabaseURL
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
         let realtimeURL = "\(wsURL)/realtime/v1?apikey=\(anonKey)"
+        print("🔗 WebSocket URL: \(realtimeURL.prefix(50))...apikey=***")
 
         guard let url = URL(string: realtimeURL) else {
+            print("❌ Failed to create URL from: \(realtimeURL)")
             updateStatus(.error("Invalid WebSocket URL"))
             return
         }
 
         // Create a URLSession that will persist for the lifetime of this connection
+        print("🔧 Creating URLSession with custom configuration...")
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 300
-        self.urlSession = URLSession(configuration: config)
+        config.waitsForConnectivity = true
+
+        // Use a delegate queue to keep the session alive
+        let delegateQueue = OperationQueue()
+        delegateQueue.maxConcurrentOperationCount = 1
+        self.urlSession = URLSession(configuration: config, delegate: nil, delegateQueue: delegateQueue)
 
         let request = URLRequest(url: url)
         webSocket = self.urlSession?.webSocketTask(with: request)
+        print("🚀 Calling webSocket.resume()...")
         webSocket?.resume()
 
-        print("✅ WebSocket connection initiated")
-        updateStatus(.connected)
+        print("⏳ WebSocket connection initiated (resuming)")
+        updateStatus(.syncing)
 
         // Start receiving messages (this runs indefinitely)
+        print("📌 Starting receiveMessages task...")
         receiveTask = Task {
             await receiveMessages(familyId: familyId)
         }
 
-        // Subscribe to the table after a brief delay to ensure connection is established
+        // Subscribe to the table after a longer delay to ensure connection is fully established
+        print("📌 Scheduling subscription task with 1.5 second delay...")
         Task {
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 second delay
             await subscribeToTable(familyId: familyId)
         }
     }
@@ -122,12 +135,18 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         }
         """
 
-        print("📡 Sending Realtime subscription for family_activity_log...")
+        print("📡 Sending Realtime subscription for family_activity_log (id: 1)...")
+        print("📋 Message: \(subscriptionMessage)")
         do {
             try await webSocket.send(.string(subscriptionMessage))
-            print("✅ Subscribed to family_activity_log table")
+            isSubscribed = true
+            print("✅ Successfully sent subscription to family_activity_log table")
+            updateStatus(.connected)
         } catch {
-            print("⚠️ Failed to send subscription: \(error.localizedDescription)")
+            isSubscribed = false
+            print("❌ Failed to send subscription: \(error.localizedDescription)")
+            print("🔍 Error type: \(type(of: error))")
+            updateStatus(.error("Subscription failed: \(error.localizedDescription)"))
         }
     }
 
@@ -151,19 +170,31 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
 
     private func receiveMessages(familyId: String) async {
         guard let webSocket = self.webSocket else {
+            print("❌ WebSocket not available when starting receiveMessages")
             updateStatus(.error("WebSocket not available"))
             return
         }
 
+        // Wait a bit longer for WebSocket handshake to complete
+        print("⏳ Waiting for WebSocket handshake to complete...")
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second wait
+
+        print("✅ Starting message receive loop")
+        self.isWebSocketConnected = true
+        updateStatus(.syncing)
+
         while !Task.isCancelled {
             do {
+                print("👂 Listening for WebSocket messages...")
                 let message = try await webSocket.receive()
 
                 switch message {
                 case .string(let text):
+                    print("📨 Received string message: \(text.prefix(100))...")
                     await handleMessage(text, familyId: familyId)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
+                        print("📨 Received data message: \(text.prefix(100))...")
                         await handleMessage(text, familyId: familyId)
                     }
                 @unknown default:
@@ -171,9 +202,17 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                 }
             } catch {
                 if !Task.isCancelled {
-                    print("❌ WebSocket error: \(error.localizedDescription)")
-                    updateStatus(.error(error.localizedDescription))
+                    print("❌ WebSocket receive error: \(error.localizedDescription)")
+                    print("🔍 Error type: \(type(of: error))")
+                    self.isWebSocketConnected = false
+                    updateStatus(.error("Connection lost: \(error.localizedDescription)"))
+
+                    // Wait before retrying
+                    print("⏳ Waiting 5 seconds before reconnect attempt...")
                     try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 second retry delay
+                } else {
+                    print("ℹ️ WebSocket receive task cancelled")
+                    break
                 }
             }
         }
