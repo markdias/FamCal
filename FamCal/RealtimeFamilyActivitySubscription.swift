@@ -254,6 +254,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         var messageCount = 0
         var isFirstConnection = true
         var consecutiveErrors = 0
+        let maxInitialRetries = 10 // Give up after 10 attempts on initial connection
 
         while !Task.isCancelled {
             do {
@@ -286,8 +287,23 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                     // Check if it's a "not connected" error - these are expected during initial connection
                     if errorStr.contains("Socket is not connected") && isFirstConnection {
                         consecutiveErrors += 1
+
+                        if consecutiveErrors > maxInitialRetries {
+                            // Too many retries - likely a configuration issue
+                            print("❌ ⚠️ CRITICAL: WebSocket failed to connect after \(maxInitialRetries) attempts")
+                            print("⚠️ This usually means:")
+                            print("   1. Realtime is not enabled on the family_activity_log table in Supabase")
+                            print("   2. Check: Settings → Database → Publications → supabase_realtime")
+                            print("   3. Verify family_activity_log is listed in the publication")
+                            print("   4. Run migration: supabase db push")
+                            print("   5. See SUPABASE_REALTIME_DIAGNOSTICS.md for detailed troubleshooting")
+                            updateStatus(.error("Realtime setup issue - check logs and documentation"))
+                            isFirstConnection = false // Stop retrying
+                            break
+                        }
+
                         let retryDelay = min(consecutiveErrors * 2, 10) // Exponential backoff: 2, 4, 6, 8, 10 seconds
-                        print("⏳ Socket not yet connected (attempt \(consecutiveErrors), expected during initial connection)")
+                        print("⏳ Socket not yet connected (attempt \(consecutiveErrors)/\(maxInitialRetries), expected during initial connection)")
                         print("⏳ Retrying in \(retryDelay) seconds...")
                         try? await Task.sleep(nanoseconds: UInt64(retryDelay) * 1_000_000_000)
                     } else {
