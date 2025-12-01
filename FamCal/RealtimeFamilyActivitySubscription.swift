@@ -131,25 +131,32 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             return
         }
 
+        print("🔄 Preparing subscription message...")
+
         // Build subscription message according to Supabase Realtime protocol v1
         // Filter by family_id to only receive changes for the current family
-        let subscriptionMessage = """
-        {
-          "type": "subscribe",
-          "id": "1",
-          "payload": {
-            "schema": "public",
-            "table": "family_activity_log",
-            "configs": {
-              "scope": "postgres_changes",
-              "filter": "family_id=eq.\(familyId)"
-            }
-          }
+        let subscriptionPayload: [String: Any] = [
+            "type": "subscribe",
+            "id": "1",
+            "payload": [
+                "schema": "public",
+                "table": "family_activity_log",
+                "configs": [
+                    "scope": "postgres_changes",
+                    "filter": "family_id=eq.\(familyId)"
+                ]
+            ]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: subscriptionPayload),
+              let subscriptionMessage = String(data: jsonData, encoding: .utf8) else {
+            print("❌ Failed to encode subscription message")
+            updateStatus(.error("Failed to encode subscription"))
+            return
         }
-        """
 
         print("📡 Sending Realtime subscription for family_activity_log...")
-        print("📋 Subscription ID: 1, Family ID: \(familyId)")
+        print("📋 Subscription message: \(subscriptionMessage)")
         do {
             try await webSocket.send(.string(subscriptionMessage))
             isSubscribed = true
@@ -160,6 +167,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             isSubscribed = false
             print("❌ Failed to send subscription: \(error.localizedDescription)")
             print("🔍 Error type: \(type(of: error))")
+            print("🔍 NSError details: \((error as NSError).userInfo)")
             updateStatus(.error("Subscription failed: \(error.localizedDescription)"))
         }
     }
