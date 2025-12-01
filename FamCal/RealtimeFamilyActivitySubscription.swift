@@ -201,27 +201,33 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         self.isWebSocketConnected = true
         updateStatus(.syncing)
 
+        var messageCount = 0
+
         while !Task.isCancelled {
             do {
-                print("👂 Listening for WebSocket messages...")
+                print("👂 Listening for WebSocket messages... (count: \(messageCount))")
                 let message = try await webSocket.receive()
+                messageCount += 1
 
                 switch message {
                 case .string(let text):
-                    print("📨 Received string message: \(text.prefix(150))...")
+                    print("📨 [\(messageCount)] Received string message (\(text.count) chars)")
+                    print("   Content: \(text.prefix(200))...")
                     await handleMessage(text, familyId: familyId)
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8) {
-                        print("📨 Received data message: \(text.prefix(150))...")
+                        print("📨 [\(messageCount)] Received data message (\(text.count) chars)")
+                        print("   Content: \(text.prefix(200))...")
                         await handleMessage(text, familyId: familyId)
                     }
                 @unknown default:
-                    print("⚠️ Unknown WebSocket message type")
+                    print("⚠️ [\(messageCount)] Unknown WebSocket message type")
                 }
             } catch {
                 if !Task.isCancelled {
-                    print("❌ WebSocket receive error: \(error.localizedDescription)")
+                    print("❌ WebSocket receive error after \(messageCount) messages: \(error.localizedDescription)")
                     print("🔍 Error type: \(type(of: error))")
+                    print("🔍 NSError details: \((error as NSError).userInfo)")
                     self.isWebSocketConnected = false
                     updateStatus(.error("Connection lost: \(error.localizedDescription)"))
 
@@ -229,7 +235,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                     print("⏳ Waiting 5 seconds before reconnect attempt...")
                     try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 second retry delay
                 } else {
-                    print("ℹ️ WebSocket receive task cancelled")
+                    print("ℹ️ WebSocket receive task cancelled after \(messageCount) messages")
                     break
                 }
             }
