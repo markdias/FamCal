@@ -292,6 +292,7 @@ class SupabaseAuthManager: ObservableObject {
                         self.accessToken = accessToken
                     }
                     self.isAuthenticated = true
+                    self.isGuest = false  // Clear guest flag when authenticating
                     self.saveSession()  // Persist session
                     print("✅ User signed up successfully: \(email)")
                     print("ℹ️ User ID (from parsing): \(response.user.id)")
@@ -305,6 +306,7 @@ class SupabaseAuthManager: ObservableObject {
                         print("❌ Could not parse signup response as JSON")
                         self.userEmail = email
                         self.isAuthenticated = true
+                        self.isGuest = false  // Clear guest flag when authenticating
                         print("✅ User signed up successfully: \(email)")
                         return
                     }
@@ -341,6 +343,7 @@ class SupabaseAuthManager: ObservableObject {
 
                     self.userEmail = email
                     self.isAuthenticated = true
+                    self.isGuest = false  // Clear guest flag when authenticating
                     self.saveSession()  // Persist session
                     print("✅ User signed up successfully: \(email)")
                 }
@@ -422,6 +425,7 @@ class SupabaseAuthManager: ObservableObject {
                     self.accessToken = response.access_token
                     self.refreshToken = response.refresh_token
                     self.isAuthenticated = true
+                    self.isGuest = false  // Clear guest flag when authenticating
                     self.saveSession()  // Persist session
                     print("✅ User signed in successfully: \(email)")
                     print("ℹ️ User ID (from parsing): \(response.user.id)")
@@ -475,6 +479,7 @@ class SupabaseAuthManager: ObservableObject {
 
                     self.userEmail = email
                     self.isAuthenticated = true
+                    self.isGuest = false  // Clear guest flag when authenticating
                     self.saveSession()  // Persist session
                     print("✅ User signed in successfully: \(email)")
                 }
@@ -584,6 +589,7 @@ class SupabaseAuthManager: ObservableObject {
                 self.accessToken = response.access_token
                 self.refreshToken = response.refresh_token
                 self.isAuthenticated = true
+                self.isGuest = false  // Clear guest flag when authenticating
                 self.saveSession()
                 print("✅ User signed in with Google")
             } catch {
@@ -611,6 +617,9 @@ class SupabaseAuthManager: ObservableObject {
 
                 self.userEmail = emailHint ?? self.userEmail
                 self.isAuthenticated = self.accessToken != nil
+                if self.isAuthenticated {
+                    self.isGuest = false  // Clear guest flag when authenticating
+                }
                 self.saveSession()
                 print("✅ User signed in with Google (manual parse)")
             }
@@ -775,6 +784,41 @@ class SupabaseAuthManager: ObservableObject {
         }
     }
 
+    /// Check actual email verification status from Supabase
+    /// Returns true if email_confirmed_at is set, false otherwise
+    func checkEmailVerificationStatus() async throws -> Bool {
+        guard isAuthenticated, !isGuest, let accessToken = accessToken else {
+            return false
+        }
+
+        let url = supabaseURL.appendingPathComponent("auth/v1/user")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NSError(domain: "InvalidResponse", code: -1)
+            }
+
+            guard httpResponse.statusCode == 200 else {
+                print("⚠️ Failed to fetch user info (HTTP \(httpResponse.statusCode))")
+                return false
+            }
+
+            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+            let isVerified = authResponse.user.email_confirmed_at != nil
+            print("ℹ️ Email verification status: \(isVerified ? "verified" : "pending")")
+            return isVerified
+        } catch {
+            print("❌ Error checking email verification: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Update password using current authenticated session (used after recovery deep link)
     func updatePassword(newPassword: String) async throws {
         guard let accessToken = accessToken else {
@@ -818,6 +862,7 @@ private struct AuthResponse: Codable {
     struct User: Codable {
         let id: String
         let email: String?
+        let email_confirmed_at: String?
     }
 
     struct Session: Codable {

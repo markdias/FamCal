@@ -141,6 +141,17 @@ struct FamilySetupFlow: View {
                     familyId = UUID().uuidString
                     print("✅ Local family created with ID: \(familyId)")
 
+                    // Link shared calendars to all family members
+                    if !sharedCalendars.isEmpty {
+                        print("📤 Linking \(sharedCalendars.count) shared calendars to family members...")
+                        for sharedCal in sharedCalendars {
+                            for member in familyMembers {
+                                member.addToSharedCalendars(sharedCal)
+                            }
+                        }
+                        print("✅ Shared calendars linked to all family members")
+                    }
+
                     // Store family info locally
                     await MainActor.run {
                         appSettingsManager.familyId = familyId
@@ -154,6 +165,7 @@ struct FamilySetupFlow: View {
                         let context = viewContext
                         do {
                             try FamilyInfoStore.upsert(name: familyName, familyId: familyId, in: context)
+                            try context.save()
                         } catch {
                             print("⚠️ Failed to persist family info locally: \(error)")
                         }

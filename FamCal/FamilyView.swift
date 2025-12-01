@@ -9,6 +9,7 @@ import SwiftUI
 import CoreData
 import EventKit
 import Combine
+import Foundation
 
 struct FamilyView: View {
     var onSearchRequested: (() -> Void)? = nil
@@ -1013,12 +1014,23 @@ struct FamilyView: View {
             applyOrderFromSettings(appSettingsManager.familyMemberOrder)
         }
 
-        // Load fresh events in background (cached events already displayed)
-        // Use a small delay to ensure view is fully initialized
-        let hasCachedEvents = !memberEvents.isEmpty
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            // Only show loading state if we have no cached data to display
-            loadNextEvents(showLoadingState: !hasCachedEvents)
+        // For authenticated users, ensure Supabase data is fetched before loading events
+        // This prevents showing "Unknown" member names on first login
+        if !SupabaseAuthManager.shared.isGuest && SupabaseAuthManager.shared.isAuthenticated {
+            Task { @MainActor in
+                await dataManager.fetchUserData()
+                // Load events after Supabase data is fetched
+                let hasCachedEvents = !memberEvents.isEmpty
+                loadNextEvents(showLoadingState: !hasCachedEvents)
+            }
+        } else {
+            // Load fresh events in background (cached events already displayed)
+            // Use a small delay to ensure view is fully initialized
+            let hasCachedEvents = !memberEvents.isEmpty
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                // Only show loading state if we have no cached data to display
+                loadNextEvents(showLoadingState: !hasCachedEvents)
+            }
         }
 
         // Set up notification observer for calendar changes

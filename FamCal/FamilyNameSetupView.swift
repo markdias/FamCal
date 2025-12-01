@@ -33,15 +33,18 @@ struct FamilyNameSetupView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button(action: { showSignOutConfirmation = true }) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 18))
-                        .foregroundColor(.gray)
+                // Hide sign out for guest users
+                if !authManager.isGuest {
+                    Button(action: { showSignOutConfirmation = true }) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 18))
+                            .foregroundColor(.gray)
+                    }
                 }
             }
 
-            // Email Verification Section
-            if let userEmail = authManager.userEmail {
+            // Email Verification Section (authenticated users only)
+            if !authManager.isGuest, let userEmail = authManager.userEmail {
                 VStack(spacing: 16) {
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
@@ -162,22 +165,36 @@ struct FamilyNameSetupView: View {
     }
 
     private var isButtonDisabled: Bool {
-        familyName.trimmingCharacters(in: .whitespaces).isEmpty || !isEmailVerified
+        let emptyName = familyName.trimmingCharacters(in: .whitespaces).isEmpty
+        // For guests, only check family name
+        // For authenticated users, also require email verification
+        if authManager.isGuest {
+            return emptyName
+        } else {
+            return emptyName || !isEmailVerified
+        }
     }
 
     private func checkVerificationStatus() {
         isCheckingVerification = true
 
-        // Simulate checking verification status by calling auth manager
         Task {
             defer { isCheckingVerification = false }
 
-            // Call the auth manager to refresh user session and check email_confirmed
-            try? await authManager.refreshAccessToken()
-
-            // Note: In a real implementation, you'd check the user's email_confirmed status
-            // For now, we're relying on the checkbox approach which is user-friendly
-            print("ℹ️ Checked email verification status")
+            do {
+                // Check actual email verification status from Supabase
+                let isVerified = try await authManager.checkEmailVerificationStatus()
+                if isVerified {
+                    await MainActor.run {
+                        isEmailVerified = true
+                    }
+                    print("✅ Email verified!")
+                } else {
+                    print("ℹ️ Email not yet verified")
+                }
+            } catch {
+                print("❌ Error checking email verification: \(error.localizedDescription)")
+            }
         }
     }
 

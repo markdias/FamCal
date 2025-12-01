@@ -308,11 +308,21 @@ struct FamCalApp: App {
                 // Only handle actual state changes, not first load
                 if !isFirstLoad && oldValue != newValue {
                     if newValue {
-                        // User just logged in - device-level flag will be checked in body
+                        // User just logged in
+                        // If transitioning from guest to authenticated, clear guest family setup
+                        if previousAuthState?.isGuest == true && !authManager.isGuest {
+                            print("🔄 Transitioning from guest to authenticated user - resetting family setup")
+                            UserDefaults.standard.set(false, forKey: "hasCompletedFamilySetup")
+                            UserDefaults.standard.removeObject(forKey: "com.famcal.familyId")
+                            needsFamilySetup = true
+                            // Note: Guest CoreData family members will be overwritten by auth user's data
+                        }
+                        previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
                     } else {
                         // User just logged out - only reset state variables, not the device-level flag
                         // (calendar check should only run once per device)
                         calendarCheckStatus = .unknown
+                        previousAuthState = (authManager.isAuthenticated, authManager.isGuest)
                     }
                 }
             }

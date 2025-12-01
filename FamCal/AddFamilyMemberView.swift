@@ -25,7 +25,9 @@ struct AddFamilyMemberView: View {
     @State private var pendingCalendarName: String?
     @State private var saveError: String?
     @State private var showSaveError = false
-    
+    @State private var showSharingPrompt = false
+    @State private var newlyCreatedCalendarName: String?
+
     @FetchRequest(
         entity: FamilyMember.entity(),
         sortDescriptors: []
@@ -49,7 +51,7 @@ struct AddFamilyMemberView: View {
                         .font(.system(size: 14, weight: .semibold, design: .default))
                         .foregroundColor(.primary)
 
-                    Text("Enter a name that matches an existing calendar. If no match is found after 5 seconds, you'll be offered the option to create a new calendar.")
+                    Text("Enter a name that matches an existing calendar. If no match is found after 2 seconds, you'll be offered the option to create a new calendar.")
                         .font(.system(size: 13, weight: .regular, design: .default))
                         .foregroundColor(.gray)
                         .lineLimit(nil)
@@ -64,14 +66,18 @@ struct AddFamilyMemberView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                calendarLinkingBanner
+                // Fixed header
+                VStack(spacing: 0) {
+                    calendarLinkingBanner
 
-                if isAtFamilyLimit {
-                    limitBanner
+                    if isAtFamilyLimit {
+                        limitBanner
+                    }
                 }
 
-                // Form content
-                VStack(spacing: 24) {
+                // Scrollable form content
+                ScrollView {
+                    VStack(spacing: 24) {
                     // Name input
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Name")
@@ -201,15 +207,16 @@ struct AddFamilyMemberView: View {
                             }
                         }
                     }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 24)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 24)
 
                 Spacer()
 
                 // Action buttons
                 VStack(spacing: 12) {
-                    Button(action: saveMember) {
+                    Button(action: { saveMember() }) {
                         let memberExists = familyMembers.contains(where: { $0.name?.lowercased() == name.lowercased() })
                         let buttonText = memberExists && matchedCalendar != nil ? "Link Calendar" : "Add Member"
 
@@ -261,6 +268,158 @@ struct AddFamilyMemberView: View {
         } message: {
             Text(saveError ?? "An unknown error occurred")
         }
+        .sheet(isPresented: $showSharingPrompt) {
+            sharingGuideSheet
+        }
+    }
+
+    private var sharingGuideSheet: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Header with icon
+                VStack(spacing: 16) {
+                    Image(systemName: "person.2.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+
+                    VStack(spacing: 8) {
+                        Text("Share Calendar with Family")
+                            .font(.system(size: 18, weight: .semibold, design: .default))
+                            .foregroundColor(.primary)
+
+                        Text("You've created '\(newlyCreatedCalendarName ?? "")' calendar. Share it with family members to keep everyone in sync.")
+                            .font(.system(size: 14, weight: .regular, design: .default))
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 24)
+
+                // Content
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Steps
+                        VStack(alignment: .leading, spacing: 16) {
+                            stepCard(number: "1", title: "Open Calendar Settings", description: "Tap 'Configure Sharing' to open Calendar app")
+                            stepCard(number: "2", title: "Find Your Calendar", description: "Locate '\(newlyCreatedCalendarName ?? "")' in the calendar list")
+                            stepCard(number: "3", title: "Enable iCloud Sharing", description: "Tap 'Edit' and toggle iCloud sharing on")
+                            stepCard(number: "4", title: "Add Family Members", description: "Tap 'Add Person' to invite family via email")
+                        }
+
+                        // Info box
+                        HStack(spacing: 12) {
+                            Image(systemName: "lightbulb.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.blue)
+                                .frame(width: 24)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Pro Tip")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.primary)
+
+                                Text("Calendar sharing requires iCloud accounts. Everyone will see real-time updates.")
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemBlue).opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 20)
+                }
+
+                Spacer()
+
+                // Action buttons
+                VStack(spacing: 12) {
+                    Button(action: configureCalendarSharing) {
+                        Text("Configure Sharing")
+                            .font(.system(size: 16, weight: .semibold, design: .default))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(Color(red: 0.33, green: 0.33, blue: 0.33))
+                            .cornerRadius(12)
+                    }
+
+                    Button(action: { showSharingPrompt = false }) {
+                        Text("Do It Later")
+                            .font(.system(size: 16, weight: .semibold, design: .default))
+                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 56)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+            .background(Color(.systemBackground))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Share Calendar")
+                        .font(.system(size: 16, weight: .semibold, design: .default))
+                }
+            }
+        }
+    }
+
+    private func stepCard(number: String, title: String, description: String) -> some View {
+        HStack(spacing: 12) {
+            // Step number badge
+            Text(number)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 32, height: 32)
+                .background(Color(red: 0.33, green: 0.33, blue: 0.33))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+
+                Text(description)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(.gray)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .background(Color(.systemGray6))
+        .cornerRadius(8)
+    }
+
+    private func configureCalendarSharing() {
+        // Close the sharing prompt and open iOS Settings to Calendar app settings
+        print("🔵 configureCalendarSharing() called")
+        showSharingPrompt = false
+
+        // Open Settings app to Calendar section for iCloud sharing configuration
+        // This is the most reliable way to access calendar sharing settings
+        if let url = URL(string: "App-Prefs:root=CALENDAR") {
+            UIApplication.shared.open(url) { success in
+                if success {
+                    print("✅ Opened Settings > Calendar")
+                } else {
+                    print("⚠️ Failed to open Settings > Calendar, trying fallback")
+                    // Fallback: Try settings URL string
+                    if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(settingsURL)
+                        print("✅ Opened App Settings")
+                    }
+                }
+            }
+        }
     }
 
     private func loadAvailableCalendars() {
@@ -290,7 +449,7 @@ struct AddFamilyMemberView: View {
         if matchedCalendar == nil && !memberExists {
             noCalendarTimer?.invalidate()
             pendingCalendarName = name
-            noCalendarTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+            noCalendarTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
                 showCreateCalendarAlert = true
             }
         } else {
@@ -304,6 +463,7 @@ struct AddFamilyMemberView: View {
     private func saveMember() {
         Task {
             do {
+                print("📝 saveMember() called")
                 guard !isAtFamilyLimit else {
                     saveError = "FamCal Free supports up to 2 family members. Enable Pro in Settings > Test Only to add more."
                     showSaveError = true
@@ -416,7 +576,9 @@ struct AddFamilyMemberView: View {
                 }
 
                 print("✅ Family member '\(name)' saved successfully")
-                dismiss()
+                await MainActor.run {
+                    dismiss()
+                }
             } catch {
                 saveError = "Failed to save family member: \(error.localizedDescription)"
                 showSaveError = true
@@ -472,7 +634,9 @@ struct AddFamilyMemberView: View {
                 availableCalendars.append(newCalendar)
                 // Update match to the newly created calendar
                 matchedCalendar = newCalendar
+                newlyCreatedCalendarName = calendarName
                 pendingCalendarName = nil
+                showSharingPrompt = true
                 print("✅ Calendar successfully created and matched: \(calendarName)")
             } else {
                 print("❌ Failed to create calendar: \(calendarName)")

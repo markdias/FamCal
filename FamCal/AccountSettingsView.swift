@@ -18,6 +18,7 @@ struct AccountSettingsView: View {
     private let supabaseManager = SupabaseManager.shared
 
     @State private var showingFamilySettings = false
+    @State private var refreshKey = UUID()
     @FetchRequest(entity: FamilyMember.entity(), sortDescriptors: [NSSortDescriptor(keyPath: \FamilyMember.name, ascending: true)])
     private var localFamilyMembers: FetchedResults<FamilyMember>
 
@@ -257,6 +258,14 @@ struct AccountSettingsView: View {
         }
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Refresh CoreData to ensure latest member data is loaded
+            do {
+                _ = try viewContext.fetch(FamilyMember.fetchRequest())
+            } catch {
+                print("⚠️ Error refreshing family members: \(error)")
+            }
+        }
         .sheet(isPresented: $showingFamilySettings) {
             FamilySettingsView()
                 .environment(\.managedObjectContext, viewContext)

@@ -14,6 +14,7 @@
 		FD05CD342ED3830B003A2662 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD332ED3830B003A2662 /* Realtime */; };
 		FD05CD362ED3830B003A2662 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD352ED3830B003A2662 /* Storage */; };
 		FD9B4E002F0E5C3100A1B2C3 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = FD9B4E012F0E5C3100A1B2C3 /* GoogleSignIn */; };
+		FD1CA6092F0F5C4100A1C5E8 /* FamCalNotificationContent.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FD1CA6012F0F5C4100A1C5E8 /* FamCalNotificationContent.appex */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,13 @@
 			remoteGlobalIDString = FD1B9A6C2ECB1ED700B8C72E;
 			remoteInfo = FamCal;
 		};
+		FD1CA6072F0F5C4100A1C5E8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FD1B9A652ECB1ED700B8C72E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FD1CA5FF2F0F5C4100A1C5E8;
+			remoteInfo = FamCalNotificationContent;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -48,6 +56,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				3a0192659a8a4bfcb239d9d3 /* NextEventWidget.appex in Embed Foundation Extensions */,
+				FD1CA6092F0F5C4100A1C5E8 /* FamCalNotificationContent.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -62,6 +71,7 @@
 		FD1B9A6D2ECB1ED700B8C72E /* FamCal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FamCal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A8B2ECB1ED800B8C72E /* FamCalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD1CA6012F0F5C4100A1C5E8 /* FamCalNotificationContent.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FamCalNotificationContent.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -78,6 +88,13 @@
 				Info.plist,
 			);
 			target = FD1B9A6C2ECB1ED700B8C72E /* FamCal */;
+		};
+		FD1CA6002F0F5C4100A1C5E8 /* Exceptions for "FamCalNotificationContent" folder in "FamCalNotificationContent" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FD1CA5FF2F0F5C4100A1C5E8 /* FamCalNotificationContent */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -112,10 +129,25 @@
 			path = FamCalUITests;
 			sourceTree = "<group>";
 		};
+		FD1CA5FD2F0F5C4100A1C5E8 /* FamCalNotificationContent */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FD1CA6002F0F5C4100A1C5E8 /* Exceptions for "FamCalNotificationContent" folder in "FamCalNotificationContent" target */,
+			);
+			path = FamCalNotificationContent;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		3AD5554D209543B0AC31133D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FD1CA5FE2F0F5C4100A1C5E8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -176,6 +208,7 @@
 				FD1B9A842ECB1ED800B8C72E /* FamCalTests */,
 				FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */,
 				F0F30C8E0DC64E818BFD20CC /* NextEventWidget */,
+				FD1CA5FD2F0F5C4100A1C5E8 /* FamCalNotificationContent */,
 				FD1B9A6E2ECB1ED700B8C72E /* Products */,
 				542C5B6D3C6C41F71F39F0DC /* Pods */,
 				CCCD6678C5D573A98699691D /* Frameworks */,
@@ -189,6 +222,7 @@
 				FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */,
 				248EE1941C8C48C19FF54ED3 /* NextEventWidget.appex */,
 				FD1B9A8B2ECB1ED800B8C72E /* FamCalUITests.xctest */,
+				FD1CA6012F0F5C4100A1C5E8 /* FamCalNotificationContent.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -231,6 +265,7 @@
 			);
 			dependencies = (
 				02E4EF848E0E439BABDC8185 /* PBXTargetDependency */,
+				FD1CA6082F0F5C4100A1C5E8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				FD1B9A6F2ECB1ED700B8C72E /* FamCal */,
@@ -289,6 +324,26 @@
 			productReference = FD1B9A8B2ECB1ED800B8C72E /* FamCalUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		FD1CA5FF2F0F5C4100A1C5E8 /* FamCalNotificationContent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FD1CA6052F0F5C4100A1C5E8 /* Build configuration list for PBXNativeTarget "FamCalNotificationContent" */;
+			buildPhases = (
+				FD1CA5FC2F0F5C4100A1C5E8 /* Sources */,
+				FD1CA5FE2F0F5C4100A1C5E8 /* Frameworks */,
+				FD1CA60A2F0F5C4100A1C5E8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				FD1CA5FD2F0F5C4100A1C5E8 /* FamCalNotificationContent */,
+			);
+			name = FamCalNotificationContent;
+			productName = FamCalNotificationContent;
+			productReference = FD1CA6012F0F5C4100A1C5E8 /* FamCalNotificationContent.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -334,11 +389,19 @@
 				FD1B9A802ECB1ED800B8C72E /* FamCalTests */,
 				1D9CDB3F0D434692A51CC6A8 /* NextEventWidget */,
 				FD1B9A8A2ECB1ED800B8C72E /* FamCalUITests */,
+				FD1CA5FF2F0F5C4100A1C5E8 /* FamCalNotificationContent */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		FD1CA60A2F0F5C4100A1C5E8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8728BEA1512F4BC5844FFB5D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -412,6 +475,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		FD1CA5FC2F0F5C4100A1C5E8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0EBC59C2AA394B9D927FDF59 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -457,6 +527,11 @@
 			isa = PBXTargetDependency;
 			target = FD1B9A6C2ECB1ED700B8C72E /* FamCal */;
 			targetProxy = FD1B9A8C2ECB1ED800B8C72E /* PBXContainerItemProxy */;
+		};
+		FD1CA6082F0F5C4100A1C5E8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FD1CA5FF2F0F5C4100A1C5E8 /* FamCalNotificationContent */;
+			targetProxy = FD1CA6072F0F5C4100A1C5E8 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -816,6 +891,58 @@
 			};
 			name = Release;
 		};
+		FD1CA6032F0F5C4100A1C5E8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M7KXVX37Y7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FamCalNotificationContent/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 7;
+				PRODUCT_BUNDLE_IDENTIFIER = mdias.FamCal.NotificationContent;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		FD1CA6042F0F5C4100A1C5E8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M7KXVX37Y7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FamCalNotificationContent/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 7;
+				PRODUCT_BUNDLE_IDENTIFIER = mdias.FamCal.NotificationContent;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -860,6 +987,15 @@
 			buildConfigurations = (
 				FD1B9A9D2ECB1ED800B8C72E /* Debug */,
 				FD1B9A9E2ECB1ED800B8C72E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FD1CA6052F0F5C4100A1C5E8 /* Build configuration list for PBXNativeTarget "FamCalNotificationContent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FD1CA6032F0F5C4100A1C5E8 /* Debug */,
+				FD1CA6042F0F5C4100A1C5E8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

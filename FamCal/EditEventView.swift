@@ -837,7 +837,7 @@ struct EditEventView: View {
 
                     for ekEvent in events {
                         if ekEvent.eventIdentifier != upcomingEvent.id {
-                            let eventTitle = ekEvent.title
+                            let eventTitle = ekEvent.title ?? "Untitled event"
                             let eventId = ekEvent.eventIdentifier ?? "unknown"
                             let calendarTitle = calendar.title
                             print("🔗 Found linked event '\(eventTitle)' with ID '\(eventId)' in calendar '\(calendarTitle)'")
@@ -867,9 +867,9 @@ struct EditEventView: View {
                                 dateFormatter.dateStyle = .medium
                                 dateFormatter.timeStyle = .short
                                 let occurrenceDateStr = dateFormatter.string(from: linkedEventOccurrenceDate)
-                                print("✅ Updated linked event in calendar: \(calendar.title) (occurrence: \(occurrenceDateStr))")
+                                print("✅ Updated linked event in calendar: \(calendarTitle) (occurrence: \(occurrenceDateStr))")
                             } else {
-                                print("⚠️ Failed to update linked event in calendar: \(calendar.title)")
+                                print("⚠️ Failed to update linked event in calendar: \(calendarTitle)")
                             }
                         }
                     }
