@@ -23,6 +23,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
     private var receiveTask: Task<Void, Never>?
     private var isWebSocketConnected = false
     private var currentAccessToken: String?
+    private var pingTask: Task<Void, Never>?
 
     enum RealtimeSyncStatus: Equatable {
         case connected
@@ -174,6 +175,10 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             print("✅ Successfully sent subscription to family_activity_log table")
             print("👂 Waiting for subscription confirmation from server...")
             updateStatus(.connected)
+
+            // Start sending periodic keep-alive pings to maintain connection
+            print("💓 Starting keep-alive ping loop...")
+            startPingLoop()
         } catch {
             isSubscribed = false
             print("❌ Failed to send subscription: \(error.localizedDescription)")
@@ -189,6 +194,8 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         isSubscribed = false
         receiveTask?.cancel()
         receiveTask = nil
+        pingTask?.cancel()
+        pingTask = nil
 
         await MainActor.run {
             webSocket?.cancel(with: .goingAway, reason: nil)
@@ -196,6 +203,32 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             urlSession?.invalidateAndCancel()
             urlSession = nil
             updateStatus(.disconnected)
+        }
+    }
+
+    /// Send periodic ping messages to keep the WebSocket alive
+    private func startPingLoop() {
+        pingTask = Task {
+            while !Task.isCancelled {
+                // Wait 25 seconds before sending ping (keep-alive interval)
+                try? await Task.sleep(nanoseconds: 25_000_000_000)
+
+                guard !Task.isCancelled, let webSocket = self.webSocket else { return }
+
+                // Send a ping message to keep connection alive
+                let pingMessage = """
+                {
+                  "type": "ping"
+                }
+                """
+
+                do {
+                    try await webSocket.send(.string(pingMessage))
+                    print("💓 Sent keep-alive ping to Realtime server")
+                } catch {
+                    print("⚠️ Failed to send keep-alive ping: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
