@@ -81,11 +81,13 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("✅ WebSocket connection initiated")
         updateStatus(.connected)
 
-        // Start receiving messages
+        // Start receiving messages (this runs indefinitely)
         receiveTask = Task {
             await receiveMessages(familyId: familyId)
+        }
 
-            // After a brief delay to ensure connection is established, subscribe to the table
+        // Subscribe to the table after a brief delay to ensure connection is established
+        Task {
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
             await subscribeToTable(familyId: familyId)
         }
