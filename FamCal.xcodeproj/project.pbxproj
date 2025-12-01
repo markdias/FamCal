@@ -13,8 +13,8 @@
 		FD05CD322ED3830B003A2662 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD312ED3830B003A2662 /* PostgREST */; };
 		FD05CD342ED3830B003A2662 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD332ED3830B003A2662 /* Realtime */; };
 		FD05CD362ED3830B003A2662 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD352ED3830B003A2662 /* Storage */; };
-		FD9B4E002F0E5C3100A1B2C3 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = FD9B4E012F0E5C3100A1B2C3 /* GoogleSignIn */; };
 		FD1CA6092F0F5C4100A1C5E8 /* FamCalNotificationContent.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FD1CA6012F0F5C4100A1C5E8 /* FamCalNotificationContent.appex */; };
+		FD9B4E002F0E5C3100A1B2C3 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = FD9B4E012F0E5C3100A1B2C3 /* GoogleSignIn */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -117,15 +117,11 @@
 		};
 		FD1B9A842ECB1ED800B8C72E /* FamCalTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FamCalTests;
 			sourceTree = "<group>";
 		};
 		FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FamCalUITests;
 			sourceTree = "<group>";
 		};
@@ -141,13 +137,6 @@
 
 /* Begin PBXFrameworksBuildPhase section */
 		3AD5554D209543B0AC31133D /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		FD1CA5FE2F0F5C4100A1C5E8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -175,6 +164,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		FD1B9A882ECB1ED800B8C72E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FD1CA5FE2F0F5C4100A1C5E8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -395,13 +391,6 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		FD1CA60A2F0F5C4100A1C5E8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		8728BEA1512F4BC5844FFB5D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -424,6 +413,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		FD1B9A892ECB1ED800B8C72E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FD1CA60A2F0F5C4100A1C5E8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -463,9 +459,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FamCal/Pods-FamCal-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FamCal/Pods-FamCal-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -475,13 +475,6 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		FD1CA5FC2F0F5C4100A1C5E8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		0EBC59C2AA394B9D927FDF59 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -504,6 +497,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		FD1B9A872ECB1ED800B8C72E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FD1CA5FC2F0F5C4100A1C5E8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
