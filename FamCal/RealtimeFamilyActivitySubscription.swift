@@ -115,6 +115,40 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("⏳ WebSocket connection initiated (resuming)")
         updateStatus(.syncing)
 
+        // Test: Try a simple receive immediately to see what happens
+        print("🧪 DIAGNOSTIC TEST: Attempting immediate receive to check WebSocket state...")
+        Task {
+            guard let ws = self.webSocket else {
+                print("❌ WebSocket is nil!")
+                return
+            }
+
+            print("⏱️ Attempting to receive message (with 5 second timeout)...")
+            do {
+                // Try to receive one message with short timeout
+                let receiveTask = Task {
+                    try await ws.receive()
+                }
+
+                let result = await withTimeoutSeconds(5) {
+                    try await receiveTask.value
+                }
+
+                if let message = result {
+                    print("✅ SUCCESS! Received message on first try!")
+                    print("📨 Message: \(message)")
+                } else {
+                    print("❌ TIMEOUT: WebSocket did not send any message within 5 seconds")
+                    print("⚠️ This means:")
+                    print("   - Supabase Realtime might not be enabled (check Settings → Infrastructure)")
+                    print("   - Or the table is not in the Realtime publication")
+                    print("   - Or there's a network connectivity issue")
+                }
+            } catch {
+                print("❌ ERROR: \(error.localizedDescription)")
+            }
+        }
+
         // Start receiving messages immediately to keep the WebSocket alive
         // This MUST happen before subscription or the connection won't stay open
         print("📌 Starting receiveMessages task (must run before subscription)...")

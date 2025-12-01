@@ -31,6 +31,8 @@ struct SettingsView: View {
     @State private var showingProSheet = false
     @State private var showingDonate = false
     @State private var showingFeedback = false
+    @State private var isRunningDiagnostics = false
+    @State private var diagnosticsLog = ""
     private var proToggleBinding: Binding<Bool> {
         Binding(
             get: { appSettingsManager.isProUser },
@@ -354,6 +356,42 @@ struct SettingsView: View {
                                 }) {
                                     SettingsRowView(iconName: "play.circle", title: "Run Startup Workflow")
                                 }
+
+                                Divider().padding(.leading, 56)
+
+                                Button(action: {
+                                    runRealtimeDiagnostics()
+                                }) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: isRunningDiagnostics ? "hourglass" : "stethoscope")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(isRunningDiagnostics ? theme.accentColor : .orange)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Realtime Diagnostics")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Test Realtime WebSocket connection")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        if isRunningDiagnostics {
+                                            ProgressView()
+                                                .tint(theme.accentColor)
+                                        } else {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                .disabled(isRunningDiagnostics)
                             }
                             .padding(.vertical, 8)
                         }
@@ -532,6 +570,17 @@ struct SettingsView: View {
             return version
         }
         return "1.0"
+    }
+
+    private func runRealtimeDiagnostics() {
+        isRunningDiagnostics = true
+        Task {
+            let diagnostic = RealtimeDiagnostic()
+            let _ = await diagnostic.runDiagnostics()
+            await MainActor.run {
+                isRunningDiagnostics = false
+            }
+        }
     }
 }
 
