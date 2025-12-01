@@ -84,6 +84,41 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         // Start receiving messages
         receiveTask = Task {
             await receiveMessages(familyId: familyId)
+
+            // After a brief delay to ensure connection is established, subscribe to the table
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
+            await subscribeToTable(familyId: familyId)
+        }
+    }
+
+    /// Subscribe to family_activity_log table changes
+    private func subscribeToTable(familyId: String) async {
+        guard let webSocket = self.webSocket else {
+            print("⚠️ WebSocket not available for subscription")
+            return
+        }
+
+        // Build subscription message according to Supabase Realtime protocol
+        let subscriptionMessage = """
+        {
+          "type": "subscribe",
+          "id": 1,
+          "payload": {
+            "schema": "public",
+            "table": "family_activity_log",
+            "configs": {
+              "scope": "postgres_changes"
+            }
+          }
+        }
+        """
+
+        print("📡 Sending Realtime subscription for family_activity_log...")
+        do {
+            try await webSocket.send(.string(subscriptionMessage))
+            print("✅ Subscribed to family_activity_log table")
+        } catch {
+            print("⚠️ Failed to send subscription: \(error.localizedDescription)")
         }
     }
 
