@@ -2,6 +2,9 @@
 
 ## 📚 Quick Navigation
 
+### 🔴 CRITICAL: WebSocket Authentication Fix Applied
+→ Read: [SUPABASE_AUTH_FIX.md](SUPABASE_AUTH_FIX.md) (5 min - JWT token in URL required)
+
 ### 🚀 I Want to Get Started Testing Right Now
 → Read: [QUICK_DEBUG_REFERENCE.md](QUICK_DEBUG_REFERENCE.md) (2 min quick reference)
 → Then: [TESTING_WITH_DEBUG_LOGS.md](TESTING_WITH_DEBUG_LOGS.md) (10 min comprehensive guide)
@@ -96,6 +99,7 @@
 | File | Purpose | Read Time | Audience |
 |------|---------|-----------|----------|
 | [REALTIME_README.md](REALTIME_README.md) | This index (you are here) | 3 min | Everyone |
+| **[SUPABASE_AUTH_FIX.md](SUPABASE_AUTH_FIX.md)** | **CRITICAL: JWT in WebSocket URL** | **5 min** | **All (CRITICAL)** |
 | [QUICK_DEBUG_REFERENCE.md](QUICK_DEBUG_REFERENCE.md) | 30-second quick reference card | 2 min | Anyone testing/debugging |
 | [TESTING_WITH_DEBUG_LOGS.md](TESTING_WITH_DEBUG_LOGS.md) | End-to-end testing with Debug Logs | 10 min | Users testing Realtime |
 | [NEXT_IMMEDIATE_STEPS.md](NEXT_IMMEDIATE_STEPS.md) | Quick start & immediate actions | 5 min | Users ready to test |
@@ -106,6 +110,7 @@
 | [REALTIME_NEXT_STEPS.md](REALTIME_NEXT_STEPS.md) | Migration & setup steps | 5 min | Users setting up migrations |
 | [REALTIME_TROUBLESHOOTING.md](REALTIME_TROUBLESHOOTING.md) | 6-issue troubleshooting guide | 8 min | Users with specific issues |
 | [SUPABASE_REALTIME_DIAGNOSTICS.md](SUPABASE_REALTIME_DIAGNOSTICS.md) | Advanced troubleshooting guide | 10 min | Advanced troubleshooting |
+| [DEBUG_LOGS_GUIDE.md](DEBUG_LOGS_GUIDE.md) | In-app Debug Logs viewer guide | 5 min | Users using Debug Logs |
 | [REALTIME_CONNECTION_ANALYSIS.md](REALTIME_CONNECTION_ANALYSIS.md) | Technical deep dive (existing) | 15 min | Architecture/engineering review |
 | [TESTING_REALTIME_CONNECTION.md](TESTING_REALTIME_CONNECTION.md) | Testing procedures (existing) | 10 min | QA/testing |
 
