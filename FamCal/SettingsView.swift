@@ -33,6 +33,7 @@ struct SettingsView: View {
     @State private var showingFeedback = false
     @State private var isRunningDiagnostics = false
     @State private var diagnosticsLog = ""
+    @State private var showingDebugLogs = false
     private var proToggleBinding: Binding<Bool> {
         Binding(
             get: { appSettingsManager.isProUser },
@@ -392,6 +393,38 @@ struct SettingsView: View {
                                     .padding(.vertical, 12)
                                 }
                                 .disabled(isRunningDiagnostics)
+                            }
+
+                            Divider().padding(.leading, 56)
+
+                            Button(action: { showingDebugLogs = true }) {
+                                HStack(spacing: 16) {
+                                    Image(systemName: "doc.text.magnifyingglass")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(.purple)
+                                        .frame(width: 24, height: 24)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Debug Logs")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(primaryTextColor)
+                                        Text("View real-time console logs in-app")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(secondaryTextColor)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                            }
+                            .sheet(isPresented: $showingDebugLogs) {
+                                DebugLogViewer()
+                                    .environmentObject(themeManager)
                             }
                             .padding(.vertical, 8)
                         }
