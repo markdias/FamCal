@@ -87,11 +87,25 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://")
 
-        // For Supabase Realtime, use the anonymous key in the URL
-        // JWT token should be passed via the payload after connection is established
-        let realtimeURL = "\(wsURL)/realtime/v1?apikey=\(anonKey)"
-        print("🔗 WebSocket URL: \(realtimeURL.prefix(50))...apikey=***")
-        print("🔐 Using JWT token for RLS authorization (will be sent after connection)")
+        // IMPORTANT: For authenticated Realtime channels with RLS, MUST include JWT in URL
+        // Not just the anonymous key. The JWT token provides the auth context for RLS policies.
+        // See: https://supabase.com/docs/guides/realtime/extensions/auth
+
+        var realtimeURL: String
+        if let token = accessToken, !token.isEmpty {
+            // Use authenticated connection with JWT token
+            realtimeURL = "\(wsURL)/realtime/v1?apikey=\(anonKey)&access_token=\(token)"
+            print("🔐 Using authenticated Realtime connection with JWT token in URL")
+            let tokenPreview = token.count > 20 ? "\(token.prefix(20))..." : token
+            print("🔐 JWT token: \(tokenPreview) (\(token.count) chars)")
+        } else {
+            // Fallback to anonymous if no token (will fail RLS checks)
+            realtimeURL = "\(wsURL)/realtime/v1?apikey=\(anonKey)"
+            print("⚠️ WARNING: Using anonymous key only - RLS policies will deny access")
+            print("⚠️ For authenticated channels, access_token MUST be in URL")
+        }
+
+        print("🔗 WebSocket URL: \(realtimeURL.prefix(60))...")
 
         guard let url = URL(string: realtimeURL) else {
             print("❌ Failed to create URL from: \(realtimeURL)")
@@ -201,7 +215,7 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("✅ WebSocket is ready! Sending subscription...")
 
         // Build subscription message according to Supabase Realtime protocol v1
-        // Include JWT token for RLS authorization
+        // JWT token is now in URL, but also include in payload for compatibility
         var payload: [String: Any] = [
             "schema": "public",
             "table": "family_activity_log",
@@ -211,11 +225,12 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
             ]
         ]
 
-        // Add access token if available for RLS authorization
+        // Add access token to payload for RLS authorization (already in URL for connection auth)
         if let token = currentAccessToken {
             payload["access_token"] = token
             let tokenPreview = token.count > 20 ? "\(token.prefix(20))..." : token
-            print("✅ Including access token in subscription (\(token.count) chars): \(tokenPreview)")
+            print("✅ Including access token in subscription payload (\(token.count) chars): \(tokenPreview)")
+            print("✅ Token also present in WebSocket URL for authenticated connection")
         } else {
             print("⚠️ WARNING: No access token in subscription message")
             print("⚠️ This will cause RLS policy denials - auth.uid() will be NULL")
