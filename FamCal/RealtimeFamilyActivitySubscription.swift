@@ -73,6 +73,15 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         print("ℹ️ Subscribing to family activities for family: \(familyId), user: \(userId)")
         print("🔗 Supabase URL: \(supabaseURL)")
 
+        // Validate authentication
+        if let token = accessToken {
+            let tokenPreview = token.count > 20 ? "\(token.prefix(20))..." : token
+            print("🔐 Access token present (\(token.count) chars): \(tokenPreview)")
+        } else {
+            print("⚠️ WARNING: No access token provided - RLS policies may deny access")
+            print("⚠️ Ensure authManager.accessToken is not nil before subscribing")
+        }
+
         // Build Realtime WebSocket URL with authentication
         let wsURL = supabaseURL
             .replacingOccurrences(of: "https://", with: "wss://")
@@ -205,6 +214,11 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         // Add access token if available for RLS authorization
         if let token = currentAccessToken {
             payload["access_token"] = token
+            let tokenPreview = token.count > 20 ? "\(token.prefix(20))..." : token
+            print("✅ Including access token in subscription (\(token.count) chars): \(tokenPreview)")
+        } else {
+            print("⚠️ WARNING: No access token in subscription message")
+            print("⚠️ This will cause RLS policy denials - auth.uid() will be NULL")
         }
 
         let subscriptionPayload: [String: Any] = [
