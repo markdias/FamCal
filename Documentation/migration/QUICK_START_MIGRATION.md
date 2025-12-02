@@ -15,7 +15,7 @@ All Swift code updates are complete:
 1. Open Supabase Dashboard: https://app.supabase.com
 2. Go to: **SQL Editor** (left sidebar)
 3. Click: **New Query**
-4. Copy ALL text from: **`supabase_remove_calendar_id_v2.sql`**
+4. Copy ALL text from: **`supabase_remove_calendar_id.sql`** (current dedup script)
 5. Paste into the editor
 6. Click: **Run** button (green play icon)
 
@@ -91,7 +91,7 @@ If migration fails:
 
 ```
 Database:
-  [ ] V2 migration executed successfully
+  [ ] Canonical dedup migration (`supabase_remove_calendar_id.sql`) executed successfully
   [ ] No calendar_id column in any table
   [ ] Unique constraints created
 

@@ -30,13 +30,15 @@ When we try to create a unique constraint on `(family_member_id, calendar_name)`
 
 ## The Solution
 
-**Use `supabase_remove_calendar_id_v2.sql`** instead of the original migration.
+**Use `supabase_remove_calendar_id.sql`** instead of the original migration.
 
-This v2 migration:
+The canonical dedup migration (v3):
 1. **Identifies** all duplicate calendar names per family member
 2. **Keeps** the most recent one (based on `created_at`)
 3. **Deletes** the older duplicates
 4. **Then** creates the unique constraint
+
+> The `supabase_remove_calendar_id_v2.sql` file is retained here for reference, but `supabase_remove_calendar_id.sql` is the updated script you should execute.
 
 ### What Gets Deleted
 
@@ -50,10 +52,10 @@ The app will use the kept entry. Since it only uses `calendar_name` for matching
 
 ## How to Deploy (Corrected Steps)
 
-### Step 1: Run V2 Migration (NOT v1)
+### Step 1: Run the canonical dedup migration
 
 1. Go to Supabase SQL Editor
-2. Copy the entire contents of: **`supabase_remove_calendar_id_v2.sql`** ⬅️ THIS ONE
+2. Copy the entire contents of: **`supabase_remove_calendar_id.sql`**
 3. Run the query
 
 **Expected output:**
@@ -92,8 +94,9 @@ Proceed with the CoreData model update as normal.
 
 ## Files Reference
 
-- ❌ `supabase_remove_calendar_id.sql` - **DON'T USE** (causes the error)
-- ✅ `supabase_remove_calendar_id_v2.sql` - **USE THIS** (handles duplicates)
+- ✅ `supabase_remove_calendar_id.sql` - **Run this** (current dedup migration, removes duplicates before constraints)
+- ℹ️ `supabase_remove_calendar_id_v2.sql` - Previous dedup version (identical logic, kept for reference)
+- ❌ `supabase_remove_calendar_id_v1.sql` - Original migration (fails on duplicate data)
 
 ---
 
@@ -112,9 +115,9 @@ GROUP BY family_member_id, calendar_name
 HAVING COUNT(*) > 1;
 ```
 
-### Scenario 2: Duplicate Issue After Running v2
+### Scenario 2: Duplicate Issue After Running the Migration
 
-If the v2 migration deleted records and you see issues:
+If the canonical migration deleted records and you see issues:
 1. The data should still be fine (we kept the most recent)
 2. Just rebuild the app and test
 3. If needed, you have backups (Supabase keeps point-in-time recovery)
@@ -124,13 +127,13 @@ If the v2 migration deleted records and you see issues:
 Use Supabase's point-in-time recovery feature:
 1. Go to Supabase Dashboard → Database → Backups
 2. Restore to before you ran the migration
-3. Try again with v2 migration
+3. Try again with `supabase_remove_calendar_id.sql`
 
 ---
 
 ## Summary
 
 ✅ **Problem:** Duplicate calendars per family member (from multiple devices)
-✅ **Solution:** V2 migration deduplicates before adding constraint
-✅ **Action:** Use `supabase_remove_calendar_id_v2.sql` instead of v1
+✅ **Solution:** The canonical dedup migration (`supabase_remove_calendar_id.sql`) removes duplicates before adding constraints
+✅ **Action:** Run `supabase_remove_calendar_id.sql` (older versions are kept only for reference)
 ✅ **Result:** Clean database, app works as before, but simpler internally

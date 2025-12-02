@@ -8,19 +8,21 @@ Successfully removed all device-specific `calendar_id` references from FamCal. T
 ## ✅ Completed Changes
 
 ### 1. SQL Migration (Ready to Deploy)
-**File:** `supabase_remove_calendar_id_v2.sql` ⬅️ USE THIS (handles duplicates!)
+**File:** `supabase_remove_calendar_id.sql` (v3 - canonical dedup script)
 
 Originally created: `supabase_remove_calendar_id.sql` (v1)
-Updated: `supabase_remove_calendar_id_v2.sql` (v2 - fixes duplicate calendar issue)
+Updated: `supabase_remove_calendar_id_v2.sql` (v2 - added dedup logic)
+Finalized: `supabase_remove_calendar_id.sql` (v3 - removes duplicates and matches the current schema)
 
-**Why v2?** Your database had duplicate calendar entries (same calendar on different devices). v2 automatically deduplicates before creating unique constraints. See `MIGRATION_ISSUE_RESOLVED.md` for details.
+**Why the dedup migration?** Your database had duplicate calendar entries (same calendar on different devices). `supabase_remove_calendar_id.sql` automatically deduplicates before creating unique constraints. See `MIGRATION_ISSUE_RESOLVED.md` for details.
 
 Removes `calendar_id` column from:
 - ✅ `family_member_calendars`
 - ✅ `shared_calendars`
 - ✅ `personal_calendars`
 - ✅ `calendar_event_metadata`
-- ✅ `family_events` (if exists)
+
+> The canonical migration no longer touches `family_events`; that table either does not exist in the current schema or never had a `calendar_id` column needing removal.
 
 **Updates unique constraints to use `calendar_name`:**
 - `family_member_calendars`: `(family_member_id, calendar_name)`

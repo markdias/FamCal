@@ -13,7 +13,8 @@ Removes `calendar_id` column from:
 - `shared_calendars` table
 - `personal_calendars` table
 - `calendar_event_metadata` table
-- `family_events` table (if exists)
+
+> The migration no longer touches `family_events`; in this schema the table either does not exist or already lacks a `calendar_id` column.
 
 Updates unique constraints:
 - `family_member_calendars`: `(family_member_id, calendar_name)` instead of `(family_member_id, calendar_id)`
@@ -193,4 +194,3 @@ No remapping needed, app just matches by name at runtime
 ✅ Consistent calendar names across the entire family
 ✅ Reduced database complexity (smaller unique constraints)
 ✅ Easier to understand and maintain code
-

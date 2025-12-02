@@ -1,9 +1,9 @@
-# SQL Migration Comparison: v1 vs v2
+# SQL Migration Comparison: v1 vs the current dedup migration
 
 ## Quick Comparison
 
-| Aspect | v1 (Original) | v2 (Fixed) |
-|--------|---------------|-----------|
+| Aspect | v1 (Original) | Current dedup migration |
+|--------|---------------|--------------------------|
 | **Handles duplicates?** | ❌ No | ✅ Yes |
 | **Deletes old entries?** | ❌ No | ✅ Yes (keeps newest) |
 | **Works with your data?** | ❌ Fails | ✅ Succeeds |
@@ -36,7 +36,7 @@ Cannot create unique constraint!
 
 ---
 
-## What v2 Does (Works ✅)
+## What the current dedup migration does (Works ✅)
 
 ### family_member_calendars Example
 
@@ -46,7 +46,7 @@ id: 111   family_member_id: ABC   calendar_name: Verity   calendar_id: DEV1ID   
 id: 222   family_member_id: ABC   calendar_name: Verity   calendar_id: DEV2ID   created_at: 2025-11-25
 ```
 
-**v2 Migration Steps:**
+**Current dedup migration steps:**
 1. **DELETE duplicates** (keep only newest):
    ```sql
    DELETE FROM family_member_calendars
@@ -106,7 +106,7 @@ ADD CONSTRAINT unique(family_member_id, calendar_name);
 Assumes: Each (family_member_id, calendar_name) pair is unique
 Reality: Your data has duplicates! ❌
 
-### v2: "Clean up first, then remove calendar_id"
+### Current migration: "Clean up first, then remove calendar_id"
 ```sql
 DELETE FROM family_member_calendars
 WHERE id NOT IN (
@@ -151,7 +151,7 @@ WHERE id NOT IN (
 
 ## Applied to All Tables
 
-v2 applies the same deduplication logic to:
+The current dedup migration applies the same deduplication logic to:
 
 | Table | Deduped By | Result |
 |-------|-----------|--------|
@@ -165,8 +165,8 @@ v2 applies the same deduplication logic to:
 ## Bottom Line
 
 - **v1:** Fails because it doesn't handle duplicates
-- **v2:** Succeeds because it removes duplicates first
+- **Current dedup migration:** Succeeds because it removes duplicates first
 - **Both:** Result in the same clean database structure
-- **Difference:** v2 actually works with your real data
+- **Difference:** The current dedup migration actually works with your real data
 
-✅ **Use v2. Always.**
+✅ **Use the current dedup migration (`supabase_remove_calendar_id.sql`).**

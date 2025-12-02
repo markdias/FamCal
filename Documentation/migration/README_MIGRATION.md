@@ -11,13 +11,13 @@
 ### For Understanding the Issue:
 2. **`MIGRATION_ISSUE_RESOLVED.md`**
    - Why the first migration failed
-   - What v2 does differently
+   - What the dedup migration does differently
    - How deduplication works
    - Data integrity explanation
 
 ### For Technical Details:
 3. **`SQL_MIGRATION_COMPARISON.md`**
-   - Side-by-side v1 vs v2 comparison
+   - Side-by-side v1 vs the current dedup migration
    - Detailed SQL logic
    - What gets deleted and why
    - Deduplication algorithm
@@ -42,7 +42,7 @@
 ### Step 1: Database (5 min)
 ```
 1. Open Supabase SQL Editor
-2. Copy: supabase_remove_calendar_id_v2.sql
+2. Copy: supabase_remove_calendar_id.sql (latest dedup script)
 3. Run the query
 4. Done!
 ```
@@ -94,8 +94,9 @@
 ## 🔧 Files You Need
 
 ### SQL Files (pick ONE):
-- ❌ `supabase_remove_calendar_id.sql` (v1 - DON'T USE)
-- ✅ `supabase_remove_calendar_id_v2.sql` (v2 - USE THIS)
+- ✅ `supabase_remove_calendar_id.sql` (v3 - current dedup script; run this)
+- ℹ️ `supabase_remove_calendar_id_v2.sql` (previous dedup version, kept for reference)
+- ❌ `supabase_remove_calendar_id_v1.sql` (original migration — fails on duplicate calendar entries)
 
 ### Code Files (already updated):
 - ✅ `SupabaseManager.swift` - Updated API functions
@@ -110,10 +111,10 @@
 
 ## ⚠️ Important Notes
 
-**Use V2 migration!**
-- The original v1 migration fails with your data
-- v2 automatically handles duplicate calendars
-- It deduplicates by keeping the most recent entry
+**Run the canonical script (`supabase_remove_calendar_id.sql`).**
+- It deduplicates duplicate `(family_member_id, calendar_name)` rows before re-applying the unique constraint, so only the newest entry remains.
+- `supabase_remove_calendar_id_v2.sql` is preserved for comparison, but you should always run the canonical file.
+- `supabase_remove_calendar_id_v1.sql` fails on the duplicate data and must never be executed.
 
 **No data loss?**
 - ✅ Only removes duplicate entries
@@ -154,7 +155,7 @@ Code Updates:
   ✅ FamCalApp.swift
 
 Database:
-  ⏳ SQL migration (v2) - YOU DO THIS
+  ⏳ SQL migration (latest dedup script) - YOU DO THIS
 
 CoreData:
   ⏳ Delete calendarID attributes - YOU DO THIS
@@ -169,7 +170,7 @@ Testing:
 
 1. **Quick question?** → Check `QUICK_START_MIGRATION.md`
 2. **Why did v1 fail?** → Check `MIGRATION_ISSUE_RESOLVED.md`
-3. **How does v2 work?** → Check `SQL_MIGRATION_COMPARISON.md`
+3. **How does the dedup migration work?** → Check `SQL_MIGRATION_COMPARISON.md`
 4. **Step-by-step guide?** → Check `DEPLOYMENT_STEPS.md`
 5. **Full technical details?** → Check `REFACTOR_COMPLETE.md`
 
@@ -180,7 +181,7 @@ Testing:
 | Item | Status |
 |------|--------|
 | Swift code updates | ✅ Complete |
-| SQL migration v2 | ✅ Ready |
+| SQL migration (current dedup script) | ✅ Ready |
 | Documentation | ✅ Complete |
 | Your action needed | ⏳ Run SQL + Update CoreData |
 | Testing | ⏳ After you complete above |

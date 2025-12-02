@@ -6,18 +6,18 @@
 
 1. Go to: https://app.supabase.com/project/[YOUR_PROJECT_ID]/sql
 2. Create a new query
-3. Copy and paste the entire contents of: `supabase_remove_calendar_id_v2.sql` ⬅️ USE V2 (handles duplicates)
+3. Copy and paste the entire contents of: `supabase_remove_calendar_id.sql` (canonical dedup script)
 4. **Review the SQL** to make sure it's dropping the right tables
 5. Click "Run" to execute
 
-**Note:** Use v2 migration - it automatically deduplicates calendar names before creating unique constraints. This handles cases where the same calendar was added on multiple devices.
+**Note:** Run the canonical dedup script (`supabase_remove_calendar_id.sql`). `supabase_remove_calendar_id_v2.sql` is retained for reference, while `supabase_remove_calendar_id_v1.sql` still fails on duplicate calendars.
 
 **Expected Results:**
 ```
 ✅ DROP INDEX idx_family_member_calendars_calendar_id
 ✅ ALTER TABLE family_member_calendars DROP COLUMN calendar_id
 ✅ ALTER TABLE family_member_calendars ADD CONSTRAINT unique_calendar_name_per_member
-✅ (similar for shared_calendars, personal_calendars, calendar_event_metadata, family_events)
+✅ (similar for shared_calendars, personal_calendars, calendar_event_metadata)
 ```
 
 **Verification:**
