@@ -2,8 +2,9 @@
 
 ## 📚 Quick Navigation
 
-### 🚀 I Want to Get Started Right Now
-→ Read: [NEXT_IMMEDIATE_STEPS.md](NEXT_IMMEDIATE_STEPS.md) (5 min read)
+### 🚀 I Want to Get Started Testing Right Now
+→ Read: [QUICK_DEBUG_REFERENCE.md](QUICK_DEBUG_REFERENCE.md) (2 min quick reference)
+→ Then: [TESTING_WITH_DEBUG_LOGS.md](TESTING_WITH_DEBUG_LOGS.md) (10 min comprehensive guide)
 
 ### 🎯 I Want to Understand the Complete Feature
 → Read: [REALTIME_COMPLETE_GUIDE.md](REALTIME_COMPLETE_GUIDE.md) (10 min read)
@@ -32,13 +33,17 @@
 2. [NEXT_IMMEDIATE_STEPS.md](NEXT_IMMEDIATE_STEPS.md) - Then do this to test
 
 ### Testing & Verification
-1. [REALTIME_DIAGNOSTIC_GUIDE.md](REALTIME_DIAGNOSTIC_GUIDE.md) - How to run diagnostics
-2. [REALTIME_COMPLETE_GUIDE.md](REALTIME_COMPLETE_GUIDE.md#-how-to-test) - Testing procedures
+1. [QUICK_DEBUG_REFERENCE.md](QUICK_DEBUG_REFERENCE.md) - 2-minute quick reference
+2. [TESTING_WITH_DEBUG_LOGS.md](TESTING_WITH_DEBUG_LOGS.md) - Full end-to-end testing with Debug Logs
+3. [REALTIME_DIAGNOSTIC_GUIDE.md](REALTIME_DIAGNOSTIC_GUIDE.md) - How to run diagnostics
+4. [REALTIME_COMPLETE_GUIDE.md](REALTIME_COMPLETE_GUIDE.md#-how-to-test) - Testing procedures
 
 ### Troubleshooting
-1. [REALTIME_DIAGNOSTIC_GUIDE.md](REALTIME_DIAGNOSTIC_GUIDE.md#interpreting-results) - What results mean
-2. [REALTIME_COMPLETE_GUIDE.md](REALTIME_COMPLETE_GUIDE.md#-troubleshooting) - Common issues
-3. [SUPABASE_REALTIME_DIAGNOSTICS.md](SUPABASE_REALTIME_DIAGNOSTICS.md) - Deep debugging
+1. [QUICK_DEBUG_REFERENCE.md](QUICK_DEBUG_REFERENCE.md#most-common-issues--quick-fixes) - Quick fixes for common issues
+2. [TESTING_WITH_DEBUG_LOGS.md](TESTING_WITH_DEBUG_LOGS.md#troubleshooting-authentication-token-issues) - Detailed troubleshooting steps
+3. [REALTIME_TROUBLESHOOTING.md](REALTIME_TROUBLESHOOTING.md) - 6 categories of issues
+4. [REALTIME_DIAGNOSTIC_GUIDE.md](REALTIME_DIAGNOSTIC_GUIDE.md#interpreting-results) - What diagnostic results mean
+5. [SUPABASE_REALTIME_DIAGNOSTICS.md](SUPABASE_REALTIME_DIAGNOSTICS.md) - Deep debugging
 
 ### Technical Implementation
 1. [REALTIME_STATUS_UPDATE.md](REALTIME_STATUS_UPDATE.md) - What was built and why
@@ -91,12 +96,15 @@
 | File | Purpose | Read Time | Audience |
 |------|---------|-----------|----------|
 | [REALTIME_README.md](REALTIME_README.md) | This index (you are here) | 3 min | Everyone |
+| [QUICK_DEBUG_REFERENCE.md](QUICK_DEBUG_REFERENCE.md) | 30-second quick reference card | 2 min | Anyone testing/debugging |
+| [TESTING_WITH_DEBUG_LOGS.md](TESTING_WITH_DEBUG_LOGS.md) | End-to-end testing with Debug Logs | 10 min | Users testing Realtime |
 | [NEXT_IMMEDIATE_STEPS.md](NEXT_IMMEDIATE_STEPS.md) | Quick start & immediate actions | 5 min | Users ready to test |
 | [REALTIME_COMPLETE_GUIDE.md](REALTIME_COMPLETE_GUIDE.md) | Full feature overview & testing | 10 min | Everyone wanting deep knowledge |
 | [REALTIME_DIAGNOSTIC_GUIDE.md](REALTIME_DIAGNOSTIC_GUIDE.md) | How to use & interpret diagnostics | 8 min | Users running diagnostics |
 | [REALTIME_CHANNEL_SUBSCRIPTION.md](REALTIME_CHANNEL_SUBSCRIPTION.md) | How WebSocket subscription works | 7 min | Technical/curious users |
 | [REALTIME_STATUS_UPDATE.md](REALTIME_STATUS_UPDATE.md) | What was built & why | 8 min | Technical users |
 | [REALTIME_NEXT_STEPS.md](REALTIME_NEXT_STEPS.md) | Migration & setup steps | 5 min | Users setting up migrations |
+| [REALTIME_TROUBLESHOOTING.md](REALTIME_TROUBLESHOOTING.md) | 6-issue troubleshooting guide | 8 min | Users with specific issues |
 | [SUPABASE_REALTIME_DIAGNOSTICS.md](SUPABASE_REALTIME_DIAGNOSTICS.md) | Advanced troubleshooting guide | 10 min | Advanced troubleshooting |
 | [REALTIME_CONNECTION_ANALYSIS.md](REALTIME_CONNECTION_ANALYSIS.md) | Technical deep dive (existing) | 15 min | Architecture/engineering review |
 | [TESTING_REALTIME_CONNECTION.md](TESTING_REALTIME_CONNECTION.md) | Testing procedures (existing) | 10 min | QA/testing |
