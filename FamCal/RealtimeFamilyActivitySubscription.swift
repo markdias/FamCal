@@ -131,11 +131,16 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
         request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
 
         print("🚀 Creating WebSocket task...")
+        print("🔗 Request URL: \(request.url?.absoluteString ?? "NONE")")
+        print("🔗 Request headers: \(request.allHTTPHeaderFields ?? [:])")
+
         webSocket = self.urlSession?.webSocketTask(with: request)
-        print("🚀 Calling webSocket.resume()...")
+        print("🚀 WebSocket task created: \(webSocket != nil ? "✅ Success" : "❌ Failed")")
+        print("🚀 Calling webSocket.resume() to initiate TLS handshake...")
         webSocket?.resume()
 
-        print("⏳ WebSocket connection initiated (resuming)")
+        print("⏳ WebSocket connection initiated (TLS handshake in progress)")
+        print("⏳ Waiting for initial message from Supabase Realtime server...")
         updateStatus(.syncing)
 
         // Test: Try a simple receive immediately to see what happens
@@ -168,7 +173,18 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                     print("   - Or there's a network connectivity issue")
                 }
             } catch {
-                print("❌ ERROR: \(error.localizedDescription)")
+                print("❌ ERROR during initial receive: \(error.localizedDescription)")
+                if let urlError = error as? URLError {
+                    print("🔍 URLError code: \(urlError.code.rawValue)")
+                    print("🔍 URLError code name: \(urlError.code)")
+                    let nsError = urlError as NSError
+                    print("🔍 URLError details: \(nsError.userInfo)")
+                } else {
+                    let nsError = error as NSError
+                    print("🔍 Error domain: \(nsError.domain)")
+                    print("🔍 Error code: \(nsError.code)")
+                    print("🔍 Error details: \(nsError.userInfo)")
+                }
             }
         }
 
