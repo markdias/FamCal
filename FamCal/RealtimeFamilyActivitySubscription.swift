@@ -338,17 +338,20 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                 print("   ⏱️ About to call webSocket.receive() with timeout...")
 
                 // Add timeout to detect hanging connections
+                // Use longer timeout for WebSocket long-polling (60 seconds normal, 15 seconds for initial connection)
+                let timeoutSeconds = messageCount == 0 ? 15 : 60
+
                 let receiveTask = Task {
                     try await webSocket.receive()
                 }
 
-                // Wait with timeout (10 seconds per receive attempt)
-                let result = await withTimeoutSeconds(10) {
+                // Wait with timeout per receive attempt
+                let result = await withTimeoutSeconds(timeoutSeconds) {
                     try await receiveTask.value
                 }
 
                 guard let message = result else {
-                    print("❌ webSocket.receive() timed out after 10 seconds")
+                    print("❌ webSocket.receive() timed out after \(timeoutSeconds) seconds")
                     throw URLError(.timedOut)
                 }
 
@@ -389,19 +392,26 @@ class RealtimeFamilyActivitySubscription: ObservableObject {
                         if consecutiveErrors > maxInitialRetries {
                             // Too many retries - likely a configuration issue
                             print("❌ ⚠️ CRITICAL: WebSocket failed to connect after \(maxInitialRetries) attempts")
-                            print("⚠️ This usually means:")
-                            print("   1. Realtime is not enabled on the family_activity_log table in Supabase")
-                            print("   2. Check: Settings → Database → Publications → supabase_realtime")
-                            print("   3. Verify family_activity_log is listed in the publication")
-                            print("   4. Run migration: supabase db push")
-                            print("   5. See SUPABASE_REALTIME_DIAGNOSTICS.md for detailed troubleshooting")
-                            updateStatus(.error("Realtime setup issue - check logs and documentation"))
+                            print("⚠️ Network error - 'Socket is not connected'")
+                            print("⚠️ This could mean:")
+                            print("   1. Firewall or VPN blocking WebSocket connections")
+                            print("   2. Network connectivity issue (try different WiFi)")
+                            print("   3. DNS resolution problem")
+                            print("   4. Supabase service temporarily down")
+                            print("   5. Invalid Supabase URL or credentials")
+                            print("⚠️ Try:")
+                            print("   - Switch to different network")
+                            print("   - Disable VPN if using one")
+                            print("   - Run diagnostics again")
+                            print("   - Check https://status.supabase.com")
+                            updateStatus(.error("Network error - WebSocket connection failed"))
                             isFirstConnection = false // Stop retrying
                             break
                         }
 
-                        let retryDelay = min(consecutiveErrors * 2, 10) // Exponential backoff: 2, 4, 6, 8, 10 seconds
-                        print("⏳ Socket not yet connected (attempt \(consecutiveErrors)/\(maxInitialRetries), expected during initial connection)")
+                        // Quick retry (2, 3, 4, 5 seconds) - not exponential, keep it simple
+                        let retryDelay = min(consecutiveErrors + 1, 5)
+                        print("⏳ Socket not yet connected (attempt \(consecutiveErrors)/\(maxInitialRetries), network connecting...)")
                         print("⏳ Retrying in \(retryDelay) seconds...")
                         try? await Task.sleep(nanoseconds: UInt64(retryDelay) * 1_000_000_000)
                     } else {
