@@ -178,7 +178,8 @@ struct MainTabView: View {
                 addEventInitialDate = calendarSelectedDate
                 showingAddEvent = true
             } else {
-                addEventInitialDate = nil
+                // For family view, use today's date
+                addEventInitialDate = Date()
                 showingAddEvent = true
             }
         }) {

@@ -202,32 +202,36 @@ struct PermissionsView: View {
                                 .padding(.horizontal, 16)
 
                             settingsContainer {
-                                PermissionInfoRow(
-                                    icon: "calendar",
-                                    title: "Calendar Access",
-                                    description: "FamCal needs access to your device calendars to display family events, birthdays, and shared calendar events."
-                                )
-                                .padding(.bottom, 12)
+                                VStack(spacing: 0) {
+                                    PermissionInfoRow(
+                                        icon: "calendar",
+                                        title: "Calendar Access",
+                                        description: "FamCal needs access to your device calendars to display family events, birthdays, and shared calendar events."
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
 
-                                Divider().padding(.leading, 40)
+                                    Divider().padding(.leading, 56)
 
-                                PermissionInfoRow(
-                                    icon: "person.crop.circle.fill.badge.plus",
-                                    title: "Contacts Access",
-                                    description: "FamCal needs access to your contacts to let you quickly add drivers from your contact list when creating events."
-                                )
-                                .padding(.vertical, 12)
+                                    PermissionInfoRow(
+                                        icon: "person.crop.circle.fill.badge.plus",
+                                        title: "Contacts Access (Optional)",
+                                        description: "FamCal needs access to your contacts to let you quickly add drivers from your contact list when creating events."
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
 
-                                Divider().padding(.leading, 40)
+                                    Divider().padding(.leading, 56)
 
-                                PermissionInfoRow(
-                                    icon: "bell.badge",
-                                    title: "Notifications",
-                                    description: "FamCal sends reminders before events to keep your family on schedule and alert you to last-minute changes."
-                                )
-                                .padding(.top, 12)
+                                    PermissionInfoRow(
+                                        icon: "bell.badge",
+                                        title: "Notifications (Optional)",
+                                        description: "FamCal sends reminders before events to keep your family on schedule and alert you to last-minute changes."
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
                             }
-                            .padding(16)
                         }
 
                         Spacer()

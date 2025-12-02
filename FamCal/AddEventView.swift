@@ -234,36 +234,66 @@ struct AddEventView: View {
                     alertOption = defaultAlert
                 }
 
-                // Set default start and end times
-                let calendar = Calendar.current
-                let now = Date()
-                var components = calendar.dateComponents([.year, .month, .day, .hour], from: now)
-                
-                if let hour = components.hour, hour >= 23 {
-                    // 11th hour logic: Start at 23:00, End at 00:00 next day
-                    components.hour = 23
-                    components.minute = 0
-                    startTime = calendar.date(from: components) ?? now
-                    
-                    // End time is next day at 00:00
-                    if let nextDay = calendar.date(byAdding: .day, value: 1, to: startTime),
-                       let nextDayStart = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: nextDay) {
-                        endTime = nextDayStart
-                    } else {
-                        endTime = startTime.addingTimeInterval(3600)
-                    }
-                } else {
-                    // Standard logic
-                    components.hour = (components.hour ?? 0) + 1
-                    components.minute = 0
-                    startTime = calendar.date(from: components) ?? now.addingTimeInterval(3600)
-                    
-                    components.hour = (components.hour ?? 0) + 1
-                    endTime = calendar.date(from: components) ?? startTime.addingTimeInterval(3600)
-                }
+                // Set default start and end times (only if no initialDate was provided)
+                if initialDate == nil {
+                    let calendar = Calendar.current
+                    let now = Date()
+                    var components = calendar.dateComponents([.year, .month, .day, .hour], from: now)
 
-                eventDate = now
-                recurrenceConfig = RecurrenceConfiguration.none(anchor: now)
+                    if let hour = components.hour, hour >= 23 {
+                        // 11th hour logic: Start at 23:00, End at 00:00 next day
+                        components.hour = 23
+                        components.minute = 0
+                        startTime = calendar.date(from: components) ?? now
+
+                        // End time is next day at 00:00
+                        if let nextDay = calendar.date(byAdding: .day, value: 1, to: startTime),
+                           let nextDayStart = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: nextDay) {
+                            endTime = nextDayStart
+                        } else {
+                            endTime = startTime.addingTimeInterval(3600)
+                        }
+                    } else {
+                        // Standard logic
+                        components.hour = (components.hour ?? 0) + 1
+                        components.minute = 0
+                        startTime = calendar.date(from: components) ?? now.addingTimeInterval(3600)
+
+                        components.hour = (components.hour ?? 0) + 1
+                        endTime = calendar.date(from: components) ?? startTime.addingTimeInterval(3600)
+                    }
+
+                    eventDate = now
+                    recurrenceConfig = RecurrenceConfiguration.none(anchor: now)
+                } else {
+                    // When initialDate is provided, set the times based on that date
+                    let calendar = Calendar.current
+                    var components = calendar.dateComponents([.year, .month, .day, .hour], from: initialDate!)
+
+                    if let hour = components.hour, hour >= 23 {
+                        // 11th hour logic
+                        components.hour = 23
+                        components.minute = 0
+                        startTime = calendar.date(from: components) ?? initialDate!
+
+                        if let nextDay = calendar.date(byAdding: .day, value: 1, to: startTime),
+                           let nextDayStart = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: nextDay) {
+                            endTime = nextDayStart
+                        } else {
+                            endTime = startTime.addingTimeInterval(3600)
+                        }
+                    } else {
+                        // Standard logic
+                        components.hour = (components.hour ?? 0) + 1
+                        components.minute = 0
+                        startTime = calendar.date(from: components) ?? initialDate!.addingTimeInterval(3600)
+
+                        components.hour = (components.hour ?? 0) + 1
+                        endTime = calendar.date(from: components) ?? startTime.addingTimeInterval(3600)
+                    }
+
+                    recurrenceConfig = RecurrenceConfiguration.none(anchor: initialDate!)
+                }
 
                 // Build available calendars list
                 updateAvailableCalendars()
@@ -663,6 +693,8 @@ struct AddEventView: View {
             print("📍 Location: \(locationAddress.isEmpty ? "None" : locationAddress)")
             scheduleNotificationForCreatedEvent(
                 eventIdentifier: eventId,
+                startDate: eventStartDate,
+                alertOption: alertOption,
                 attendingMembers: uniqueAttendees,
                 location: locationAddress.isEmpty ? nil : locationAddress
             )
@@ -733,6 +765,8 @@ struct AddEventView: View {
 
     private func scheduleNotificationForCreatedEvent(
         eventIdentifier: String,
+        startDate: Date,
+        alertOption: AlertOption,
         attendingMembers: [FamilyMember],
         location: String? = nil
     ) {
@@ -763,7 +797,28 @@ struct AddEventView: View {
                 memberIds: memberIds
             ) else { return }
 
-            guard let ekEvent = CalendarManager.shared.getEvent(withIdentifier: eventIdentifier) else { return }
+            // Try to get the event, but if it's not immediately available (common after creation),
+            // use a dummy EKEvent with the provided details instead
+            let ekEvent: EKEvent?
+            if let found = CalendarManager.shared.getEvent(withIdentifier: eventIdentifier) {
+                ekEvent = found
+            } else {
+                // Create a temporary EKEvent with the details we have
+                // This avoids notification failures due to EventKit cache lag
+                let tempEvent = EKEvent(eventStore: EKEventStore())
+                tempEvent.title = eventTitle
+                tempEvent.startDate = startDate
+                tempEvent.endDate = endTime
+                tempEvent.location = location
+                tempEvent.notes = notes.isEmpty ? nil : notes
+                if let url = MeetingLinkHelper.normalizedURL(from: meetingLink) {
+                    tempEvent.url = url
+                }
+                tempEvent.isAllDay = isAllDay
+                ekEvent = tempEvent
+            }
+
+            guard let ekEvent = ekEvent else { return }
 
             let memberNames = attendingMembers.compactMap { $0.name }
             let driverName: String? = {
@@ -843,6 +898,76 @@ struct AddEventView: View {
         var calendar = Calendar.current
         calendar.firstWeekday = 2 // Monday
         return calendar
+    }
+
+    // MARK: - Time Picker Helper
+
+    @ViewBuilder
+    private func timePickerWithFiveMinuteIntervals(
+        title: String,
+        selectedTime: Binding<Date>
+    ) -> some View {
+        VStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(primaryTextColor)
+
+            HStack(spacing: 8) {
+                // Hour picker
+                Picker("Hour", selection: Binding(
+                    get: {
+                        Calendar.current.dateComponents([.hour], from: selectedTime.wrappedValue).hour ?? 0
+                    },
+                    set: { newHour in
+                        let calendar = Calendar.current
+                        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime.wrappedValue)
+                        components.hour = newHour
+                        selectedTime.wrappedValue = calendar.date(from: components) ?? selectedTime.wrappedValue
+                    }
+                )) {
+                    ForEach(0..<24, id: \.self) { hour in
+                        Text(String(format: "%02d", hour)).tag(hour)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .background(chipBackground)
+                .cornerRadius(10)
+
+                Text(":")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(primaryTextColor)
+                    .padding(.horizontal, 4)
+
+                // Minute picker (5-minute intervals)
+                Picker("Minute", selection: Binding(
+                    get: {
+                        let minute = Calendar.current.dateComponents([.minute], from: selectedTime.wrappedValue).minute ?? 0
+                        return (minute / 5) * 5
+                    },
+                    set: { (newMinute: Int) in
+                        let calendar = Calendar.current
+                        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime.wrappedValue)
+                        components.minute = newMinute
+                        selectedTime.wrappedValue = calendar.date(from: components) ?? selectedTime.wrappedValue
+                    }
+                )) {
+                    ForEach(Array(stride(from: 0, to: 60, by: 5)), id: \.self) { minute in
+                        Text(String(format: "%02d", minute)).tag(minute)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .background(chipBackground)
+                .cornerRadius(10)
+            }
+            .padding(12)
+            .background(fieldBackground)
+            .cornerRadius(12)
+        }
+        .padding(12)
     }
 
     // MARK: - Section Builders
@@ -1081,56 +1206,29 @@ struct AddEventView: View {
 
 
             if activeTimePicker == .startTime {
-                DatePicker(
-                    "Start Time",
-                    selection: Binding(
+                timePickerWithFiveMinuteIntervals(
+                    title: "Start Time",
+                    selectedTime: Binding(
                         get: { startTime },
                         set: { newValue in
-                            // Round to nearest 5 minutes
+                            startTime = newValue
+                            // When start time changes, update end time to 1 hour later
                             let calendar = Calendar.current
-                            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: newValue)
-                            let minute = components.minute ?? 0
-                            let roundedMinute = (minute / 5) * 5
-
-                            var adjustedComponents = components
-                            adjustedComponents.minute = roundedMinute
-                            let adjustedValue = calendar.date(from: adjustedComponents) ?? newValue
-
-                            startTime = adjustedValue
-
-                            // When start time changes, update end time to 1 hour later (same date)
-                            let startComponents = calendar.dateComponents([.hour, .minute], from: adjustedValue)
+                            let startComponents = calendar.dateComponents([.hour, .minute], from: newValue)
                             var endComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: endTime)
                             endComponents.hour = (startComponents.hour ?? 0) + 1
                             endComponents.minute = startComponents.minute
                             endTime = calendar.date(from: endComponents) ?? endTime
                         }
-                    ),
-                    displayedComponents: .hourAndMinute
+                    )
                 )
-                .datePickerStyle(.wheel)
             }
 
             if activeTimePicker == .endTime {
-                DatePicker(
-                    "End Time",
-                    selection: Binding(
-                        get: { endTime },
-                        set: { newValue in
-                            // Round to nearest 5 minutes
-                            let calendar = Calendar.current
-                            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: newValue)
-                            let minute = components.minute ?? 0
-                            let roundedMinute = (minute / 5) * 5
-
-                            var adjustedComponents = components
-                            adjustedComponents.minute = roundedMinute
-                            endTime = calendar.date(from: adjustedComponents) ?? newValue
-                        }
-                    ),
-                    displayedComponents: .hourAndMinute
+                timePickerWithFiveMinuteIntervals(
+                    title: "End Time",
+                    selectedTime: $endTime
                 )
-                .datePickerStyle(.wheel)
             }
         }
     }

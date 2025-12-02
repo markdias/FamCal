@@ -28,7 +28,7 @@ struct HelpView: View {
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(primaryTextColor)
 
-                            Text("FamCal helps you keep track of your family's events and calendars in one place. Here's how to get the most out of the app.")
+                            Text("Keep your family's calendar organized in one place. Add family members, sync their calendars, and never miss an important event.")
                                 .font(.system(size: 14, weight: .regular))
                                 .foregroundColor(secondaryTextColor)
                                 .lineSpacing(1.5)
@@ -45,139 +45,135 @@ struct HelpView: View {
                         // Getting Started Section
                         HelpSection(
                             title: "Getting Started",
-                            icon: "rocket.fill",
+                            icon: "star.fill",
                             items: [
                                 HelpItem(
                                     title: "Add Family Members",
-                                    description: "Go to Settings > My Family to add your family members. Link them to their iOS calendars so their events appear in FamCal."
+                                    description: "Go to Settings > Personal Calendars to add family members. Enter their name and FamCal will automatically link their iOS calendar."
                                 ),
                                 HelpItem(
-                                    title: "View Events",
-                                    description: "The Family tab shows upcoming events for all your family members. Tap any event to see more details like time, location, and attendees."
+                                    title: "View Family Events",
+                                    description: "The Family tab displays upcoming events for all your family members. Tap any event to view details, edit, or delete it."
                                 ),
                                 HelpItem(
-                                    title: "Switch Views",
-                                    description: "Use the calendar icon in the toolbar to switch between the Family view (event list) and Calendar view (month/day grid)."
+                                    title: "Switch Between Views",
+                                    description: "Use the calendar icon to toggle between Family view (event list) and Calendar view (month/day layout) for different perspectives."
+                                )
+                            ]
+                        )
+
+                        // Managing Events Section
+                        HelpSection(
+                            title: "Creating & Managing Events",
+                            icon: "pencil.circle.fill",
+                            items: [
+                                HelpItem(
+                                    title: "Create New Events",
+                                    description: "Tap the + button to create an event. Set the date, time, location, and select which family members will attend."
+                                ),
+                                HelpItem(
+                                    title: "Edit or Delete Events",
+                                    description: "Tap an event to open it, then use Edit or Delete buttons. For recurring events, choose to modify just this event or all future occurrences."
+                                ),
+                                HelpItem(
+                                    title: "Quick Actions",
+                                    description: "Long-press any event for quick actions: Duplicate, Move to a Different Calendar, or Delete. Recurring events show options for this event or all future events."
+                                ),
+                                HelpItem(
+                                    title: "Assign Drivers",
+                                    description: "When creating an event, assign a family member as the driver to coordinate transportation."
+                                ),
+                                HelpItem(
+                                    title: "Add Locations & Notes",
+                                    description: "Include event location for map preview and directions. Add notes for additional details or instructions."
                                 )
                             ]
                         )
 
                         // Calendar Features Section
                         HelpSection(
-                            title: "Calendar Features",
+                            title: "Calendar Views & Navigation",
                             icon: "calendar",
                             items: [
                                 HelpItem(
                                     title: "Month & Day Views",
-                                    description: "Tap the grid icon to open the calendar. Switch between month view (see the full month) and day view (see hourly details)."
+                                    description: "Switch between month view (overview) and day view (hourly schedule) to see events in your preferred layout."
                                 ),
                                 HelpItem(
-                                    title: "Select a Date",
-                                    description: "Tap any date in the calendar to select it. The date will be highlighted with a blue circle."
+                                    title: "Select & Navigate Dates",
+                                    description: "Tap any date to select it. The selected date appears highlighted and creates new events for that day."
                                 ),
                                 HelpItem(
-                                    title: "Create Events",
-                                    description: "Select a date, then tap the + button to create a new event. The selected date will automatically be used as the event start date."
-                                ),
-                                HelpItem(
-                                    title: "View Event Details",
-                                    description: "Tap any event in the calendar to see full details including time, location, and assigned driver."
+                                    title: "Search Events",
+                                    description: "Use the search icon to find events by title, location, or attendee name. Helpful for quickly locating specific events."
                                 )
                             ]
                         )
 
-                        // Event Management Section
+                        // Family Management Section
                         HelpSection(
-                            title: "Managing Events",
-                            icon: "pencil.circle.fill",
-                            items: [
-                                HelpItem(
-                                    title: "Create Events",
-                                    description: "Tap the + button from the Family view or Calendar view. Fill in the event details and select who should attend."
-                                ),
-                                HelpItem(
-                                    title: "Edit Events",
-                                    description: "Tap an event to view details, then tap Edit to make changes. You can update the time, location, attendees, and more."
-                                ),
-                                HelpItem(
-                                    title: "Delete Events",
-                                    description: "Open an event and tap the delete button. For recurring events, choose whether to delete just this event or all future occurrences."
-                                ),
-                                HelpItem(
-                                    title: "Set Drivers",
-                                    description: "When creating or editing an event, you can assign a driver. This helps organize who's responsible for transportation."
-                                ),
-                                HelpItem(
-                                    title: "Quick Actions",
-                                    description: "Long-press any event to see quick actions: Duplicate, Move to Calendar, or Delete with special options for recurring events."
-                                )
-                            ]
-                        )
-
-                        // Family Settings Section
-                        HelpSection(
-                            title: "Family Settings",
+                            title: "Managing Family Members",
                             icon: "person.2.fill",
                             items: [
                                 HelpItem(
-                                    title: "Add Family Members",
-                                    description: "Go to Settings > My Family. Tap 'Add Family Member' and enter their name. FamCal will automatically find their iOS calendar."
+                                    title: "Link Multiple Calendars",
+                                    description: "Each family member can have multiple calendars linked. Tap a member to expand and add additional calendars beyond the auto-matched one."
                                 ),
                                 HelpItem(
-                                    title: "Link Calendars",
-                                    description: "When you add a member, their matching iOS calendar is automatically linked. You can add more calendars for each member in the expanded view."
-                                ),
-                                HelpItem(
-                                    title: "Edit Members",
-                                    description: "Tap a family member to expand their details. You can edit their name, manage their calendars, or delete them."
+                                    title: "Edit Member Details",
+                                    description: "Tap a family member to expand, then manage their calendars or change their name. Auto-linked calendars are marked with a lock icon."
                                 ),
                                 HelpItem(
                                     title: "Shared Calendars",
-                                    description: "Add calendars that are shared with all family members (like holidays or family events) in Settings > App Settings > Shared Calendars."
+                                    description: "In Settings > Shared Calendars, add calendars shared with all family members (holidays, family events, etc.). These appear for everyone automatically."
                                 )
                             ]
                         )
 
                         // Notifications Section
                         HelpSection(
-                            title: "Notifications",
+                            title: "Notifications & Reminders",
                             icon: "bell.fill",
                             items: [
                                 HelpItem(
-                                    title: "Event Reminders",
-                                    description: "Enable notifications in Settings > Notifications. You'll get alerts before events with a map preview and directions option."
+                                    title: "Enable Notifications",
+                                    description: "Go to Settings > Notifications to turn on event reminders. Notifications include event details, location, and family members attending."
                                 ),
                                 HelpItem(
-                                    title: "Set Alert Times",
-                                    description: "When creating an event, choose a default alert time. Options include at time of event, 5/10/15/30 minutes, 1 hour, or 1 day before."
+                                    title: "Set Alert Timing",
+                                    description: "Choose when to receive alerts: at event time, or 5/10/15/30 minutes, 1 hour, or 1 day before."
                                 ),
                                 HelpItem(
                                     title: "Get Directions",
-                                    description: "Tap 'Get Directions' in a notification to open the map and get route information to an event location."
+                                    description: "Tap 'Get Directions' in a notification to see the event location on a map and plan your route."
+                                ),
+                                HelpItem(
+                                    title: "Morning Briefs",
+                                    description: "Enable morning briefs in Notifications settings to receive a daily summary of upcoming family events."
                                 )
                             ]
                         )
 
                         // Customization Section
                         HelpSection(
-                            title: "Customization",
+                            title: "Customization & Settings",
                             icon: "slider.horizontal.3",
                             items: [
                                 HelpItem(
-                                    title: "App Settings",
-                                    description: "Customize your experience in Settings > App Settings. Choose your default home screen, auto-refresh interval, and maps app."
+                                    title: "Themes & Display",
+                                    description: "Go to Settings > Themes to choose from multiple color schemes. Enable dark mode for dark theme support."
                                 ),
                                 HelpItem(
-                                    title: "Choose a Theme",
-                                    description: "Select from multiple themes in App Settings > Display > Theme. Each theme has a unique color scheme and feel."
-                                ),
-                                HelpItem(
-                                    title: "Dark Mode",
-                                    description: "Toggle dark mode in App Settings > Display > Dark Mode to apply dark colors to your selected theme."
+                                    title: "App Preferences",
+                                    description: "Customize your default view (Family or Calendar), auto-refresh interval, and preferred maps app in Settings > App Settings."
                                 ),
                                 HelpItem(
                                     title: "Event Display Options",
-                                    description: "Control how many events to show per person, spotlight events, and how far back/ahead to look for events in Event Settings."
+                                    description: "In App Settings > Event Settings, control how many events to display per person and adjust the date range for past/future events."
+                                ),
+                                HelpItem(
+                                    title: "Saved Locations",
+                                    description: "Save frequently used addresses in Settings > Saved Places for quick selection when creating events (Pro feature)."
                                 )
                             ]
                         )
@@ -188,44 +184,16 @@ struct HelpView: View {
                             icon: "lightbulb.fill",
                             items: [
                                 HelpItem(
-                                    title: "Search Events",
-                                    description: "Use the search icon to find events by name, location, or attendee. Great for finding that one event quickly."
-                                ),
-                                HelpItem(
                                     title: "Recurring Events",
-                                    description: "Create events that repeat daily, weekly, monthly, or yearly. Perfect for birthdays, recurring appointments, and regular activities."
+                                    description: "Create events that repeat daily, weekly, monthly, or yearly. Perfect for birthdays, recurring appointments, and team meetings."
                                 ),
                                 HelpItem(
-                                    title: "Driver Events",
-                                    description: "Assign family members as drivers. The app can automatically create separate driving events for coordinating transportation."
+                                    title: "Widget Support",
+                                    description: "Add FamCal widgets to your home screen for quick access to upcoming events (Pro feature)."
                                 ),
                                 HelpItem(
-                                    title: "Saved Locations",
-                                    description: "Save frequently used locations in App Settings > Saved Places for quick selection when creating events."
-                                ),
-                                HelpItem(
-                                    title: "Event Notes",
-                                    description: "Add notes to events for additional details like what to bring, special instructions, or important information."
-                                )
-                            ]
-                        )
-
-                        // Permissions Section
-                        HelpSection(
-                            title: "Permissions & Privacy",
-                            icon: "lock.shield.fill",
-                            items: [
-                                HelpItem(
-                                    title: "Calendar Access",
-                                    description: "FamCal needs access to your device calendars to display events and create new ones. This is requested during setup."
-                                ),
-                                HelpItem(
-                                    title: "Notification Permission",
-                                    description: "Enable notifications to receive reminders about upcoming events. You can manage this in Settings > Notifications."
-                                ),
-                                HelpItem(
-                                    title: "Privacy",
-                                    description: "Your data stays on your device. FamCal doesn't upload or share your family information, calendars, or events."
+                                    title: "Dark Mode Support",
+                                    description: "FamCal automatically adapts to your device's dark mode setting for comfortable viewing anytime."
                                 )
                             ]
                         )
@@ -236,39 +204,63 @@ struct HelpView: View {
                             icon: "wrench.and.screwdriver.fill",
                             items: [
                                 HelpItem(
-                                    title: "Events Not Showing",
-                                    description: "Make sure family members' calendars are properly linked in My Family. Check that events fall within your configured date range in Event Settings."
+                                    title: "Calendar Not Found",
+                                    description: "If a family member's calendar isn't auto-linked, verify they have a calendar on their device that matches their name exactly."
                                 ),
                                 HelpItem(
-                                    title: "Calendar Not Found",
-                                    description: "If a family member's calendar isn't found automatically, check that they have a calendar in their device that matches their name exactly."
+                                    title: "Events Not Showing",
+                                    description: "Ensure the family member's calendar is linked properly. Check Event Settings to verify your date range includes the events you're looking for."
                                 ),
                                 HelpItem(
                                     title: "Notifications Not Working",
-                                    description: "Verify that notifications are enabled in Settings > Notifications and that you've granted notification permission in Settings > Permissions."
+                                    description: "Verify notifications are enabled in Settings > Notifications and check that your device has notification permission granted for FamCal in iOS Settings."
                                 ),
                                 HelpItem(
-                                    title: "Refresh Issues",
-                                    description: "If events seem out of date, try closing and reopening the app. You can also adjust the auto-refresh interval in App Settings."
+                                    title: "Outdated Information",
+                                    description: "Close and reopen the app to refresh. You can also adjust the auto-refresh interval in App Settings for more frequent updates."
+                                )
+                            ]
+                        )
+
+                        // Permissions & Privacy Section
+                        HelpSection(
+                            title: "Permissions & Privacy",
+                            icon: "lock.shield.fill",
+                            items: [
+                                HelpItem(
+                                    title: "Calendar Access",
+                                    description: "FamCal requires access to your device calendars to display and create events. This permission is requested during initial setup."
+                                ),
+                                HelpItem(
+                                    title: "Notification Permission",
+                                    description: "Notifications are optional but recommended. You can enable or disable them anytime in Settings > Notifications."
+                                ),
+                                HelpItem(
+                                    title: "Your Data Privacy",
+                                    description: "All your family data stays on your device. FamCal never uploads, syncs, or shares your family information, calendars, or events."
                                 )
                             ]
                         )
 
                         // Footer
                         VStack(alignment: .center, spacing: 8) {
-                            Text("Need More Help?")
+                            Text("Need Help or Have Feedback?")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.black)
+                                .foregroundColor(primaryTextColor)
 
-                            Text("For additional support or feature requests, please reach out to us.")
+                            Text("Use the Feedback feature in Settings to report issues or suggest improvements.")
                                 .font(.system(size: 12, weight: .regular))
-                                .foregroundColor(.gray)
+                                .foregroundColor(secondaryTextColor)
                                 .multilineTextAlignment(.center)
                         }
                         .padding(16)
-                        .background(Color.white)
+                        .background(theme.cardBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(theme.cardStroke, lineWidth: 1)
+                        )
                         .cornerRadius(12)
-                        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 20)

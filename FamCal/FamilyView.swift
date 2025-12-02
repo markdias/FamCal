@@ -246,7 +246,7 @@ struct FamilyView: View {
                 .environment(\.managedObjectContext, viewContext)
         }
         .sheet(isPresented: $showingAddEvent) {
-            AddEventView(initialDate: nil)
+            AddEventView(initialDate: Date())
                 .environment(\.managedObjectContext, viewContext)
         }
         .confirmationDialog(

@@ -1469,6 +1469,76 @@ struct EditEventView: View {
         return calendar
     }
 
+    // MARK: - Time Picker Helper
+
+    @ViewBuilder
+    private func timePickerWithFiveMinuteIntervals(
+        title: String,
+        selectedTime: Binding<Date>
+    ) -> some View {
+        VStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(primaryTextColor)
+
+            HStack(spacing: 8) {
+                // Hour picker
+                Picker("Hour", selection: Binding(
+                    get: {
+                        Calendar.current.dateComponents([.hour], from: selectedTime.wrappedValue).hour ?? 0
+                    },
+                    set: { newHour in
+                        let calendar = Calendar.current
+                        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime.wrappedValue)
+                        components.hour = newHour
+                        selectedTime.wrappedValue = calendar.date(from: components) ?? selectedTime.wrappedValue
+                    }
+                )) {
+                    ForEach(0..<24, id: \.self) { hour in
+                        Text(String(format: "%02d", hour)).tag(hour)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .background(chipBackground)
+                .cornerRadius(10)
+
+                Text(":")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(primaryTextColor)
+                    .padding(.horizontal, 4)
+
+                // Minute picker (5-minute intervals)
+                Picker("Minute", selection: Binding(
+                    get: {
+                        let minute = Calendar.current.dateComponents([.minute], from: selectedTime.wrappedValue).minute ?? 0
+                        return (minute / 5) * 5
+                    },
+                    set: { (newMinute: Int) in
+                        let calendar = Calendar.current
+                        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime.wrappedValue)
+                        components.minute = newMinute
+                        selectedTime.wrappedValue = calendar.date(from: components) ?? selectedTime.wrappedValue
+                    }
+                )) {
+                    ForEach(Array(stride(from: 0, to: 60, by: 5)), id: \.self) { minute in
+                        Text(String(format: "%02d", minute)).tag(minute)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .background(chipBackground)
+                .cornerRadius(10)
+            }
+            .padding(12)
+            .background(fieldBackground)
+            .cornerRadius(12)
+        }
+        .padding(12)
+    }
+
     // MARK: - Section Builders
 
     @ViewBuilder
@@ -1616,56 +1686,29 @@ struct EditEventView: View {
 
 
             if showingStartTimePicker {
-                DatePicker(
-                    "Start Time",
-                    selection: Binding(
+                timePickerWithFiveMinuteIntervals(
+                    title: "Start Time",
+                    selectedTime: Binding(
                         get: { startTime },
                         set: { newValue in
-                            // Round to nearest 5 minutes
+                            startTime = newValue
+                            // When start time changes, update end time to 1 hour later
                             let calendar = Calendar.current
-                            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: newValue)
-                            let minute = components.minute ?? 0
-                            let roundedMinute = (minute / 5) * 5
-
-                            var adjustedComponents = components
-                            adjustedComponents.minute = roundedMinute
-                            let adjustedValue = calendar.date(from: adjustedComponents) ?? newValue
-
-                            startTime = adjustedValue
-
-                            // When start time changes, update end time to 1 hour later (same date)
-                            let startComponents = calendar.dateComponents([.hour, .minute], from: adjustedValue)
+                            let startComponents = calendar.dateComponents([.hour, .minute], from: newValue)
                             var endComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: endTime)
                             endComponents.hour = (startComponents.hour ?? 0) + 1
                             endComponents.minute = startComponents.minute
                             endTime = calendar.date(from: endComponents) ?? endTime
                         }
-                    ),
-                    displayedComponents: .hourAndMinute
+                    )
                 )
-                .datePickerStyle(.wheel)
             }
 
             if showingEndTimePicker {
-                DatePicker(
-                    "End Time",
-                    selection: Binding(
-                        get: { endTime },
-                        set: { newValue in
-                            // Round to nearest 5 minutes
-                            let calendar = Calendar.current
-                            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: newValue)
-                            let minute = components.minute ?? 0
-                            let roundedMinute = (minute / 5) * 5
-
-                            var adjustedComponents = components
-                            adjustedComponents.minute = roundedMinute
-                            endTime = calendar.date(from: adjustedComponents) ?? newValue
-                        }
-                    ),
-                    displayedComponents: .hourAndMinute
+                timePickerWithFiveMinuteIntervals(
+                    title: "End Time",
+                    selectedTime: $endTime
                 )
-                .datePickerStyle(.wheel)
             }
         }
     }
