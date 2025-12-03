@@ -72,17 +72,19 @@ struct CalendarView: View {
     @State private var memberColors: [NSManagedObjectID: UIColor] = [:]
     @Namespace private var animationNamespace
     @State private var calendarDisplayMode: CalendarDisplayMode
+    @State private var selectedEventIdsForDeletion: Set<String> = []
+    @State private var showingBatchDeleteDialog = false
+    @State private var batchDeleteInProgress = false
+    @State private var monthViewSelectionMode = false
+    @State private var lastTapTimeMonth: Date = .distantPast
+    @State private var lastTappedEventIdMonth: String = ""
+    @State private var tapDelayTimerMonth: Timer?
     private var externalDisplayMode: Binding<CalendarDisplayMode>?
     private var todayTrigger: Binding<UUID>?
 
     enum CalendarDisplayMode: String, CaseIterable {
         case month = "Month"
         case day = "Day"
-    }
-
-    private enum DeleteScope {
-        case single
-        case allLinked
     }
 
     private let calendar: Calendar = {
@@ -226,27 +228,85 @@ struct CalendarView: View {
             }
         }
         .confirmationDialog(
-            "Delete Linked Copies?",
+            "Delete Event",
             isPresented: $showingLinkedDeleteDialog,
             titleVisibility: .visible
         ) {
-            Button("Delete only this calendar", role: .destructive) {
-                if let event = pendingDeleteEvent {
-                    showingLinkedDeleteDialog = false
-                    deleteEvent(event, span: pendingDeleteSpan, scope: .single)
+            // Check if this is a recurring event in batch delete mode
+            if let event = pendingDeleteEvent, event.hasRecurrence && batchDeleteInProgress {
+                Button("Delete This Event", role: .destructive) {
+                    if let event = pendingDeleteEvent {
+                        showingLinkedDeleteDialog = false
+                        // Delete this occurrence only
+                        deleteEvent(event, span: .thisEvent, scope: .singleCalendar)
+                        // Continue with remaining batch deletes
+                        continueWithBatchDelete()
+                    }
+                }
+                Button("Delete This & Future Events", role: .destructive) {
+                    if let event = pendingDeleteEvent {
+                        showingLinkedDeleteDialog = false
+                        // Delete this and future occurrences
+                        deleteEvent(event, span: .futureEvents, scope: .singleCalendar)
+                        // Continue with remaining batch deletes
+                        continueWithBatchDelete()
+                    }
                 }
             }
-            Button("Delete in all linked calendars", role: .destructive) {
-                if let event = pendingDeleteEvent {
-                    showingLinkedDeleteDialog = false
-                    deleteEvent(event, span: pendingDeleteSpan, scope: .allLinked)
+            // Check if event has linked copies (non-recurring or regular delete)
+            else if let event = pendingDeleteEvent, linkedFamilyEvents(for: event.id).count > 1 {
+                Button("Delete only this calendar", role: .destructive) {
+                    if let event = pendingDeleteEvent {
+                        showingLinkedDeleteDialog = false
+                        deleteEvent(event, span: pendingDeleteSpan, scope: .singleCalendar)
+                    }
+                }
+                Button("Delete in all linked calendars", role: .destructive) {
+                    if let event = pendingDeleteEvent {
+                        showingLinkedDeleteDialog = false
+                        deleteEvent(event, span: pendingDeleteSpan, scope: .allLinked)
+                    }
+                }
+            } else {
+                // Single event - just delete
+                Button("Delete", role: .destructive) {
+                    if let event = pendingDeleteEvent {
+                        showingLinkedDeleteDialog = false
+                        deleteEvent(event, span: pendingDeleteSpan, scope: .singleCalendar)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {
                 pendingDeleteEvent = nil
+                batchDeleteInProgress = false
             }
         } message: {
-            Text("This event is linked to other calendars. Delete only here or everywhere?")
+            if let event = pendingDeleteEvent, event.hasRecurrence && batchDeleteInProgress {
+                return Text("'\(event.title)' is a recurring event. Delete this event only or this and all future events?")
+            } else if let event = pendingDeleteEvent, linkedFamilyEvents(for: event.id).count > 1 {
+                return Text("'\(event.title)' is linked to other calendars. Delete only here or everywhere?")
+            } else if let event = pendingDeleteEvent {
+                return Text("Are you sure you want to delete '\(event.title)'?")
+            } else {
+                return Text("Are you sure?")
+            }
+        }
+        .confirmationDialog(
+            "Delete Selected Events",
+            isPresented: $showingBatchDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            if selectedEventIdsForDeletion.isEmpty {
+                Button("Cancel", role: .cancel) { }
+            } else {
+                Button("Delete", role: .destructive) {
+                    batchDeleteSelectedEvents()
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+        } message: {
+            let count = selectedEventIdsForDeletion.count
+            Text("Delete \(count) selected event\(count == 1 ? "" : "s")? For recurring events, you'll be asked which occurrences to delete.")
         }
     }
 
@@ -398,7 +458,9 @@ struct CalendarView: View {
             selectedDate: selectedDate,
             selectedDateString: Self.fullDateFormatter.string(from: selectedDate),
             familyMembers: Array(familyMembers),
-            memberColors: memberColors
+            memberColors: memberColors,
+            selectedEventIds: $selectedEventIdsForDeletion,
+            onDeleteSelected: { showingBatchDeleteDialog = true }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .gesture(
@@ -419,9 +481,10 @@ struct CalendarView: View {
         let isPast = Date() > groupedEvent.endDate
         let now = Date()
         let isInProgress = groupedEvent.startDate <= now && now < groupedEvent.endDate
+        let isSelected = selectedEventIdsForDeletion.contains(groupedEvent.eventIdentifier)
 
         Button(action: {
-            selectedEvent = upcomingEvent
+            handleMonthViewEventTap(groupedEvent: groupedEvent, upcomingEvent: upcomingEvent)
         }) {
             let timeBoxWidth: CGFloat = 76
             let spacerWidth: CGFloat = 2
@@ -433,20 +496,34 @@ struct CalendarView: View {
                 RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .fill(isInProgress ? Color.green.opacity(0.12) : theme.cardBackground)
 
-                memberColorBackground(for: groupedEvent)
-                    .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
-                    .frame(width: timeBoxWidth)
-                    .opacity(isPast ? 0.6 : 1.0)
+                // Only show left color bar when not selected
+                if !isSelected {
+                    memberColorBackground(for: groupedEvent)
+                        .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
+                        .frame(width: timeBoxWidth)
+                        .opacity(isPast ? 0.6 : 1.0)
+                } else {
+                    // When selected, show a subtle highlight instead
+                    Color(groupedEvent.color).opacity(0.2)
+                        .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
+                        .frame(width: timeBoxWidth)
+                }
 
                 HStack(spacing: 0) {
                     // Time block
                     ZStack {
-                        memberColorBackground(for: groupedEvent)
+                        // Only show color when not selected
+                        if !isSelected {
+                            memberColorBackground(for: groupedEvent)
+                        } else {
+                            Color(groupedEvent.color).opacity(0.2)
+                        }
+
                         VStack(alignment: .leading, spacing: 6) {
                             Text(timeLabel)
                                 .font(.system(size: 14, weight: .semibold))
                                 .monospacedDigit()
-                                .foregroundColor(.white)
+                                .foregroundColor(isSelected ? .primary : .white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
                                 .allowsTightening(true)
@@ -457,7 +534,7 @@ struct CalendarView: View {
                             if !memberLabel.isEmpty {
                                 Text(memberLabel)
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .foregroundColor(isSelected ? .secondary : .white.opacity(0.9))
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.5)
                                     .allowsTightening(true)
@@ -587,6 +664,22 @@ struct CalendarView: View {
                 RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .stroke(theme.cardStroke, lineWidth: 1)
             )
+            .overlay(
+                // Selection indicator
+                isSelected ? AnyView(
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Circle().fill(Color(groupedEvent.color)))
+                        }
+                        Spacer()
+                    }
+                ) : AnyView(EmptyView())
+            )
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -672,9 +765,37 @@ struct CalendarView: View {
     @ViewBuilder
     private func dayDetailsView(for events: [DayEventItem]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(Self.fullDateFormatter.string(from: selectedDate))
-                .font(.system(size: 16, weight: .semibold))
-                .padding(.horizontal, 2)
+            HStack {
+                Text(Self.fullDateFormatter.string(from: selectedDate))
+                    .font(.system(size: 16, weight: .semibold))
+                    .padding(.horizontal, 2)
+
+                Spacer()
+
+                // Show selection count and delete button in month view
+                if !selectedEventIdsForDeletion.isEmpty {
+                    HStack(spacing: 8) {
+                        Text("\(selectedEventIdsForDeletion.count) selected")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+
+                        Button(action: {
+                            showingBatchDeleteDialog = true
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "trash.fill")
+                                Text("Delete")
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.red)
+                            .cornerRadius(6)
+                        }
+                    }
+                }
+            }
 
             // Group events by title, time, and location
             let groupedEvents = groupEventsByDetails(events)
@@ -1231,19 +1352,47 @@ struct CalendarView: View {
         }
     }
 
+    private func handleMonthViewEventTap(groupedEvent: GroupedDayEvent, upcomingEvent: UpcomingCalendarEvent) {
+        // Cancel any pending single tap timer
+        tapDelayTimerMonth?.invalidate()
+
+        // Check if this is a double tap
+        let now = Date()
+        let timeSinceLastTap = now.timeIntervalSince(lastTapTimeMonth)
+
+        if lastTappedEventIdMonth == groupedEvent.eventIdentifier && timeSinceLastTap < 0.3 {
+            // Double tap detected - toggle selection
+            if selectedEventIdsForDeletion.contains(groupedEvent.eventIdentifier) {
+                selectedEventIdsForDeletion.remove(groupedEvent.eventIdentifier)
+            } else {
+                selectedEventIdsForDeletion.insert(groupedEvent.eventIdentifier)
+            }
+            lastTapTimeMonth = .distantPast
+            tapDelayTimerMonth?.invalidate()
+            tapDelayTimerMonth = nil
+        } else {
+            // Possible start of double tap or single tap
+            lastTapTimeMonth = now
+            lastTappedEventIdMonth = groupedEvent.eventIdentifier
+
+            // Delay action to see if another tap comes
+            tapDelayTimerMonth = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { _ in
+                // Single tap - show event details
+                selectedEvent = upcomingEvent
+                tapDelayTimerMonth = nil
+            }
+        }
+    }
+
     private func confirmDelete(_ event: UpcomingCalendarEvent, span: EKSpan) {
         pendingDeleteEvent = event
         pendingDeleteSpan = span
 
-        let linked = linkedFamilyEvents(for: event.id)
-        if linked.count > 1 {
-            showingLinkedDeleteDialog = true
-        } else {
-            deleteEvent(event, span: span, scope: .single)
-        }
+        // Always show delete confirmation
+        showingLinkedDeleteDialog = true
     }
 
-    private func deleteEvent(_ event: UpcomingCalendarEvent, span: EKSpan = .thisEvent, scope: DeleteScope = .single) {
+    private func deleteEvent(_ event: UpcomingCalendarEvent, span: EKSpan = .thisEvent, scope: DeleteScope = .singleCalendar) {
         Task {
             await deleteEventAndLinked(event: event, span: span, scope: scope)
             pendingDeleteEvent = nil
@@ -1337,6 +1486,142 @@ struct CalendarView: View {
         } catch {
             print("⚠️ Failed to load linked events: \(error.localizedDescription)")
             return []
+        }
+    }
+
+    private func batchDeleteSelectedEvents() {
+        batchDeleteInProgress = true
+        let eventsForSelectedDate = dayEvents[formatDateKey(selectedDate)] ?? []
+
+        // First, check if any selected events are recurring
+        let selectedEvents = eventsForSelectedDate.filter { selectedEventIdsForDeletion.contains($0.eventIdentifier) }
+        let recurringEvents = selectedEvents.filter { $0.hasRecurrence }
+
+        if !recurringEvents.isEmpty {
+            // If there are recurring events, we need to ask for scope for each one
+            // Start with the first recurring event
+            if let firstRecurring = recurringEvents.first {
+                let upcomingEvent = UpcomingCalendarEvent(
+                    id: firstRecurring.eventIdentifier,
+                    title: firstRecurring.title,
+                    location: firstRecurring.location,
+                    meetingLink: firstRecurring.meetingLink,
+                    startDate: firstRecurring.startDate,
+                    endDate: firstRecurring.endDate,
+                    calendarID: firstRecurring.calendarID,
+                    calendarColor: firstRecurring.calendarColor,
+                    calendarTitle: firstRecurring.calendarTitle,
+                    hasRecurrence: firstRecurring.hasRecurrence,
+                    recurrenceRule: nil,
+                    isAllDay: firstRecurring.isAllDay
+                )
+                pendingDeleteEvent = upcomingEvent
+                pendingDeleteSpan = .thisEvent
+                showingLinkedDeleteDialog = true
+                return
+            }
+        }
+
+        // If no recurring events, proceed with batch delete
+        Task {
+            await performBatchDelete(events: selectedEvents)
+        }
+    }
+
+    private func continueWithBatchDelete() {
+        let eventsForSelectedDate = dayEvents[formatDateKey(selectedDate)] ?? []
+        let selectedEvents = eventsForSelectedDate.filter { selectedEventIdsForDeletion.contains($0.eventIdentifier) }
+
+        // Remove the just-deleted event from selection
+        if let pendingEvent = pendingDeleteEvent {
+            selectedEventIdsForDeletion.remove(pendingEvent.id)
+        }
+
+        // Check if there are more recurring events
+        let recurringEvents = selectedEvents.filter { $0.hasRecurrence && selectedEventIdsForDeletion.contains($0.eventIdentifier) }
+
+        if !recurringEvents.isEmpty {
+            // Ask for scope of the next recurring event
+            if let nextRecurring = recurringEvents.first {
+                let upcomingEvent = UpcomingCalendarEvent(
+                    id: nextRecurring.eventIdentifier,
+                    title: nextRecurring.title,
+                    location: nextRecurring.location,
+                    meetingLink: nextRecurring.meetingLink,
+                    startDate: nextRecurring.startDate,
+                    endDate: nextRecurring.endDate,
+                    calendarID: nextRecurring.calendarID,
+                    calendarColor: nextRecurring.calendarColor,
+                    calendarTitle: nextRecurring.calendarTitle,
+                    hasRecurrence: nextRecurring.hasRecurrence,
+                    recurrenceRule: nil,
+                    isAllDay: nextRecurring.isAllDay
+                )
+                pendingDeleteEvent = upcomingEvent
+                pendingDeleteSpan = .thisEvent
+                showingLinkedDeleteDialog = true
+            }
+        } else {
+            // No more recurring events, proceed with batch delete
+            Task {
+                let remainingEvents = selectedEvents.filter { selectedEventIdsForDeletion.contains($0.eventIdentifier) }
+                await performBatchDelete(events: remainingEvents)
+            }
+        }
+    }
+
+    private func performBatchDelete(events: [DayEventItem]) async {
+        var deletedCount = 0
+
+        for event in events {
+            let upcomingEvent = UpcomingCalendarEvent(
+                id: event.eventIdentifier,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.meetingLink,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendarID,
+                calendarColor: event.calendarColor,
+                calendarTitle: event.calendarTitle,
+                hasRecurrence: event.hasRecurrence,
+                recurrenceRule: nil,
+                isAllDay: event.isAllDay
+            )
+
+            let span: EKSpan = .thisEvent
+
+            let success = CalendarManager.shared.deleteEvent(
+                withIdentifier: upcomingEvent.id,
+                occurrenceStartDate: upcomingEvent.startDate,
+                from: upcomingEvent.calendarID,
+                span: span
+            )
+
+            if success {
+                deletedCount += 1
+                await NotificationManager.shared.cancelEventNotifications(for: upcomingEvent.id)
+
+                let fetchRequest = FamilyEvent.fetchRequest()
+                fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", upcomingEvent.id)
+                if let familyEvent = try? viewContext.fetch(fetchRequest).first {
+                    viewContext.delete(familyEvent)
+                }
+            }
+        }
+
+        if deletedCount > 0 {
+            try? viewContext.save()
+            print("✅ Batch deleted \(deletedCount) event(s)")
+            await MainActor.run {
+                selectedEventIdsForDeletion.removeAll()
+                loadEvents()
+                batchDeleteInProgress = false
+            }
+        } else {
+            await MainActor.run {
+                batchDeleteInProgress = false
+            }
         }
     }
 }
