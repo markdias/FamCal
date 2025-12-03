@@ -277,6 +277,8 @@ class SupabaseDataSync {
                     calendar.owner = linkedMember
                 }
 
+                calendar.modifiedAt = Date()
+
                 print("🔍 DEBUG syncPersonalCalendars: Synced '\(calendar.calendarName ?? "nil")' - ID: \(calendar.calendarID ?? "nil") | Next: \(calendar.showInNext) | Spotlight: \(calendar.showInSpotlight) | Upcoming: \(calendar.showInUpcoming)")
             }
 
@@ -328,6 +330,7 @@ class SupabaseDataSync {
                     driver.familyMemberId = UUID(uuidString: famId)
                 }
                 driver.travelEventIdentifier = dto.travel_event_identifier
+                driver.modifiedAt = Date()
             }
 
             try context.save()
@@ -371,6 +374,7 @@ class SupabaseDataSync {
                 address.address = dto.address
                 address.latitude = dto.latitude ?? 0
                 address.longitude = dto.longitude ?? 0
+                address.modifiedAt = Date()
             }
 
             try context.save()

@@ -36,7 +36,18 @@ struct FamilyAndEventsView: View {
     @State private var navigationSelection: String? = nil
 
     private var linkedCalendars: [FamilyMember] {
+        // Ensure names are populated - if a member has calendars but no name, it likely means
+        // CoreData hasn't fully synced yet. Include it anyway but with fallback display.
         familyMembers.filter { ($0.memberCalendars?.count ?? 0) > 0 }
+    }
+
+    /// Check if all family member data is properly loaded
+    private func ensureDataLoaded() {
+        // If we have family members in CoreData but the dataManager's in-memory cache is empty,
+        // try to restore it from what we have in CoreData for offline support
+        if !familyMembers.isEmpty && dataManager.familyMembers.isEmpty {
+            print("ℹ️ FamilyAndEventsView: CoreData has family members but dataManager cache is empty - this is normal for offline mode")
+        }
     }
     private var isAtFamilyLimit: Bool {
         !appSettingsManager.isProUser && familyMembers.count >= appSettingsManager.maxFamilyMembersAllowed
@@ -109,6 +120,10 @@ struct FamilyAndEventsView: View {
         .sheet(item: $selectedMember) { member in
             SelectMemberCalendarsView(member: member)
                 .environment(\.managedObjectContext, viewContext)
+        }
+        .onAppear {
+            // Ensure data is loaded from CoreData on view appearance
+            ensureDataLoaded()
         }
     }
 

@@ -1612,7 +1612,8 @@ struct FamilyView: View {
     }
 
     private func refreshAllData() async {
-        await dataManager.fetchUserData()
+        // Force refresh when user manually pulls down (bypass change detection)
+        await dataManager.fetchUserDataIfNeeded(force: true)
         loadNextEvents()
     }
     

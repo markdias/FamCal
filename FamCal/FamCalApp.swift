@@ -159,10 +159,16 @@ struct FamCalApp: App {
     }
 
     private var isCalendarCheckReady: Bool {
-        guard case .ready = calendarCheckStatus else {
-            return false
+        // Calendar check is ready if status is .ready OR if user has existing data (completed setup)
+        if case .ready = calendarCheckStatus {
+            return true
         }
-        return true
+        // Also consider ready if user has existing data (they've set up before)
+        if userHasExistingData(persistenceController) {
+            print("✅ Calendar check considered ready: user has existing data")
+            return true
+        }
+        return false
     }
 
     var body: some Scene {
@@ -198,11 +204,14 @@ struct FamCalApp: App {
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
                                 Task {
                                     await appSettingsManager.loadSettings()
+                                    // Smart sync in background
+                                    await dataManager.fetchUserDataIfNeeded()
                                 }
                             }
                     }
                     // If authenticated (non-guest) but calendars/family setup needed, block until ready
-                    else if authManager.isAuthenticated && !authManager.isGuest && !isCalendarCheckReady {
+                    // However, skip this if we already have data (offline case where user has completed setup)
+                    else if authManager.isAuthenticated && !authManager.isGuest && !isCalendarCheckReady && !userHasExistingData(persistenceController) {
                         NavigationView {
                             CalendarGateView(
                                 status: $calendarCheckStatus,
@@ -223,7 +232,8 @@ struct FamCalApp: App {
 
                             Task {
                                 await appSettingsManager.loadSettings()
-                                await dataManager.fetchUserData()
+                                // Use smart fetch that checks for changes before fetching
+                                await dataManager.fetchUserDataIfNeeded()
                                 print("✅ User data fetched. Family members: \(dataManager.familyMembers.count), Calendars: \(dataManager.familyMemberCalendars.count)")
                                 // Only run calendar check if not already in ready state (avoid re-running on app resume)
                                 await MainActor.run {
@@ -250,6 +260,8 @@ struct FamCalApp: App {
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
                                 Task {
                                     await appSettingsManager.loadSettings()
+                                    // Smart sync in background - skips if data is fresh
+                                    await dataManager.fetchUserDataIfNeeded()
                                 }
                             }
                     } else {
@@ -264,6 +276,8 @@ struct FamCalApp: App {
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
                                 Task {
                                     await appSettingsManager.loadSettings()
+                                    // Smart sync in background
+                                    await dataManager.fetchUserDataIfNeeded()
                                 }
                             }
                     }
@@ -403,7 +417,7 @@ struct FamCalApp: App {
             isCheckingFamilySetup = true
             defer { isCheckingFamilySetup = false }
 
-            // Check if any family data exists
+            // Check if any family data exists in CoreData
             let hasExistingData = userHasExistingData(persistenceController)
 
             // If CoreData was cleared (no existing data), reset the setup flag
@@ -412,6 +426,14 @@ struct FamCalApp: App {
                 print("⚠️ CoreData cleared but setup flag was true - resetting setup flag")
                 appSettingsManager.hasCompletedFamilySetup = false
                 UserDefaults.standard.set(false, forKey: "hasCompletedFamilySetup")
+            }
+
+            // If we have existing data in CoreData, skip setup regardless of network status
+            // This prevents showing setup flow when offline with cached data
+            if hasExistingData {
+                print("✅ User has existing family data in CoreData - skipping setup")
+                needsFamilySetup = false
+                return
             }
 
             // Check if user is an invited member (doesn't need to create a family)

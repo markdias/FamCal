@@ -164,12 +164,21 @@ class AppSettingsManager: ObservableObject {
             self.hasLoadedForUserId = userId
             startAutoRefreshTimer()
         } catch {
-            print("⚠️ Error loading app settings: \(error)")
+            print("⚠️ Error loading app settings from Supabase: \(error)")
 
             // Note: We don't logout on 401 errors anymore - user can continue using the app
             // and will be prompted to re-authenticate on next app launch if needed
 
-            print("ℹ️ Creating initial settings record for user...")
+            // First, try to load from local cache (offline support)
+            print("ℹ️ Attempting to load settings from local cache...")
+            loadSettingsLocally()
+            enforcePlanConstraints()
+            persistProFlag()
+            syncWidgetPreferencesToAppGroup()
+
+            // If we're truly offline or settings don't exist locally, try to create them in Supabase
+            // This only runs if network is available
+            print("ℹ️ Attempting to create initial settings record in Supabase...")
 
             // Try to create initial settings if they don't exist
             do {
@@ -189,13 +198,11 @@ class AppSettingsManager: ObservableObject {
                 self.hasLoadedForUserId = userId
                 startAutoRefreshTimer()
             } catch {
-                print("⚠️ Error creating initial settings: \(error)")
-                // Continue with default settings if creation also fails
+                print("⚠️ Error creating initial settings in Supabase: \(error)")
+                // Continue with locally cached settings if creation also fails (offline mode)
+                print("ℹ️ Using locally cached settings for offline mode")
                 self.hasLoadedForUserId = nil
             }
-            enforcePlanConstraints()
-            persistProFlag()
-            syncWidgetPreferencesToAppGroup()
         }
     }
 
@@ -335,7 +342,11 @@ class AppSettingsManager: ObservableObject {
         refreshCancellable = Timer.publish(every: TimeInterval(intervalMinutes * 60), on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
-                Task { await self?.loadSettings() }
+                Task {
+                    // Load settings and sync family data if needed (change detection enabled)
+                    await self?.loadSettings()
+                    await SupabaseDataManager.shared.fetchUserDataIfNeeded()
+                }
             }
     }
 

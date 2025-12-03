@@ -17,6 +17,7 @@ struct CalendarView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
@@ -1115,7 +1116,8 @@ struct CalendarView: View {
     // MARK: - View Lifecycle
 
     private func reloadEvents() async {
-        // Async wrapper for refreshable modifier
+        // Force refresh data when user manually pulls down (bypass change detection)
+        await dataManager.fetchUserDataIfNeeded(force: true)
         loadEvents()
     }
 
