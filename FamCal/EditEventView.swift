@@ -406,10 +406,10 @@ struct EditEventView: View {
             return (ids, names)
         }
 
-        // Fallback to all family members so calendar-only filters can still pass
-        let ids = familyMembers.compactMap { $0.id }
-        let names = familyMembers.compactMap { $0.name }
-        return (ids, names)
+        // Return empty attendees if none found (don't show all members in notification)
+        // The calendar filter will still work because it checks calendarId separately
+        print("⚠️ No attendees found for event \(upcomingEvent.id) - notification will not list attendees")
+        return ([], [])
     }
 
     private func selectedDriverName() -> String? {
