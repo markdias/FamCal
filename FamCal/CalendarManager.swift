@@ -8,6 +8,7 @@
 @preconcurrency import EventKit
 import EventKitUI
 import UIKit
+import CoreData
 
 // EventKit types are not marked Sendable, but we serialize access via `eventStoreQueue`.
 extension EKEventStore: @unchecked @retroactive Sendable {}
@@ -304,6 +305,12 @@ final class CalendarManager {
         var results: [UpcomingCalendarEvent] = []
 
         for event in events {
+            // Filter out soft-deleted events (marked as not attending)
+            if isSoftDeletedEvent(eventIdentifier: event.eventIdentifier) {
+                print("⊘ Filtering out soft-deleted event: \(event.title ?? "Unknown") (\(event.eventIdentifier ?? "Unknown"))")
+                continue
+            }
+
             let calendarColor = event.calendar.cgColor.map { UIColor(cgColor: $0) } ?? .systemBlue
 
             let upcomingEvent = UpcomingCalendarEvent(
@@ -328,6 +335,21 @@ final class CalendarManager {
         }
 
         return results
+    }
+
+    /// Check if an event is soft-deleted (marked as not attending)
+    private static func isSoftDeletedEvent(eventIdentifier: String) -> Bool {
+        let viewContext = PersistenceController.shared.container.viewContext
+        let fetchRequest = FamilyEvent.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@ AND isAttending == false", eventIdentifier)
+
+        do {
+            let results = try viewContext.fetch(fetchRequest)
+            return !results.isEmpty
+        } catch {
+            print("⚠️ Error checking soft delete status for event \(eventIdentifier): \(error.localizedDescription)")
+            return false
+        }
     }
 
     func calculateRecurringOccurrences(startDate: Date, endDate: Date, recurrenceRule: EKRecurrenceRule?, upcomingEvents: [UpcomingCalendarEvent], currentEventId: String, eventTitle: String, limit: Int) -> [Date] {

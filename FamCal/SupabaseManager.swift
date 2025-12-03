@@ -1533,6 +1533,172 @@ class SupabaseManager: @unchecked Sendable {
         print("❌ UpsertCalendarEventMetadata failed with status \(statusCode)")
         throw NSError(domain: "UpsertCalendarEventMetadata", code: statusCode)
     }
+
+    // MARK: - Soft Delete Event Metadata
+
+    func syncSoftDeletedEvent(
+        userId: String,
+        eventIdentifier: String,
+        isAttending: Bool,
+        deletionType: String? = nil,
+        deletionReason: String? = nil,
+        token: String? = nil
+    ) async throws {
+        struct SoftDeleteBody: Encodable {
+            let user_id: String
+            let event_identifier: String
+            let is_attending: Bool
+            let deletion_type: String?
+            let deleted_at: String?
+            let deletion_reason: String?
+
+            enum CodingKeys: String, CodingKey {
+                case user_id, event_identifier, is_attending, deletion_type, deleted_at, deletion_reason
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
+                try container.encode(event_identifier, forKey: .event_identifier)
+                try container.encode(is_attending, forKey: .is_attending)
+
+                if let deletion_type {
+                    try container.encode(deletion_type, forKey: .deletion_type)
+                } else {
+                    try container.encodeNil(forKey: .deletion_type)
+                }
+
+                if let deleted_at {
+                    try container.encode(deleted_at, forKey: .deleted_at)
+                } else {
+                    try container.encodeNil(forKey: .deleted_at)
+                }
+
+                if let deletion_reason {
+                    try container.encode(deletion_reason, forKey: .deletion_reason)
+                } else {
+                    try container.encodeNil(forKey: .deletion_reason)
+                }
+            }
+        }
+
+        let deletedAtValue = !isAttending ? ISO8601DateFormatter().string(from: Date()) : nil
+        let body = SoftDeleteBody(
+            user_id: userId,
+            event_identifier: eventIdentifier,
+            is_attending: isAttending,
+            deletion_type: deletionType,
+            deleted_at: deletedAtValue,
+            deletion_reason: deletionReason
+        )
+
+        let userToken = token ?? authManager.accessToken
+
+        // Try upsert via POST with merge-duplicates
+        let (postData, statusCode) = try await makeRequest(
+            "POST",
+            path: "rest/v1/family_events",
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "resolution=merge-duplicates"]
+        )
+
+        if statusCode == 201 || statusCode == 200 || statusCode == 204 {
+            print("✅ Synced soft delete status for event \(eventIdentifier)")
+            return
+        }
+
+        // If conflict, retry with PATCH
+        if statusCode == 409 {
+            print("⚠️ syncSoftDeletedEvent hit 409, retrying with PATCH")
+            let queryItems = [
+                URLQueryItem(name: "user_id", value: "eq.\(userId)"),
+                URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)")
+            ]
+
+            let (_, patchStatus) = try await makeRequest(
+                "PATCH",
+                path: "rest/v1/family_events",
+                queryItems: queryItems,
+                body: body,
+                userToken: userToken,
+                extraHeaders: ["Prefer": "return=minimal"]
+            )
+
+            guard patchStatus == 200 || patchStatus == 204 else {
+                logErrorResponse(postData, statusCode: statusCode, operation: "syncSoftDeletedEvent_PATCH")
+                print("❌ Patch family_events failed with status \(patchStatus)")
+                throw NSError(domain: "SyncSoftDeletedEvent", code: patchStatus)
+            }
+
+            return
+        }
+
+        logErrorResponse(postData, statusCode: statusCode, operation: "syncSoftDeletedEvent_POST")
+        print("❌ syncSoftDeletedEvent failed with status \(statusCode)")
+        throw NSError(domain: "SyncSoftDeletedEvent", code: statusCode)
+    }
+
+    func restoreSoftDeletedEvent(
+        userId: String,
+        eventIdentifier: String,
+        token: String? = nil
+    ) async throws {
+        struct RestoreBody: Encodable {
+            let user_id: String
+            let event_identifier: String
+            let is_attending: Bool
+            let deletion_type: String?
+            let deleted_at: String?
+            let deletion_reason: String?
+
+            enum CodingKeys: String, CodingKey {
+                case user_id, event_identifier, is_attending, deletion_type, deleted_at, deletion_reason
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
+                try container.encode(event_identifier, forKey: .event_identifier)
+                try container.encode(true, forKey: .is_attending)  // Mark as attending again
+                try container.encodeNil(forKey: .deletion_type)
+                try container.encodeNil(forKey: .deleted_at)
+                try container.encodeNil(forKey: .deletion_reason)
+            }
+        }
+
+        let body = RestoreBody(
+            user_id: userId,
+            event_identifier: eventIdentifier,
+            is_attending: true,
+            deletion_type: nil,
+            deleted_at: nil,
+            deletion_reason: nil
+        )
+
+        let userToken = token ?? authManager.accessToken
+
+        let queryItems = [
+            URLQueryItem(name: "user_id", value: "eq.\(userId)"),
+            URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)")
+        ]
+
+        let (_, status) = try await makeRequest(
+            "PATCH",
+            path: "rest/v1/family_events",
+            queryItems: queryItems,
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=minimal"]
+        )
+
+        guard status == 200 || status == 204 else {
+            print("❌ restoreSoftDeletedEvent failed with status \(status)")
+            throw NSError(domain: "RestoreSoftDeletedEvent", code: status)
+        }
+
+        print("✅ Restored soft deleted event \(eventIdentifier)")
+    }
 }
 
 // MARK: - Data Transfer Objects
