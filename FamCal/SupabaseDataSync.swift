@@ -83,15 +83,19 @@ class SupabaseDataSync {
                 let supabaseCalendarIds = Set(supabaseMemberCalendars.map { $0.id })
 
                 // 1. Delete calendars that are no longer in Supabase
-                // SAFETY: Only delete if we got data back from Supabase to avoid data loss on partial API responses
-                if !supabaseCalendars.isEmpty {
+                // SAFETY: Only delete if we got data back from Supabase FOR THIS MEMBER to avoid data loss on partial API responses
+                if !supabaseMemberCalendars.isEmpty {
                     for calendar in existingCalendars {
                         if let calendarId = calendar.id?.uuidString, !supabaseCalendarIds.contains(calendarId) {
                             print("🗑️ Removing calendar \(calendar.calendarName ?? "Unknown") for member \(supabaseDTO.name) - no longer in Supabase")
                             context.delete(calendar)
                         }
                     }
+                } else if !supabaseCalendars.isEmpty {
+                    // Supabase returned data for other members but not this one - preserve existing calendars
+                    print("⚠️ Supabase returned no calendars for member \(supabaseDTO.name) - preserving \(existingCalendars.count) existing calendars to avoid data loss")
                 } else {
+                    // Supabase returned no calendars at all - preserve existing calendars
                     print("⚠️ Supabase returned no calendars - preserving existing calendars to avoid data loss")
                 }
 
@@ -110,8 +114,17 @@ class SupabaseDataSync {
                         isNewCalendar = true
                     }
 
-                    memberCalendar.calendarName = calendarDTO.calendar_name
-                    memberCalendar.calendarColorHex = calendarDTO.calendar_color_hex
+                    // Only update calendar name if Supabase provides a non-empty value - preserve existing name otherwise
+                    if !calendarDTO.calendar_name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        memberCalendar.calendarName = calendarDTO.calendar_name
+                    } else if memberCalendar.calendarName?.isEmpty == true && isNewCalendar {
+                        // Only set to empty if it's a new calendar with no name from either source
+                        memberCalendar.calendarName = calendarDTO.calendar_name
+                    }
+                    // Preserve existing color unless a valid one is provided
+                    if !calendarDTO.calendar_color_hex.trimmingCharacters(in: .whitespaces).isEmpty {
+                        memberCalendar.calendarColorHex = calendarDTO.calendar_color_hex
+                    }
                     memberCalendar.isAutoLinked = calendarDTO.is_auto_linked
 
                     // For new calendars or calendars without calendarID, try to match by calendar name
