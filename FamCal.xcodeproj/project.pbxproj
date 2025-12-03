@@ -6,9 +6,9 @@
 	objectVersion = 77;
 	objects = {
 
-	/* Begin PBXBuildFile section */
-		0896E4F1E9CB40F082ED62DB /* FamCal WatchKit Extension.appex in Embed WatchKit Extension */ = {isa = PBXBuildFile; fileRef = 67974C107FC90002510DC359 /* FamCal WatchKit Extension.appex */; };
+/* Begin PBXBuildFile section */
 		0694D93E951485B781BF720D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 904065347A827820CE0920A9 /* Foundation.framework */; };
+		0896E4F1E9CB40F082ED62DB /* FamCal WatchKit Extension.appex in Embed WatchKit Extension */ = {isa = PBXBuildFile; fileRef = 67974C107FC90002510DC359 /* FamCal WatchKit Extension.appex */; };
 		0B55838E45C8D09B607BCEA4 /* NextEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 252DA05DA8AF464875E11CFD /* NextEventsView.swift */; };
 		3189143FC6D3863B88478F5B /* WatchKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7B92FF35A68C1F850DAE529B /* WatchKit.framework */; };
 		3B6E4AFF3B6F8037FAC5DA06 /* libPods-FamCal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 70AD09E189CDD4488F8BE030 /* libPods-FamCal.a */; };
@@ -16,7 +16,6 @@
 		4004F9BD72B30A5332C39B37 /* WatchMemberEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0128B3DE53448670319E8E /* WatchMemberEvent.swift */; };
 		6A12D817CF9C7C1E0AE234E0 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 42777D4DCE838F9134688B94 /* WatchConnectivity.framework */; };
 		74310E18EABC1EEC71CAE2E3 /* FamCalWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E5ED8BF0C9215FB5149D06 /* FamCalWatchApp.swift */; };
-		7BF95B2999FA84A61F8D146F /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 60756307935E31140F324AA0 /* Info.plist */; };
 		A97729B49F8C237F23EA9420 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 904065347A827820CE0920A9 /* Foundation.framework */; };
 		FD05CD302ED3830B003A2662 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD2F2ED3830B003A2662 /* Auth */; };
 		FD05CD322ED3830B003A2662 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD312ED3830B003A2662 /* PostgREST */; };
@@ -64,7 +63,7 @@
 		};
 /* End PBXContainerItemProxy section */
 
-	/* Begin PBXCopyFilesBuildPhase section */
+/* Begin PBXCopyFilesBuildPhase section */
 		1BAA52DAC51B46DD976D7195 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -88,23 +87,23 @@
 			name = "Embed WatchKit Extension";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-	/* End PBXCopyFilesBuildPhase section */
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		0186BE2B1C47C03717727F55 /* FamCal WatchKit App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FamCal WatchKit App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		248EE1941C8C48C19FF54ED3 /* NextEventWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NextEventWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		252DA05DA8AF464875E11CFD /* NextEventsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NextEventsView.swift; path = NextEventsView.swift; sourceTree = "<group>"; };
+		252DA05DA8AF464875E11CFD /* NextEventsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NextEventsView.swift; sourceTree = "<group>"; };
 		363D1C58560F637A3316330C /* Pods-FamCal.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FamCal.release.xcconfig"; path = "Target Support Files/Pods-FamCal/Pods-FamCal.release.xcconfig"; sourceTree = "<group>"; };
 		42777D4DCE838F9134688B94 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/WatchConnectivity.framework; sourceTree = DEVELOPER_DIR; };
 		4422D0B07B993B90E48CF99D /* Pods-FamCal.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FamCal.debug.xcconfig"; path = "Target Support Files/Pods-FamCal/Pods-FamCal.debug.xcconfig"; sourceTree = "<group>"; };
-		60756307935E31140F324AA0 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = Info.plist; sourceTree = "<group>"; };
+		60756307935E31140F324AA0 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		67974C107FC90002510DC359 /* FamCal WatchKit Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "FamCal WatchKit Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		70AD09E189CDD4488F8BE030 /* libPods-FamCal.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-FamCal.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		79E5ED8BF0C9215FB5149D06 /* FamCalWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FamCalWatchApp.swift; path = FamCalWatchApp.swift; sourceTree = "<group>"; };
+		79E5ED8BF0C9215FB5149D06 /* FamCalWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FamCalWatchApp.swift; sourceTree = "<group>"; };
 		7B92FF35A68C1F850DAE529B /* WatchKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/WatchKit.framework; sourceTree = DEVELOPER_DIR; };
 		904065347A827820CE0920A9 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		9B0128B3DE53448670319E8E /* WatchMemberEvent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WatchMemberEvent.swift; path = WatchMemberEvent.swift; sourceTree = "<group>"; };
-		AD1909080E9892218BF58D82 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = Info.plist; path = Info.plist; sourceTree = "<group>"; };
+		9B0128B3DE53448670319E8E /* WatchMemberEvent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchMemberEvent.swift; sourceTree = "<group>"; };
+		AD1909080E9892218BF58D82 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		FD1B9A6D2ECB1ED700B8C72E /* FamCal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FamCal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A8B2ECB1ED800B8C72E /* FamCalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -154,15 +153,11 @@
 		};
 		FD1B9A842ECB1ED800B8C72E /* FamCalTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FamCalTests;
 			sourceTree = "<group>";
 		};
 		FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FamCalUITests;
 			sourceTree = "<group>";
 		};
@@ -244,7 +239,6 @@
 			children = (
 				9B0128B3DE53448670319E8E /* WatchMemberEvent.swift */,
 			);
-			name = WatchShared;
 			path = WatchShared;
 			sourceTree = "<group>";
 		};
@@ -253,7 +247,6 @@
 			children = (
 				60756307935E31140F324AA0 /* Info.plist */,
 			);
-			name = WatchApp;
 			path = WatchApp;
 			sourceTree = "<group>";
 		};
@@ -273,7 +266,6 @@
 				79E5ED8BF0C9215FB5149D06 /* FamCalWatchApp.swift */,
 				252DA05DA8AF464875E11CFD /* NextEventsView.swift */,
 			);
-			name = WatchAppExtension;
 			path = WatchAppExtension;
 			sourceTree = "<group>";
 		};
@@ -488,7 +480,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2610;
-				LastUpgradeCheck = 2610;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					FD1B9A6C2ECB1ED700B8C72E = {
 						CreatedOnToolsVersion = 26.1.1;
@@ -784,10 +776,10 @@
 				DEVELOPMENT_TEAM = M7KXVX37Y7;
 				INFOPLIST_FILE = WatchAppExtension/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = mdias.FamCal.watchapp.watchkitextension;
-				SDKROOT = watchos;
 				PRODUCT_NAME = "FamCal WatchKit Extension";
-				SWIFT_VERSION = 5.0;
+				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 				VALIDATE_PRODUCT = YES;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
@@ -800,10 +792,10 @@
 				DEVELOPMENT_TEAM = M7KXVX37Y7;
 				INFOPLIST_FILE = WatchApp/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = mdias.FamCal.watchapp;
-				SDKROOT = watchos;
 				PRODUCT_NAME = "FamCal WatchKit App";
-				SWIFT_VERSION = 5.0;
+				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 				VALIDATE_PRODUCT = YES;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
@@ -816,10 +808,10 @@
 				DEVELOPMENT_TEAM = M7KXVX37Y7;
 				INFOPLIST_FILE = WatchAppExtension/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = mdias.FamCal.watchapp.watchkitextension;
-				SDKROOT = watchos;
 				PRODUCT_NAME = "FamCal WatchKit Extension";
-				SWIFT_VERSION = 5.0;
+				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
@@ -831,10 +823,10 @@
 				DEVELOPMENT_TEAM = M7KXVX37Y7;
 				INFOPLIST_FILE = WatchApp/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = mdias.FamCal.watchapp;
-				SDKROOT = watchos;
 				PRODUCT_NAME = "FamCal WatchKit App";
-				SWIFT_VERSION = 5.0;
+				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
@@ -986,6 +978,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -1043,6 +1036,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
