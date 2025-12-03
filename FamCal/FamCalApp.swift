@@ -61,6 +61,7 @@ struct FamCalApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
     @StateObject private var appSettingsManager = AppSettingsManager.shared
+    @StateObject private var watchSessionManager = WatchSessionManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var hasCompletedOnboarding: Bool = false
     @State private var deepLinkEventTitle: String?

@@ -9,3 +9,5 @@ Build/
 .env.example
 .DS_Store
 Pods/
+project.pbxproj*
+UserInterfaceState.xcuserstate*
