@@ -13,6 +13,7 @@
         <attribute name="sortOrder" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
         <attribute name="isInvited" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="linkedUserId" optional="YES" attributeType="String"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="memberCalendars" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="FamilyMemberCalendar" inverseName="familyMember" inverseEntity="FamilyMemberCalendar"/>
         <relationship name="sharedCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SharedCalendar" inverseName="members" inverseEntity="SharedCalendar"/>
         <relationship name="familyEvents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="attendees" inverseEntity="FamilyEvent"/>
@@ -59,6 +60,7 @@
         <attribute name="travelTimeMinutes" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
         <attribute name="familyMemberId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="travelEventIdentifier" optional="YES" attributeType="String"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="events" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="driver" inverseEntity="FamilyEvent"/>
     </entity>
     <entity name="SavedAddress" representedClassName="SavedAddress" syncable="YES" codeGenerationType="class">
@@ -67,6 +69,7 @@
         <attribute name="address" optional="YES" attributeType="String"/>
         <attribute name="latitude" optional="YES" attributeType="Double" usesScalarValueType="YES" defaultValue="0.0"/>
         <attribute name="longitude" optional="YES" attributeType="Double" usesScalarValueType="YES" defaultValue="0.0"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="RecentSearch" representedClassName="RecentSearch" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -86,7 +89,16 @@
         <attribute name="showInUpcoming" optional="YES" attributeType="Boolean" defaultValueString="NO"/>
         <attribute name="showInMonth" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
         <attribute name="showInDay" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="owner" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="personalCalendars" inverseEntity="FamilyMember"/>
+    </entity>
+    <entity name="SyncMetadata" representedClassName="SyncMetadata" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="entityType" optional="YES" attributeType="String"/>
+        <attribute name="lastSyncTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastModifiedRemote" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="hasPendingChanges" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="syncStatus" optional="YES" attributeType="String" defaultValueString="synced"/>
     </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
@@ -99,5 +111,6 @@
         <element name="SavedAddress" positionX="486" positionY="-18" width="128" height="103"/>
         <element name="RecentSearch" positionX="576" positionY="-18" width="128" height="103"/>
         <element name="PersonalCalendar" positionX="666" positionY="-18" width="128" height="103"/>
+        <element name="SyncMetadata" positionX="756" positionY="-18" width="128" height="119"/>
     </elements>
 </model>

@@ -477,6 +477,21 @@ struct AddSavedAddressView: View {
                 latitude: 0,
                 longitude: 0
             )
+
+            // Set modifiedAt timestamp for offline change tracking
+            do {
+                let fetchRequest: NSFetchRequest<SavedAddress> = SavedAddress.fetchRequest()
+                fetchRequest.predicate = NSPredicate(format: "name == %@", trimmedName)
+                fetchRequest.fetchLimit = 1
+                let matches = try viewContext.fetch(fetchRequest)
+                if let address = matches.first {
+                    address.modifiedAt = Date()
+                    try viewContext.save()
+                }
+            } catch {
+                print("❌ Error setting modifiedAt for saved address: \(error)")
+            }
+
             await MainActor.run {
                 dismiss()
             }

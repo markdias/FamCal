@@ -383,6 +383,7 @@ struct EditFamilyMemberView: View {
                     // Local-only update for guests
                     member.name = name
                     member.isDriver = isDriver
+                    member.modifiedAt = Date()
                     try dataManager.updateFamilyMemberLocal(id: member.id ?? UUID(), name: name, colorHex: member.colorHex ?? "#555555")
 
                     // Handle auto-linked calendar updates locally
@@ -416,6 +417,7 @@ struct EditFamilyMemberView: View {
                     member.isDriver = isDriver
                     member.avatarInitials = getInitials(from: name)
                     member.linkedCalendarID = matchedCalendar?.id
+                    member.modifiedAt = Date()
 
                     // Handle auto-linked calendar updates
                     let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }

@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import CoreData
 import EventKit
+import Network
 
 class SupabaseDataManager: ObservableObject {
     static let shared = SupabaseDataManager()
@@ -28,24 +29,37 @@ class SupabaseDataManager: ObservableObject {
     let appSettingsManager: AppSettingsManager
     private var cancellables = Set<AnyCancellable>()
     private var managedObjectContext: NSManagedObjectContext?
+    private var networkMonitor: NWPathMonitor?
+    private var wasOffline = false
 
     init() {
         self.supabaseManager = SupabaseManager.shared
         self.authManager = SupabaseAuthManager.shared
         self.appSettingsManager = AppSettingsManager.shared
 
+        // Setup network monitoring to detect offline→online transitions
+        setupNetworkMonitoring()
+
         // Observe authentication changes to fetch data
         authManager.$isAuthenticated
             .sink { [weak self] isAuthenticated in
                 if isAuthenticated {
                     Task { @MainActor in
-                        print("ℹ️ Authentication state changed to authenticated, attempting to fetch data...")
-                        // Only fetch if context is available
-                        if self?.managedObjectContext != nil {
-                            await self?.fetchUserData()
-                        } else {
-                            print("ℹ️ CoreData context not yet available, deferring fetch...")
+                        print("ℹ️ Authentication state changed to authenticated, clearing guest data first...")
+                        // Clear guest/old data before fetching authenticated user's data
+                        self?.clearData()
+
+                        // Clear CoreData and sync metadata
+                        if let context = self?.managedObjectContext {
+                            self?.clearAllLocalData()
+
+                            // Clear sync metadata so data is fetched fresh
+                            SyncMetadataManager.shared.clearAllMetadata(context: context)
                         }
+
+                        print("ℹ️ Authentication state changed to authenticated, attempting to fetch data...")
+                        // Fetch authenticated user's data immediately
+                        await self?.fetchUserData()
                     }
                 } else {
                     Task { @MainActor in
@@ -56,9 +70,50 @@ class SupabaseDataManager: ObservableObject {
             .store(in: &cancellables)
     }
 
+    /// Setup network connectivity monitoring to detect offline→online transitions
+    private func setupNetworkMonitoring() {
+        let monitor = NWPathMonitor()
+        self.networkMonitor = monitor
+
+        monitor.pathUpdateHandler = { [weak self] path in
+            let isConnected = path.status == .satisfied
+            Task { @MainActor in
+                if isConnected && self?.wasOffline == true {
+                    print("🔄 Network reconnected - syncing pending changes")
+                    self?.wasOffline = false
+                    // Phase 5: Sync pending offline changes and refresh all data when coming back online
+                    if self?.managedObjectContext != nil {
+                        await self?.syncPendingChangesAndRefresh()
+                    }
+                } else if !isConnected {
+                    print("⚠️ Network disconnected - switching to offline mode")
+                    self?.wasOffline = true
+                }
+            }
+        }
+
+        let queue = DispatchQueue(label: "com.famcal.network")
+        monitor.start(queue: queue)
+    }
+
+    deinit {
+        networkMonitor?.cancel()
+    }
+
     func setManagedObjectContext(_ context: NSManagedObjectContext) {
         print("ℹ️ Setting CoreData context, now fetching user data...")
         self.managedObjectContext = context
+
+        // First, try to load cached data from CoreData to ensure immediate display
+        do {
+            let memberFetch = FamilyMember.fetchRequest()
+            let cachedCount = try context.fetch(memberFetch).count
+            if cachedCount > 0 {
+                print("✅ Found \(cachedCount) cached family members in CoreData")
+            }
+        } catch {
+            print("⚠️ Could not check CoreData cache: \(error)")
+        }
 
         // Fetch data once context is available (if already authenticated)
         if authManager.isAuthenticated {
@@ -72,6 +127,172 @@ class SupabaseDataManager: ObservableObject {
     }
 
     // MARK: - Data Fetching
+
+    /// Fetch user data only if changes detected or sync interval exceeded
+    /// This is the primary method to use for background syncing with change detection
+    @MainActor
+    func fetchUserDataIfNeeded(force: Bool = false) async {
+        guard let context = managedObjectContext else {
+            print("⚠️ CoreData context not available for change detection")
+            return
+        }
+
+        guard authManager.userId != nil else {
+            print("❌ Cannot fetch data: User ID is nil")
+            return
+        }
+
+        let syncIntervalMinutes = appSettingsManager.autoRefreshInterval
+
+        // Phase 4: Detect offline changes and mark as pending
+        if !force {
+            print("🔍 Phase 4: Detecting offline changes...")
+            SyncMetadataManager.shared.detectAndMarkChanges(entityType: .familyMembers, context: context)
+            SyncMetadataManager.shared.detectAndMarkChanges(entityType: .drivers, context: context)
+            SyncMetadataManager.shared.detectAndMarkChanges(entityType: .savedAddresses, context: context)
+            SyncMetadataManager.shared.detectAndMarkChanges(entityType: .personalCalendars, context: context)
+        }
+
+        // Check each entity type and only fetch what changed
+        let shouldFetchMembers = force || SyncMetadataManager.shared.shouldFetchData(
+            entityType: .familyMembers,
+            syncIntervalMinutes: syncIntervalMinutes,
+            context: context
+        )
+        let shouldFetchSharedCalendars = force || SyncMetadataManager.shared.shouldFetchData(
+            entityType: .sharedCalendars,
+            syncIntervalMinutes: syncIntervalMinutes,
+            context: context
+        )
+        let shouldFetchPersonalCalendars = force || SyncMetadataManager.shared.shouldFetchData(
+            entityType: .personalCalendars,
+            syncIntervalMinutes: syncIntervalMinutes,
+            context: context
+        )
+        let shouldFetchDrivers = force || SyncMetadataManager.shared.shouldFetchData(
+            entityType: .drivers,
+            syncIntervalMinutes: syncIntervalMinutes,
+            context: context
+        )
+        let shouldFetchAddresses = force || SyncMetadataManager.shared.shouldFetchData(
+            entityType: .savedAddresses,
+            syncIntervalMinutes: syncIntervalMinutes,
+            context: context
+        )
+
+        // If nothing needs fetching, load from CoreData and return
+        if !shouldFetchMembers && !shouldFetchSharedCalendars && !shouldFetchPersonalCalendars &&
+           !shouldFetchDrivers && !shouldFetchAddresses {
+            print("✅ All data is fresh - loading from CoreData cache")
+            loadCachedDataFromCoreData(context)
+            return
+        }
+
+        print("🔄 Change detection: fetching updated data from Supabase")
+        await fetchUserData()
+    }
+
+    /// Phase 5: Sync pending offline changes to Supabase, then refresh all data
+    @MainActor
+    private func syncPendingChangesAndRefresh() async {
+        print("📤 Phase 5: Starting sync of pending offline changes...")
+
+        guard let context = managedObjectContext else {
+            print("⚠️ CoreData context not available")
+            await fetchUserDataIfNeeded(force: true)
+            return
+        }
+
+        guard authManager.userId != nil else {
+            print("⚠️ User not authenticated - skipping pending change sync")
+            await fetchUserDataIfNeeded(force: true)
+            return
+        }
+
+        // Upload pending changes for each entity type
+        do {
+            try await uploadPendingFamilyMemberChanges(context: context)
+            try await uploadPendingDriverChanges(context: context)
+            try await uploadPendingSavedAddressChanges(context: context)
+            print("✅ Pending changes uploaded successfully")
+        } catch {
+            print("⚠️ Error uploading pending changes: \(error) - proceeding with refresh anyway")
+        }
+
+        // Now refresh all data from Supabase
+        await fetchUserDataIfNeeded(force: true)
+    }
+
+    /// Upload pending family member changes
+    private func uploadPendingFamilyMemberChanges(context: NSManagedObjectContext) async throws {
+        let fetchRequest: NSFetchRequest<FamilyMember> = FamilyMember.fetchRequest()
+        let allMembers = try context.fetch(fetchRequest)
+
+        for member in allMembers {
+            guard let modifiedAt = member.modifiedAt else { continue }
+            let metadata = SyncMetadataManager.shared.fetchMetadata(entityType: .familyMembers, context: context)
+            guard let lastSync = metadata?.lastSyncTime else { continue }
+
+            // If member was modified after last sync, upload the change
+            if modifiedAt > lastSync {
+                print("📤 Uploading pending change for family member: \(member.name ?? "Unknown")")
+                if let memberId = member.id?.uuidString {
+                    try await updateFamilyMember(
+                        id: memberId,
+                        name: member.name ?? "",
+                        colorHex: member.colorHex ?? "#555555"
+                    )
+                }
+            }
+        }
+    }
+
+    /// Upload pending driver changes
+    private func uploadPendingDriverChanges(context: NSManagedObjectContext) async throws {
+        let fetchRequest: NSFetchRequest<Driver> = Driver.fetchRequest()
+        let allDrivers = try context.fetch(fetchRequest)
+
+        for driver in allDrivers {
+            guard let modifiedAt = driver.modifiedAt else { continue }
+            let metadata = SyncMetadataManager.shared.fetchMetadata(entityType: .drivers, context: context)
+            guard let lastSync = metadata?.lastSyncTime else { continue }
+
+            // If driver was modified after last sync, upload the change
+            if modifiedAt > lastSync {
+                print("📤 Uploading pending change for driver: \(driver.name ?? "Unknown")")
+                await updateDriver(
+                    id: driver.id ?? UUID(),
+                    name: driver.name ?? "",
+                    phone: driver.phone,
+                    email: driver.email,
+                    notes: driver.notes
+                )
+            }
+        }
+    }
+
+    /// Upload pending saved address changes
+    private func uploadPendingSavedAddressChanges(context: NSManagedObjectContext) async throws {
+        let fetchRequest: NSFetchRequest<SavedAddress> = SavedAddress.fetchRequest()
+        let allAddresses = try context.fetch(fetchRequest)
+
+        for address in allAddresses {
+            guard let modifiedAt = address.modifiedAt else { continue }
+            let metadata = SyncMetadataManager.shared.fetchMetadata(entityType: .savedAddresses, context: context)
+            guard let lastSync = metadata?.lastSyncTime else { continue }
+
+            // If address was modified after last sync, upload the change
+            if modifiedAt > lastSync {
+                print("📤 Uploading pending change for saved address: \(address.name ?? "Unknown")")
+                await createSavedAddress(
+                    name: address.name ?? "",
+                    address: address.address ?? "",
+                    latitude: address.latitude,
+                    longitude: address.longitude
+                )
+            }
+        }
+    }
 
     @MainActor
     func fetchUserData() async {
@@ -143,10 +364,6 @@ class SupabaseDataManager: ObservableObject {
             let calendarEventMetadata = (try? await eventMetadata) ?? []
             print("✅ Fetched \(calendarEventMetadata.count) calendar event metadata records from Supabase")
 
-            // Load app settings
-            print("ℹ️ Loading app settings from Supabase...")
-            await appSettingsManager.loadSettings()
-
             if !authManager.isGuest {
                 await refreshLocalFamilyInfo(userId: userId)
             }
@@ -154,33 +371,60 @@ class SupabaseDataManager: ObservableObject {
             // Sync to CoreData for backward compatibility with existing views
             if let context = managedObjectContext {
                 print("ℹ️ Syncing data to CoreData...")
+
+                // Ensure linkedFamilyMemberId is loaded for personal calendar sync
+                if appSettingsManager.linkedFamilyMemberId == nil {
+                    print("⚠️ linkedFamilyMemberId not yet set - attempting to auto-link current user...")
+                    // Auto-select linked family member for current user if not already set
+                    if let authUserId = authManager.userId,
+                       let linkedMember = self.familyMembers.first(where: { $0.linked_user_id == authUserId }) {
+                        appSettingsManager.linkedFamilyMemberId = linkedMember.id
+                        await appSettingsManager.saveSettings()
+                        print("✅ Auto-linked current user to family member: \(linkedMember.name)")
+                    }
+                }
+
+                print("  📌 linkedFamilyMemberId for personal calendars: \(appSettingsManager.linkedFamilyMemberId ?? "nil")")
+
                 SupabaseDataSync.shared.syncFamilyMembersFromSupabase(
                     supabaseMembers: self.familyMembers,
                     supabaseCalendars: calendarDTOs,
                     to: context
                 )
+                SyncMetadataManager.shared.recordSync(entityType: .familyMembers, context: context)
+                SyncMetadataManager.shared.recordSync(entityType: .familyMemberCalendars, context: context)
+
                 SupabaseDataSync.shared.syncSharedCalendarsFromSupabase(
                     supabaseCalendars: self.sharedCalendars,
                     to: context
                 )
+                SyncMetadataManager.shared.recordSync(entityType: .sharedCalendars, context: context)
+
                 SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
                     supabaseCalendars: self.personalCalendars,
                     to: context,
                     linkedFamilyMemberId: appSettingsManager.linkedFamilyMemberId
                 )
+                SyncMetadataManager.shared.recordSync(entityType: .personalCalendars, context: context)
+
                 SupabaseDataSync.shared.syncDriversFromSupabase(
                     supabaseDrivers: self.drivers,
                     to: context
                 )
+                SyncMetadataManager.shared.recordSync(entityType: .drivers, context: context)
+
                 SupabaseDataSync.shared.syncSavedAddressesFromSupabase(
                     supabaseAddresses: self.savedAddresses,
                     to: context
                 )
+                SyncMetadataManager.shared.recordSync(entityType: .savedAddresses, context: context)
+
                 SupabaseDataSync.shared.syncEventMetadataFromSupabase(
                     supabaseMetadata: calendarEventMetadata,
                     self.drivers,
                     to: context
                 )
+                SyncMetadataManager.shared.recordSync(entityType: .calendarEventMetadata, context: context)
             } else {
                 print("⚠️ CoreData context not available - skipping sync")
             }
@@ -191,11 +435,161 @@ class SupabaseDataManager: ObservableObject {
                 print("ℹ️ Data fetch cancelled (likely superseded by a newer request)")
                 return
             }
-            errorMessage = "Failed to fetch data: \(error.localizedDescription)"
-            print("❌ Error fetching user data: \(error)")
+
+            // Network error detected - load from CoreData cache instead of clearing
+            print("⚠️ Network error fetching data, will load from cached CoreData: \(error.localizedDescription)")
+            if let context = managedObjectContext {
+                loadCachedDataFromCoreData(context)
+            } else {
+                errorMessage = "Network unavailable and no cached data access"
+                print("❌ Network error and no CoreData context available")
+            }
         }
 
         isLoading = false
+    }
+
+    /// Load cached data from CoreData when network is unavailable
+    /// This restores all relationships including FamilyMemberCalendars and SharedCalendars
+    @MainActor
+    private func loadCachedDataFromCoreData(_ context: NSManagedObjectContext) {
+        do {
+            // Fetch family members from CoreData
+            let memberFetch = FamilyMember.fetchRequest()
+            let cachedMembers = try context.fetch(memberFetch)
+            print("📦 Loaded \(cachedMembers.count) family members from CoreData cache")
+
+            // Verify relationships are intact in CoreData
+            for member in cachedMembers {
+                let calendarCount = member.memberCalendars?.count ?? 0
+                print("  └─ \(member.name ?? "Unknown"): \(calendarCount) linked calendars")
+            }
+
+            // Convert CoreData FamilyMember to DTO for in-memory cache
+            self.familyMembers = cachedMembers.map { member in
+                FamilyMemberDTO(
+                    id: member.id?.uuidString ?? "",
+                    user_id: authManager.userId ?? "",
+                    family_id: nil,
+                    linked_user_id: member.linkedUserId,
+                    name: member.name ?? "Unknown",
+                    color_hex: member.colorHex ?? "#007AFF",
+                    is_driver: member.isDriver,
+                    created_at: nil
+                )
+            }
+
+            // Fetch shared calendars from CoreData
+            let sharedCalendarFetch = SharedCalendar.fetchRequest()
+            let cachedSharedCalendars = try context.fetch(sharedCalendarFetch)
+            print("📦 Loaded \(cachedSharedCalendars.count) shared calendars from CoreData cache")
+
+            // Verify shared calendar member relationships are intact
+            for calendar in cachedSharedCalendars {
+                let memberCount = calendar.members?.count ?? 0
+                print("  └─ \(calendar.calendarName ?? "Unknown"): linked to \(memberCount) members")
+            }
+
+            self.sharedCalendars = cachedSharedCalendars.map { calendar in
+                SharedCalendarDTO(
+                    id: calendar.id?.uuidString ?? "",
+                    user_id: "",
+                    calendar_name: calendar.calendarName ?? "Unknown",
+                    calendar_color_hex: calendar.calendarColorHex ?? "#007AFF",
+                    created_at: nil
+                )
+            }
+
+            // Fetch family member calendars from CoreData
+            var memberCalendars: [FamilyMemberCalendarDTO] = []
+            for member in cachedMembers {
+                if let calendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
+                    for calendar in calendars {
+                        memberCalendars.append(FamilyMemberCalendarDTO(
+                            id: calendar.id?.uuidString ?? "",
+                            family_member_id: member.id?.uuidString ?? "",
+                            calendar_name: calendar.calendarName ?? "Unknown",
+                            calendar_color_hex: calendar.calendarColorHex ?? "#007AFF",
+                            is_auto_linked: calendar.isAutoLinked,
+                            created_at: nil
+                        ))
+                    }
+                }
+            }
+            self.familyMemberCalendars = memberCalendars
+            print("📦 Loaded \(memberCalendars.count) family member calendars from CoreData cache")
+
+            // Fetch personal calendars from CoreData
+            let personalCalendarFetch = PersonalCalendar.fetchRequest()
+            let cachedPersonalCalendars = try context.fetch(personalCalendarFetch)
+            self.personalCalendars = cachedPersonalCalendars.map { calendar in
+                PersonalCalendarDTO(
+                    id: calendar.id?.uuidString ?? "",
+                    user_id: authManager.userId ?? "",
+                    calendar_name: calendar.calendarName ?? "Unknown",
+                    calendar_color_hex: calendar.calendarColorHex ?? "#007AFF",
+                    show_in_next: calendar.showInNext,
+                    show_in_spotlight: calendar.showInSpotlight,
+                    show_in_upcoming: calendar.showInUpcoming,
+                    show_in_month: calendar.showInMonth,
+                    show_in_day: calendar.showInDay,
+                    created_at: nil
+                )
+            }
+            print("📦 Loaded \(cachedPersonalCalendars.count) personal calendars from CoreData cache")
+
+            // Fetch drivers from CoreData
+            let driverFetch = Driver.fetchRequest()
+            let cachedDrivers = try context.fetch(driverFetch)
+            self.drivers = cachedDrivers.map { driver in
+                DriverDTO(
+                    id: driver.id?.uuidString ?? "",
+                    user_id: authManager.userId ?? "",
+                    name: driver.name,
+                    phone: driver.phone,
+                    email: driver.email,
+                    notes: driver.notes,
+                    travel_time_minutes: driver.travelTimeMinutes > 0 ? Int(driver.travelTimeMinutes) : nil,
+                    family_member_id: driver.familyMemberId?.uuidString,
+                    travel_event_identifier: driver.travelEventIdentifier,
+                    created_at: nil,
+                    updated_at: nil
+                )
+            }
+            print("📦 Loaded \(cachedDrivers.count) drivers from CoreData cache")
+
+            // Fetch saved addresses from CoreData
+            let addressFetch = SavedAddress.fetchRequest()
+            let cachedAddresses = try context.fetch(addressFetch)
+            self.savedAddresses = cachedAddresses.map { address in
+                SavedAddressDTO(
+                    id: address.id?.uuidString ?? "",
+                    user_id: authManager.userId ?? "",
+                    name: address.name,
+                    address: address.address,
+                    latitude: address.latitude,
+                    longitude: address.longitude,
+                    created_at: nil,
+                    updated_at: nil
+                )
+            }
+            print("📦 Loaded \(cachedAddresses.count) saved addresses from CoreData cache")
+
+            // Verify all relationships are intact and accessible
+            print("📊 Offline cache validation:")
+            print("  ✅ Family members: \(cachedMembers.count)")
+            print("  ✅ Family members with linked calendars: \(cachedMembers.filter { ($0.memberCalendars?.count ?? 0) > 0 }.count)")
+            print("  ✅ Total family member calendars: \(memberCalendars.count)")
+            print("  ✅ Shared calendars: \(cachedSharedCalendars.count)")
+            print("  ✅ Personal calendars: \(cachedPersonalCalendars.count)")
+            print("  ✅ Drivers: \(cachedDrivers.count)")
+            print("  ✅ Saved addresses: \(cachedAddresses.count)")
+
+            print("✅ Successfully restored data from CoreData cache for offline support")
+        } catch {
+            print("❌ Error loading cached data from CoreData: \(error)")
+            errorMessage = "Unable to load data. No network and no local cache available."
+        }
     }
 
     @MainActor

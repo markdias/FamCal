@@ -525,6 +525,7 @@ struct AddFamilyMemberView: View {
                 if authManager.isGuest {
                     let newMember = try dataManager.createFamilyMemberLocal(name: name, colorHex: colorHex)
                     newMember.isDriver = isDriver
+                    newMember.modifiedAt = Date()
 
                     // If a calendar was matched, add it to the member locally
                     if let matched = matchedCalendar {
