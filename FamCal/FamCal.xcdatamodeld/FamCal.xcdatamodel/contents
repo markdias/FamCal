@@ -48,6 +48,10 @@
         <attribute name="isSharedCalendarEvent" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="isImportant" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="driverFamilyMemberId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="isAttending" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="YES"/>
+        <attribute name="deletionType" optional="YES" attributeType="String"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletionReason" optional="YES" attributeType="String"/>
         <relationship name="attendees" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="familyEvents" inverseEntity="FamilyMember"/>
         <relationship name="driver" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Driver" inverseName="events" inverseEntity="Driver"/>
     </entity>
