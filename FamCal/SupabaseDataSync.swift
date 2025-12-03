@@ -51,18 +51,27 @@ class SupabaseDataSync {
                 if let existingMember = matches.first {
                     // Update existing member
                     member = existingMember
-                    member.name = supabaseDTO.name
+                    // Only update name if Supabase provides a non-empty value - preserve existing name otherwise
+                    if !supabaseDTO.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        member.name = supabaseDTO.name
+                        member.avatarInitials = getInitials(from: supabaseDTO.name)
+                    } else if member.name == nil || member.name?.isEmpty == true {
+                        // If existing name is also empty, set a fallback
+                        member.name = "Unknown"
+                        member.avatarInitials = "?"
+                    }
                     member.colorHex = supabaseDTO.color_hex
-                    member.avatarInitials = getInitials(from: supabaseDTO.name)
                     member.isDriver = supabaseDTO.is_driver ?? false
                     member.linkedUserId = supabaseDTO.linked_user_id
                 } else {
                     // Create new member
                     member = FamilyMember(context: context)
                     member.id = UUID(uuidString: supabaseDTO.id) ?? UUID()
-                    member.name = supabaseDTO.name
+                    // Ensure name is never empty
+                    let name = supabaseDTO.name.trimmingCharacters(in: .whitespaces).isEmpty ? "Unknown" : supabaseDTO.name
+                    member.name = name
                     member.colorHex = supabaseDTO.color_hex
-                    member.avatarInitials = getInitials(from: supabaseDTO.name)
+                    member.avatarInitials = getInitials(from: name)
                     member.isDriver = supabaseDTO.is_driver ?? false
                     member.linkedUserId = supabaseDTO.linked_user_id
                     syncedCount += 1

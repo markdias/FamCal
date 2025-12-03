@@ -467,12 +467,14 @@ class SupabaseDataManager: ObservableObject {
 
             // Convert CoreData FamilyMember to DTO for in-memory cache
             self.familyMembers = cachedMembers.map { member in
+                // Ensure name is never nil or empty
+                let safeName = (member.name?.isEmpty == false) ? member.name! : "Unknown"
                 FamilyMemberDTO(
                     id: member.id?.uuidString ?? "",
                     user_id: authManager.userId ?? "",
                     family_id: nil,
                     linked_user_id: member.linkedUserId,
-                    name: member.name ?? "Unknown",
+                    name: safeName,
                     color_hex: member.colorHex ?? "#007AFF",
                     is_driver: member.isDriver,
                     created_at: nil
