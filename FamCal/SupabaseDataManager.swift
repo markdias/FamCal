@@ -469,7 +469,7 @@ class SupabaseDataManager: ObservableObject {
             self.familyMembers = cachedMembers.map { member in
                 // Ensure name is never nil or empty
                 let safeName = (member.name?.isEmpty == false) ? member.name! : "Unknown"
-                FamilyMemberDTO(
+                return FamilyMemberDTO(
                     id: member.id?.uuidString ?? "",
                     user_id: authManager.userId ?? "",
                     family_id: nil,
