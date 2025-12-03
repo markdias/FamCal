@@ -16,11 +16,6 @@ struct EditEventView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
 
-    private enum DeleteScope {
-        case singleCalendar
-        case allLinked
-    }
-
     let upcomingEvent: UpcomingCalendarEvent
 
     @FetchRequest(
@@ -113,6 +108,22 @@ struct EditEventView: View {
     @State private var showingRecurringDriverChangeOptions = false
     @State private var pendingDriverChange: DriverWrapper?
     @State private var pendingDriverChangeSpan: EKSpan = .thisEvent
+
+    // New deletion flow state
+    @State private var showingInitialDeleteConfirm = false
+    @State private var showingDeletionTypeDialog = false
+    @State private var showingDeletionTargetDialog = false
+    @State private var showingDeletionConfirmDialog = false
+    @State private var pendingDeleteTarget: DeletionTarget = .singleOccurrence
+    @State private var pendingDeleteActionType: DeleteActionType = .softDelete
+    @State private var deletionReason: String = ""
+    @State private var showingDeletionReasonSheet = false
+
+    // Attendee editing state
+    @State private var originalAttendees: Set<NSManagedObjectID> = []
+    @State private var showingAttendeeEditScopeDialog = false
+    @State private var pendingAttendeeEditApplyToGroup = false
+
     private let notificationManager = NotificationManager.shared
 
     private var theme: AppTheme { themeManager.selectedTheme }
@@ -151,6 +162,66 @@ struct EditEventView: View {
         let selected = familyMembers.filter { selectedAttendees.contains($0.objectID) }
         let names = selected.map { $0.name ?? "Unknown" }
         return names.joined(separator: ", ")
+    }
+
+    private var deletionContext: DeletionContext? {
+        let peopleNames = LinkedEventDeletionHandler.shared.getAffectedPeopleNames(
+            scope: pendingDeleteScope,
+            linkedFamilyEvents: linkedFamilyEvents,
+            currentMemberName: nil
+        )
+
+        // Format event date and time
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d, yyyy"
+        let formattedDate = dateFormatter.string(from: upcomingEvent.startDate)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateStyle = .none
+        timeFormatter.timeStyle = .short
+        let formattedTime = timeFormatter.string(from: upcomingEvent.startDate)
+
+        return DeletionContext(
+            scope: pendingDeleteScope,
+            target: pendingDeleteTarget,
+            actionType: pendingDeleteActionType,
+            affectedPeople: peopleNames,
+            linkedEventCount: linkedFamilyEvents.count + 1,
+            personName: nil,
+            isRecurring: upcomingEvent.hasRecurrence,
+            eventTitle: upcomingEvent.title,
+            eventDate: formattedDate,
+            eventTime: formattedTime,
+            eventLocation: upcomingEvent.location
+        )
+    }
+
+    @ViewBuilder
+    private var deletionReasonSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Why are you removing this event?") {
+                    TextEditor(text: $deletionReason)
+                        .frame(height: 120)
+                }
+            }
+            .navigationTitle("Removal Reason")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingDeletionReasonSheet = false
+                        deletionReason = ""
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Remove") {
+                        showingDeletionReasonSheet = false
+                        Task { await executeNewDeletion() }
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -230,163 +301,214 @@ struct EditEventView: View {
 
     var body: some View {
         NavigationStack {
-            eventForm
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { toolbarContent }
-                .confirmationDialog("Delete Event", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
-                    Button("Delete", role: .destructive) {
-                        Task { await deleteEvent(scope: pendingDeleteScope) }
-                    }
-                    Button("Cancel", role: .cancel) { }
-                } message: {
-                    Text("Are you sure you want to delete this event? This cannot be undone.")
-                }
-                .confirmationDialog("Update Linked Calendars?", isPresented: $showingUpdateScopeDialog, titleVisibility: .visible) {
-                    if upcomingEvent.hasRecurrence {
-                        Button("Update all linked calendars (this event only)") {
-                            Task { await saveEvent(applyToGroup: true) }
-                        }
-                        Button("Update all linked calendars (this & future)") {
-                            // Store that we want to update all future events when saving
-                            Task { await saveEvent(applyToGroup: true) }
-                        }
-                    } else {
-                        Button("Update all linked calendars") {
-                            Task { await saveEvent(applyToGroup: true) }
-                        }
-                    }
-                    Button("Update only this calendar") {
-                        Task { await saveEvent(applyToGroup: false) }
-                    }
-                    Button("Cancel", role: .cancel) { }
-                } message: {
-                    let linkedCalendars = getLinkedCalendarNames()
-                    var messageText = "This event exists in \(linkedCalendars.count) calendars"
+            ZStack {
+                eventForm
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { toolbarContent }
 
-                    if !linkedCalendars.isEmpty {
-                        messageText += ": " + linkedCalendars.joined(separator: ", ")
-                    }
-
-                    if !externalEditCalendars.isEmpty {
-                        let external = externalEditCalendars.joined(separator: ", ")
-                        messageText += "\n\nChanges were detected outside this app on: \(external). Overwrite them with your updates?"
-                    } else {
-                        messageText += ". Do you want to apply these changes to all linked copies?"
-                    }
-
-                    return Text(messageText)
-                }
-                .confirmationDialog("Delete Linked Copies?", isPresented: $showingLinkedDeleteOptions, titleVisibility: .visible) {
-                    Button("Delete only in this calendar", role: .destructive) {
-                        pendingDeleteScope = .singleCalendar
-                        if upcomingEvent.hasRecurrence {
-                            showingRecurringDeleteOptions = true
-                        } else {
-                            Task { await deleteEvent(scope: .singleCalendar) }
-                        }
-                    }
-                    Button("Delete in all linked calendars", role: .destructive) {
-                        pendingDeleteScope = .allLinked
-                        if upcomingEvent.hasRecurrence {
-                            showingRecurringDeleteOptions = true
-                        } else {
-                            Task { await deleteEvent(scope: .allLinked) }
-                        }
-                    }
-                    Button("Cancel", role: .cancel) { }
-                } message: {
-                    if externalEditCalendars.isEmpty {
-                        Text("This event is linked to other calendars. Do you want to delete it only here or everywhere?")
-                    } else {
-                        let calendars = externalEditCalendars.joined(separator: ", ")
-                        Text("This event is linked to other calendars. Some copies were edited outside this app (\(calendars)). Delete only here or everywhere?")
-                    }
-                }
-                .confirmationDialog("Delete Recurring Event?", isPresented: $showingRecurringDeleteOptions, titleVisibility: .visible) {
-                    Button("Delete Only This Event", role: .destructive) {
-                        Task { await deleteEvent(scope: pendingDeleteScope, span: .thisEvent) }
-                    }
-                    Button("Delete This and Future Events", role: .destructive) {
-                        Task { await deleteEvent(scope: pendingDeleteScope, span: .futureEvents) }
-                    }
-                    Button("Cancel", role: .cancel) { }
-                }
-                .confirmationDialog("Change Driver for Recurring Event?", isPresented: $showingRecurringDriverChangeOptions, titleVisibility: .visible) {
-                    Button("Change Only This Event") {
-                        applyDriverChange(span: .thisEvent)
-                    }
-                    Button("Change This and Future Events") {
-                        applyDriverChange(span: .futureEvents)
-                    }
-                    Button("Cancel", role: .cancel) { }
-                }
-                .onAppear {
-                    // Populate fields from existing event
-                    eventTitle = upcomingEvent.title
-                    startTime = upcomingEvent.startDate
-                    endTime = upcomingEvent.endDate
-                    eventDate = upcomingEvent.startDate
-                    locationAddress = upcomingEvent.location ?? ""
-                    locationAddress = upcomingEvent.location ?? ""
-                    locationName = upcomingEvent.location ?? ""
-                    recurrenceConfig = RecurrenceConfiguration.none(anchor: upcomingEvent.startDate)
-                    loadRecurrenceFromEventStore()
-                    meetingLink = upcomingEvent.meetingLink ?? ""
-
-                    // Fetch calendar ID from CoreData
-                    fetchCalendarId()
-
-                    // Fetch driver from CoreData
-                    fetchDriver()
-
-                    // Load existing alert from the saved event so edits keep prior value
-                    loadExistingAlertOption()
-
-                    // Load linked copies so we can offer update/delete choices
-                    loadLinkedFamilyEvents()
-
-                    // Clean up stale selected members (in case they were deleted)
-                    let validMemberIDs = Set(familyMembers.map { $0.objectID })
-                    selectedMemberCalendars = selectedMemberCalendars.filter { validMemberIDs.contains($0.key) }
-
-                    // Load existing attendees from CoreData
-                    loadExistingAttendees()
-                }
-                .alert("Error", isPresented: $showingError) {
-                    Button("OK") { }
-                } message: {
-                    Text(errorMessage)
-                }
-                .alert("Event Updated", isPresented: $showingSuccessMessage) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                } message: {
-                    Text("Your event has been updated successfully!")
-                }
-                .alert("Event Deleted", isPresented: $showingDeleteSuccess) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                } message: {
-                    Text("Your event has been deleted successfully!")
-                }
-                .alert("Create Event for Driver?", isPresented: $showingCreateEventForDriverAlert) {
-                    Button("Yes") {
-                        shouldCreateTravelEvent = true
-                        driverToCreateEventFor = nil
-                    }
-                    Button("No") {
-                        shouldCreateTravelEvent = false
-                        driverToCreateEventFor = nil
-                    }
-                } message: {
-                    if let driver = driverToCreateEventFor {
-                        Text("Would you like to create a separate event for \(driver.name)'s drive?")
-                    }
-                }
-                .tint(accentColor)
+                allDialogs()
+            }
+            .onAppear {
+                eventTitle = upcomingEvent.title
+                startTime = upcomingEvent.startDate
+                endTime = upcomingEvent.endDate
+                eventDate = upcomingEvent.startDate
+                locationAddress = upcomingEvent.location ?? ""
+                locationName = upcomingEvent.location ?? ""
+                recurrenceConfig = RecurrenceConfiguration.none(anchor: upcomingEvent.startDate)
+                loadRecurrenceFromEventStore()
+                meetingLink = upcomingEvent.meetingLink ?? ""
+                fetchCalendarId()
+                fetchDriver()
+                loadExistingAlertOption()
+                loadLinkedFamilyEvents()
+                let validMemberIDs = Set(familyMembers.map { $0.objectID })
+                selectedMemberCalendars = selectedMemberCalendars.filter { validMemberIDs.contains($0.key) }
+                loadExistingAttendees()
+            }
+            .tint(accentColor)
         }
+    }
+
+    @ViewBuilder
+    private func allDialogs() -> some View {
+        EmptyView()
+            .confirmationDialog("Delete Event", isPresented: $showingInitialDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete Event", role: .destructive) {
+                    proceedAfterInitialConfirm()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "MMM d, yyyy"
+                let formattedDate = dateFormatter.string(from: upcomingEvent.startDate)
+
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateStyle = .none
+                timeFormatter.timeStyle = .short
+                let formattedTime = timeFormatter.string(from: upcomingEvent.startDate)
+
+                var message = ""
+                if let location = upcomingEvent.location, !location.isEmpty {
+                    message = "Are you sure you want to delete \"\(upcomingEvent.title)\"?\n\n📆 \(formattedDate) at \(formattedTime)\n📍 \(location)"
+                } else {
+                    message = "Are you sure you want to delete \"\(upcomingEvent.title)\"?\n\n📆 \(formattedDate) at \(formattedTime)"
+                }
+                return Text(message)
+            }
+            .confirmationDialog("Update Attendees", isPresented: $showingAttendeeEditScopeDialog, titleVisibility: .visible) {
+                Button("Update for this event only") {
+                    pendingAttendeeEditApplyToGroup = false
+                    Task { await saveEvent(applyToGroup: false) }
+                }
+                Button("Update for all linked events") {
+                    pendingAttendeeEditApplyToGroup = true
+                    Task { await saveEvent(applyToGroup: true) }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("You've changed the attendees. Would you like to update attendees for this event only, or for all linked calendar copies?")
+            }
+            .confirmationDialog("Update Linked Calendars?", isPresented: $showingUpdateScopeDialog, titleVisibility: .visible) {
+                if upcomingEvent.hasRecurrence {
+                    Button("Update all linked calendars (this event only)") {
+                        Task { await saveEvent(applyToGroup: true) }
+                    }
+                    Button("Update all linked calendars (this & future)") {
+                        Task { await saveEvent(applyToGroup: true) }
+                    }
+                } else {
+                    Button("Update all linked calendars") {
+                        Task { await saveEvent(applyToGroup: true) }
+                    }
+                }
+                Button("Update only this calendar") {
+                    Task { await saveEvent(applyToGroup: false) }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                let linkedCalendars = getLinkedCalendarNames()
+                var messageText = "This event exists in \(linkedCalendars.count) calendars"
+                if !linkedCalendars.isEmpty {
+                    messageText += ": " + linkedCalendars.joined(separator: ", ")
+                }
+                if !externalEditCalendars.isEmpty {
+                    let external = externalEditCalendars.joined(separator: ", ")
+                    messageText += "\n\nChanges were detected outside this app on: \(external). Overwrite them with your updates?"
+                } else {
+                    messageText += ". Do you want to apply these changes to all linked copies?"
+                }
+                return Text(messageText)
+            }
+            .confirmationDialog("Delete Scope", isPresented: $showingLinkedDeleteOptions, titleVisibility: .visible) {
+                Button("Delete only in this calendar", role: .destructive) {
+                    pendingDeleteScope = .singleCalendar
+                    proceedWithDeletion()
+                }
+                Button("Delete in all linked calendars", role: .destructive) {
+                    pendingDeleteScope = .allLinked
+                    proceedWithDeletion()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                if externalEditCalendars.isEmpty {
+                    Text("This event is linked to \(linkedFamilyEvents.count) calendar(s). Where would you like to delete it?")
+                } else {
+                    let calendars = externalEditCalendars.joined(separator: ", ")
+                    Text("This event is linked to other calendars. Some copies were edited outside this app (\(calendars)).\n\nWhere would you like to delete it?")
+                }
+            }
+            .confirmationDialog("Deletion Type", isPresented: $showingDeletionTypeDialog, titleVisibility: .visible) {
+                Button("Mark as Not Attending", role: .none) {
+                    pendingDeleteActionType = .softDelete
+                    proceedWithDeletionAfterType()
+                }
+                Button("Delete Permanently", role: .destructive) {
+                    pendingDeleteActionType = .hardDelete
+                    proceedWithDeletionAfterType()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("How would you like to handle this deletion?")
+            }
+            .confirmationDialog("Deletion Target", isPresented: $showingDeletionTargetDialog, titleVisibility: .visible) {
+                Button("This event only", role: .none) {
+                    pendingDeleteTarget = .singleOccurrence
+                    proceedWithConfirmation()
+                }
+                Button("This and future events", role: .none) {
+                    pendingDeleteTarget = .thisAndFuture
+                    proceedWithConfirmation()
+                }
+                if pendingDeleteActionType == .hardDelete {
+                    Button("All events in series", role: .destructive) {
+                        pendingDeleteTarget = .allInSeries
+                        proceedWithConfirmation()
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Which occurrences would you like to delete?")
+            }
+            .confirmationDialog("Delete Event", isPresented: $showingDeletionConfirmDialog, titleVisibility: .visible) {
+                Button(deletionContext?.actionButtonTitle ?? "Delete", role: deletionContext?.actionType == .hardDelete ? .destructive : .none) {
+                    if pendingDeleteActionType == .softDelete {
+                        showingDeletionReasonSheet = true
+                    } else {
+                        Task { await executeNewDeletion() }
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                if let context = deletionContext {
+                    Text(context.displayMessage)
+                }
+            }
+            .sheet(isPresented: $showingDeletionReasonSheet) {
+                deletionReasonSheet
+            }
+            .confirmationDialog("Change Driver for Recurring Event?", isPresented: $showingRecurringDriverChangeOptions, titleVisibility: .visible) {
+                Button("Change Only This Event") {
+                    applyDriverChange(span: .thisEvent)
+                }
+                Button("Change This and Future Events") {
+                    applyDriverChange(span: .futureEvents)
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+            .alert("Error", isPresented: $showingError) {
+                Button("OK") { }
+            } message: {
+                Text(errorMessage)
+            }
+            .alert("Event Updated", isPresented: $showingSuccessMessage) {
+                Button("Done") {
+                    dismiss()
+                }
+            } message: {
+                Text("Your event has been updated successfully!")
+            }
+            .alert("Event Deleted", isPresented: $showingDeleteSuccess) {
+                Button("Done") {
+                    dismiss()
+                }
+            } message: {
+                Text("Your event has been deleted successfully!")
+            }
+            .alert("Create Event for Driver?", isPresented: $showingCreateEventForDriverAlert) {
+                Button("Yes") {
+                    shouldCreateTravelEvent = true
+                    driverToCreateEventFor = nil
+                }
+                Button("No") {
+                    shouldCreateTravelEvent = false
+                    driverToCreateEventFor = nil
+                }
+            } message: {
+                if let driver = driverToCreateEventFor {
+                    Text("Would you like to create a separate event for \(driver.name)'s drive?")
+                }
+            }
     }
 
     private func fetchCalendarId() {
@@ -641,6 +763,7 @@ struct EditEventView: View {
         }
 
         selectedAttendees = attendeeIDs
+        originalAttendees = attendeeIDs  // Track the original attendees for comparison
         print("📋 Loaded \(selectedAttendees.count) total attendees from all linked events")
     }
 
@@ -669,6 +792,15 @@ struct EditEventView: View {
     }
 
     private func handleSaveTapped() {
+        // Check if attendees have changed
+        let attendeesChanged = selectedAttendees != originalAttendees
+
+        if attendeesChanged && linkedFamilyEvents.count > 1 {
+            // Attendees changed and there are linked events - ask about scope
+            showingAttendeeEditScopeDialog = true
+            return
+        }
+
         externalEditCalendars = []
 
         if linkedFamilyEvents.count > 1 {
@@ -1321,18 +1453,79 @@ struct EditEventView: View {
 
     private func handleDeleteTap() {
         pendingDeleteScope = .singleCalendar
+        pendingDeleteActionType = .softDelete
+        pendingDeleteTarget = .singleOccurrence
         externalEditCalendars = []
 
+        // Show initial confirmation with event details
+        showingInitialDeleteConfirm = true
+    }
+
+    private func proceedAfterInitialConfirm() {
+        // Step 1: Check if multiple linked copies exist
         if linkedFamilyEvents.count > 1 {
             externalEditCalendars = detectExternalChanges(in: linkedFamilyEvents)
             showingLinkedDeleteOptions = true
             return
         }
 
+        // Step 2: Single calendar - go straight to deletion type
+        proceedWithDeletion()
+    }
+
+    private func proceedWithDeletion() {
+        // Show deletion type dialog: soft delete (mark not attending) vs hard delete (permanent)
+        showingDeletionTypeDialog = true
+    }
+
+    private func proceedWithDeletionAfterType() {
+        // If recurring and hard delete, show target dialog
         if upcomingEvent.hasRecurrence {
-            showingRecurringDeleteOptions = true
+            showingDeletionTargetDialog = true
         } else {
-            showingDeleteConfirmation = true
+            // Non-recurring or soft delete: go straight to confirmation
+            proceedWithConfirmation()
+        }
+    }
+
+    private func proceedWithConfirmation() {
+        // Show final confirmation dialog with detailed message
+        showingDeletionConfirmDialog = true
+    }
+
+    private func executeNewDeletion() async {
+        await MainActor.run {
+            isSaving = true
+        }
+
+        let success = await LinkedEventDeletionHandler.shared.executeLinkedEventDeletion(
+            scope: pendingDeleteScope,
+            target: pendingDeleteTarget,
+            actionType: pendingDeleteActionType,
+            primaryEvent: upcomingEvent,
+            linkedFamilyEvents: linkedFamilyEvents,
+            affectedMember: nil,
+            deletionReason: deletionReason.isEmpty ? nil : deletionReason,
+            viewContext: viewContext
+        )
+
+        if success {
+            await MainActor.run {
+                let notificationFeedback = UINotificationFeedbackGenerator()
+                notificationFeedback.notificationOccurred(.success)
+                showingDeleteSuccess = true
+            }
+
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await MainActor.run {
+                dismiss()
+            }
+        } else {
+            await MainActor.run {
+                errorMessage = "Failed to delete event. The event may have already been deleted or the calendar is no longer accessible."
+                showingError = true
+                isSaving = false
+            }
         }
     }
 

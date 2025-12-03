@@ -12,11 +12,6 @@ import CoreLocation
 import CoreData
 
 struct EventDetailView: View {
-    private enum DeleteScope {
-        case single
-        case allLinked
-    }
-
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
@@ -36,7 +31,7 @@ struct EventDetailView: View {
     @State private var showingRecurringDeleteOptions = false
     @State private var showingLinkedDeleteDialog = false
     @State private var pendingDeleteSpan: EKSpan = .thisEvent
-    @State private var pendingDeleteScope: DeleteScope = .single
+    @State private var pendingDeleteScope: DeleteScope = .singleCalendar
     @State private var driver: Driver?
     @State private var driverFamilyMemberId: UUID?
     @State private var selectedDriver: DriverWrapper?
@@ -570,7 +565,20 @@ struct EventDetailView: View {
                     startDeleteFlow(span: .thisEvent)
                 }
             } message: {
-                Text("Are you sure you want to delete this event?")
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "MMM d, yyyy"
+                let formattedDate = dateFormatter.string(from: event.startDate)
+
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateStyle = .none
+                timeFormatter.timeStyle = .short
+                let formattedTime = timeFormatter.string(from: event.startDate)
+
+                var message = "Are you sure you want to delete \"\(event.title)\"?\n\n📆 \(formattedDate) at \(formattedTime)"
+                if let location = event.location, !location.isEmpty {
+                    message += "\n📍 \(location)"
+                }
+                return Text(message)
             }
             .confirmationDialog("Delete Recurring Event?", isPresented: $showingRecurringDeleteOptions, titleVisibility: .visible) {
                 Button("Delete Only This Event", role: .destructive) {
@@ -580,16 +588,32 @@ struct EventDetailView: View {
                     startDeleteFlow(span: .futureEvents)
                 }
                 Button("Cancel", role: .cancel) { }
+            } message: {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "MMM d, yyyy"
+                let formattedDate = dateFormatter.string(from: event.startDate)
+
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateStyle = .none
+                timeFormatter.timeStyle = .short
+                let formattedTime = timeFormatter.string(from: event.startDate)
+
+                var message = "Which instances of \"\(event.title)\" would you like to delete?\n\n📆 \(formattedDate) at \(formattedTime)"
+                if let location = event.location, !location.isEmpty {
+                    message += "\n📍 \(location)"
+                }
+                message += "\n\nThis is a recurring event."
+                return Text(message)
             }
             .confirmationDialog("Delete Linked Copies?", isPresented: $showingLinkedDeleteDialog, titleVisibility: .visible) {
                 Button("Delete only this calendar", role: .destructive) {
-                    deleteEvent(scope: .single, span: pendingDeleteSpan)
+                    deleteEvent(scope: .singleCalendar, span: pendingDeleteSpan)
                 }
                 Button("Delete in all linked calendars", role: .destructive) {
                     deleteEvent(scope: .allLinked, span: pendingDeleteSpan)
                 }
                 Button("Cancel", role: .cancel) {
-                    pendingDeleteScope = .single
+                    pendingDeleteScope = .singleCalendar
                 }
             } message: {
                 Text("This event is linked to other calendars. Delete only here or everywhere?")
@@ -1003,11 +1027,11 @@ struct EventDetailView: View {
         if linked.count > 1 {
             showingLinkedDeleteDialog = true
         } else {
-            deleteEvent(scope: .single, span: span)
+            deleteEvent(scope: .singleCalendar, span: span)
         }
     }
 
-    private func deleteEvent(scope: DeleteScope = .single, span: EKSpan = .thisEvent) {
+    private func deleteEvent(scope: DeleteScope = .singleCalendar, span: EKSpan = .thisEvent) {
         isDeleting = true
 
         Task {
