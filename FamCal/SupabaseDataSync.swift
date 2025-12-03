@@ -74,10 +74,16 @@ class SupabaseDataSync {
                 let supabaseCalendarIds = Set(supabaseMemberCalendars.map { $0.id })
 
                 // 1. Delete calendars that are no longer in Supabase
-                for calendar in existingCalendars {
-                    if let calendarId = calendar.id?.uuidString, !supabaseCalendarIds.contains(calendarId) {
-                        context.delete(calendar)
+                // SAFETY: Only delete if we got data back from Supabase to avoid data loss on partial API responses
+                if !supabaseCalendars.isEmpty {
+                    for calendar in existingCalendars {
+                        if let calendarId = calendar.id?.uuidString, !supabaseCalendarIds.contains(calendarId) {
+                            print("🗑️ Removing calendar \(calendar.calendarName ?? "Unknown") for member \(supabaseDTO.name) - no longer in Supabase")
+                            context.delete(calendar)
+                        }
                     }
+                } else {
+                    print("⚠️ Supabase returned no calendars - preserving existing calendars to avoid data loss")
                 }
 
                 // 2. Update existing or create new calendars
