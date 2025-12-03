@@ -10,6 +10,8 @@ struct DailyEventsView: View {
     var selectedDateString: String
     var familyMembers: [FamilyMember]
     var memberColors: [NSManagedObjectID: UIColor]
+    @Binding var selectedEventIds: Set<String>
+    var onDeleteSelected: (() -> Void)?
 
     @State private var tappedEvent: DayEventItem?
     @State private var selectedMemberIDs: [NSManagedObjectID] = []
@@ -21,6 +23,10 @@ struct DailyEventsView: View {
     @State private var eventToDelete: DayEventItem?
     @State private var selectedEventForDetail: UpcomingCalendarEvent?
     @State private var showingEventDetail = false
+    @State private var isSelectionMode = false
+    @State private var lastTapTime: Date = .distantPast
+    @State private var lastTappedEventId: String = ""
+    @State private var tapDelayTimer: Timer?
 
     private let timeColumnWidth: CGFloat = 60
     private let hourHeight: CGFloat = 60
@@ -47,15 +53,58 @@ struct DailyEventsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if !isLandscape {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(selectedDateString)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(theme.cardBackground)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(selectedDateString)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                            }
 
-                        memberFilterView
-                            .padding(.bottom, 8)
+                            Spacer()
+
+                            if isSelectionMode {
+                                Button(action: {
+                                    isSelectionMode = false
+                                    selectedEventIds.removeAll()
+                                }) {
+                                    Text("Cancel")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(theme.cardBackground)
+
+                        if isSelectionMode && !selectedEventIds.isEmpty {
+                            HStack {
+                                Text("\(selectedEventIds.count) event\(selectedEventIds.count == 1 ? "" : "s") selected")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                Button(action: {
+                                    onDeleteSelected?()
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "trash.fill")
+                                        Text("Delete")
+                                    }
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.red)
+                                    .cornerRadius(6)
+                                }
+                            }
+                            .padding()
+                            .background(theme.cardBackground.opacity(0.8))
+                        } else {
+                            memberFilterView
+                                .padding(.bottom, 8)
+                        }
                     }
 
                     Divider()
@@ -163,6 +212,64 @@ struct DailyEventsView: View {
             if let event = selectedEventForDetail {
                 EventDetailView(event: event)
             }
+        }
+    }
+
+    private func handleEventTap(event: DayEventItem) {
+        // Cancel any pending single tap timer
+        tapDelayTimer?.invalidate()
+
+        // Check if this is a double tap
+        let now = Date()
+        let timeSinceLastTap = now.timeIntervalSince(lastTapTime)
+
+        if lastTappedEventId == event.eventIdentifier && timeSinceLastTap < 0.3 {
+            // Double tap detected - enter selection mode
+            isSelectionMode = true
+            selectedEventIds.removeAll()
+            selectedEventIds.insert(event.eventIdentifier)
+            lastTapTime = .distantPast  // Reset to prevent triple tap issues
+            tapDelayTimer?.invalidate()
+            tapDelayTimer = nil
+        } else {
+            // Possible start of double tap or single tap
+            lastTapTime = now
+            lastTappedEventId = event.eventIdentifier
+
+            // Delay action to see if another tap comes
+            tapDelayTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { _ in
+                handleSingleTap(event: event)
+                tapDelayTimer = nil
+            }
+        }
+    }
+
+    private func handleSingleTap(event: DayEventItem) {
+        if isSelectionMode {
+            // In selection mode: toggle selection
+            if selectedEventIds.contains(event.eventIdentifier) {
+                selectedEventIds.remove(event.eventIdentifier)
+            } else {
+                selectedEventIds.insert(event.eventIdentifier)
+            }
+        } else {
+            // Normal mode: show event details
+            let upcomingEvent = UpcomingCalendarEvent(
+                id: event.eventIdentifier,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.meetingLink,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendarID,
+                calendarColor: event.calendarColor,
+                calendarTitle: event.calendarTitle,
+                hasRecurrence: event.hasRecurrence,
+                recurrenceRule: nil,
+                isAllDay: event.isAllDay
+            )
+            selectedEventForDetail = upcomingEvent
+            showingEventDetail = true
         }
     }
 
@@ -274,27 +381,11 @@ struct DailyEventsView: View {
 
             return ZStack(alignment: .topLeading) {
                 ForEach(layouts) { layout in
-                    eventCell(for: layout.event, isTapped: tappedEvent == layout.event)
+                    eventCell(for: layout.event, isTapped: tappedEvent == layout.event, isSelected: selectedEventIds.contains(layout.event.eventIdentifier))
                         .frame(width: layout.width, height: layout.height)
                         .offset(x: layout.x, y: layout.y)
                         .onTapGesture {
-                            let event = layout.event
-                            let upcomingEvent = UpcomingCalendarEvent(
-                                id: event.eventIdentifier,
-                                title: event.title,
-                                location: event.location,
-                                meetingLink: event.meetingLink,
-                                startDate: event.startDate,
-                                endDate: event.endDate,
-                                calendarID: event.calendarID,
-                                calendarColor: event.calendarColor,
-                                calendarTitle: event.calendarTitle,
-                                hasRecurrence: event.hasRecurrence,
-                                recurrenceRule: nil,
-                                isAllDay: event.isAllDay
-                            )
-                            selectedEventForDetail = upcomingEvent
-                            showingEventDetail = true
+                            handleEventTap(event: layout.event)
                         }
                         .contextMenu {
                             Button(action: {
@@ -309,6 +400,15 @@ struct DailyEventsView: View {
                                 showingDeleteConfirmation = true
                             }) {
                                 Label("Delete", systemImage: "trash")
+                            }
+
+                            Divider()
+
+                            Button(action: {
+                                isSelectionMode = true
+                                selectedEventIds.insert(layout.event.eventIdentifier)
+                            }) {
+                                Label("Select for Batch Delete", systemImage: "checkmark.circle")
                             }
                         }
                 }
@@ -334,28 +434,39 @@ struct DailyEventsView: View {
 
     private func allDayEventCell(for event: DayEventItem) -> some View {
         let isPast = Date() > event.endDate
+        let isSelected = selectedEventIds.contains(event.eventIdentifier)
 
-        return HStack(alignment: .center, spacing: 8) {
-            Capsule()
-                .fill(Color(event.color))
-                .frame(width: 4, height: allDayTitleLineHeight)
-                .opacity(isPast ? 0.6 : 1.0)
+        return ZStack(alignment: .topTrailing) {
+            HStack(alignment: .center, spacing: 8) {
+                Capsule()
+                    .fill(Color(event.color))
+                    .frame(width: 4, height: allDayTitleLineHeight)
+                    .opacity(isPast ? 0.6 : 1.0)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(event.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .opacity(isPast ? 0.7 : 1.0)
-                HStack(spacing: 4) {
-                    Text(event.memberNames.joined(separator: ", "))
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(theme.mutedTagColor)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
                         .opacity(isPast ? 0.7 : 1.0)
+                    HStack(spacing: 4) {
+                        Text(event.memberNames.joined(separator: ", "))
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundColor(theme.mutedTagColor)
+                            .opacity(isPast ? 0.7 : 1.0)
 
-                    if let driverName = event.driverName {
-                        Group {
-                            if let phone = event.driverPhone, !phone.isEmpty {
-                                Link(destination: URL(string: "tel:\(phone)")!) {
+                        if let driverName = event.driverName {
+                            Group {
+                                if let phone = event.driverPhone, !phone.isEmpty {
+                                    Link(destination: URL(string: "tel:\(phone)")!) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "car.fill")
+                                                .font(.system(size: 10))
+                                            Text(driverName)
+                                                .font(.system(size: 10, weight: .medium))
+                                        }
+                                        .foregroundColor(theme.mutedTagColor)
+                                    }
+                                } else {
                                     HStack(spacing: 4) {
                                         Image(systemName: "car.fill")
                                             .font(.system(size: 10))
@@ -364,89 +475,94 @@ struct DailyEventsView: View {
                                     }
                                     .foregroundColor(theme.mutedTagColor)
                                 }
-                            } else {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "car.fill")
-                                        .font(.system(size: 10))
-                                    Text(driverName)
-                                        .font(.system(size: 10, weight: .medium))
-                                }
-                                .foregroundColor(theme.mutedTagColor)
                             }
+                            .opacity(isPast ? 0.7 : 1.0)
                         }
-                        .opacity(isPast ? 0.7 : 1.0)
                     }
+                }
+
+                Spacer()
+            }
+            .frame(minHeight: allDayRowHeight, alignment: .topLeading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color(event.color).opacity(0.25) : Color(event.color).opacity(isPast ? 0.10 : 0.15))
+            .cornerRadius(6)
+            .padding(.horizontal, 8)
+            .onTapGesture {
+                handleEventTap(event: event)
+            }
+            .contextMenu {
+                Button(action: {
+                    editingEvent = event
+                    showingEditSheet = true
+                }) {
+                    Label("Edit", systemImage: "pencil")
+                }
+
+                Button(role: .destructive, action: {
+                    eventToDelete = event
+                    showingDeleteConfirmation = true
+                }) {
+                    Label("Delete", systemImage: "trash")
+                }
+
+                Divider()
+
+                Button(action: {
+                    isSelectionMode = true
+                    selectedEventIds.insert(event.eventIdentifier)
+                }) {
+                    Label("Select for Batch Delete", systemImage: "checkmark.circle")
                 }
             }
 
-            Spacer()
-        }
-        .frame(minHeight: allDayRowHeight, alignment: .topLeading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(event.color).opacity(isPast ? 0.10 : 0.15))
-        .cornerRadius(6)
-        .padding(.horizontal, 8)
-        .onTapGesture {
-            let upcomingEvent = UpcomingCalendarEvent(
-                id: event.eventIdentifier,
-                title: event.title,
-                location: event.location,
-                meetingLink: event.meetingLink,
-                startDate: event.startDate,
-                endDate: event.endDate,
-                calendarID: event.calendarID,
-                calendarColor: event.calendarColor,
-                calendarTitle: event.calendarTitle,
-                hasRecurrence: event.hasRecurrence,
-                recurrenceRule: nil,
-                isAllDay: event.isAllDay
-            )
-            selectedEventForDetail = upcomingEvent
-            showingEventDetail = true
-        }
-        .contextMenu {
-            Button(action: {
-                editingEvent = event
-                showingEditSheet = true
-            }) {
-                Label("Edit", systemImage: "pencil")
-            }
-
-            Button(role: .destructive, action: {
-                eventToDelete = event
-                showingDeleteConfirmation = true
-            }) {
-                Label("Delete", systemImage: "trash")
+            // Selection indicator for all-day events
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white)
+                    .padding(4)
+                    .background(Circle().fill(Color(event.color)))
             }
         }
     }
 
-    private func eventCell(for event: DayEventItem, isTapped: Bool) -> some View {
+    private func eventCell(for event: DayEventItem, isTapped: Bool, isSelected: Bool = false) -> some View {
         let isPast = Date() > event.endDate
         let duration = event.endDate.timeIntervalSince(event.startDate)
         let isShortEvent = duration <= 1800 // 30 minutes
 
-        return VStack(alignment: .leading, spacing: isShortEvent ? 0 : 2) {
-            Text(event.title)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.white)
-                .lineLimit(isShortEvent ? 1 : 2)
-                .opacity(isPast ? 0.7 : 1.0)
+        return ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: isShortEvent ? 0 : 2) {
+                Text(event.title)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(isShortEvent ? 1 : 2)
+                    .opacity(isPast ? 0.7 : 1.0)
 
-            if !isShortEvent {
-                Text(event.timeRange ?? "")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
-
-                HStack(spacing: 4) {
-                    Text(event.memberNames.joined(separator: ", "))
+                if !isShortEvent {
+                    Text(event.timeRange ?? "")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
 
-                    if let driverName = event.driverName {
-                        if let phone = event.driverPhone, !phone.isEmpty {
-                            Link(destination: URL(string: "tel:\(phone)")!) {
+                    HStack(spacing: 4) {
+                        Text(event.memberNames.joined(separator: ", "))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+
+                        if let driverName = event.driverName {
+                            if let phone = event.driverPhone, !phone.isEmpty {
+                                Link(destination: URL(string: "tel:\(phone)")!) {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "car.fill")
+                                            .font(.system(size: 8))
+                                        Text(driverName)
+                                            .font(.system(size: 9, weight: .medium))
+                                    }
+                                    .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+                                }
+                            } else {
                                 HStack(spacing: 2) {
                                     Image(systemName: "car.fill")
                                         .font(.system(size: 8))
@@ -455,32 +571,33 @@ struct DailyEventsView: View {
                                 }
                                 .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
                             }
-                        } else {
-                            HStack(spacing: 2) {
-                                Image(systemName: "car.fill")
-                                    .font(.system(size: 8))
-                                Text(driverName)
-                                    .font(.system(size: 9, weight: .medium))
-                            }
-                            .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
                         }
                     }
+                } else {
+                     // For short events, maybe show time in a more compact way or hide it if it doesn't fit
+                     // User only asked to remove member name, but 15pt is very small.
+                     // Let's try showing just the title for maximum "thinner" look.
                 }
-            } else {
-                 // For short events, maybe show time in a more compact way or hide it if it doesn't fit
-                 // User only asked to remove member name, but 15pt is very small.
-                 // Let's try showing just the title for maximum "thinner" look.
+            }
+            .padding(isShortEvent ? 2 : 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(event.color).opacity(isPast ? (isTapped ? 0.5 : 0.35) : (isTapped ? 1.0 : 0.6)))
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color(event.color), lineWidth: 1)
+                    .opacity(isPast ? 0.6 : 1.0)
+            )
+
+            // Selection indicator
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.white)
+                    .padding(6)
+                    .background(Circle().fill(Color(event.color)))
             }
         }
-        .padding(isShortEvent ? 2 : 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(event.color).opacity(isPast ? (isTapped ? 0.5 : 0.35) : (isTapped ? 1.0 : 0.6)))
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(event.color), lineWidth: 1)
-                .opacity(isPast ? 0.6 : 1.0)
-        )
     }
 
     private func formatHour(_ hour: Int) -> String {
