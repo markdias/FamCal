@@ -117,6 +117,7 @@ struct AddEventView: View {
     @State private var showingCalendarPicker = false
     @State private var showingCreateEventForDriverAlert = false
     @State private var driverToCreateEventFor: DriverWrapper?
+    @State private var showingMissingAttendeesAlert = false
 
     init(initialDate: Date? = nil) {
         self.initialDate = initialDate
@@ -146,12 +147,17 @@ struct AddEventView: View {
             .foregroundColor(primaryTextColor)
     }
 
+    private var hasSelectedCalendar: Bool {
+        selectEveryone ? !selectedCalendarID.isEmpty : true
+    }
+
+    private var hasAttendees: Bool {
+        selectEveryone || !selectedMembers.isEmpty
+    }
+
     var isFormValid: Bool {
         let hasTitle = !eventTitle.trimmingCharacters(in: .whitespaces).isEmpty
-        let hasAttendees = (!selectEveryone && !selectedMembers.isEmpty) || selectEveryone
-        let hasCalendar = selectEveryone ? !selectedCalendarID.isEmpty : true
-
-        return hasTitle && hasAttendees && hasCalendar
+        return hasTitle && hasSelectedCalendar
     }
 
     private var meetingLinkValue: String? {
@@ -213,7 +219,11 @@ struct AddEventView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        Task { await saveEvent() }
+                        if hasAttendees {
+                            Task { await saveEvent() }
+                        } else {
+                            showingMissingAttendeesAlert = true
+                        }
                     }) {
                         if isSaving {
                             ProgressView()
@@ -224,6 +234,11 @@ struct AddEventView: View {
                     }
                     .disabled(!isFormValid || isSaving)
                 }
+            }
+            .alert("Choose attendees", isPresented: $showingMissingAttendeesAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Please choose at least one attendee before saving.")
             }
             .onAppear {
                 // Request calendar permissions
@@ -468,7 +483,15 @@ struct AddEventView: View {
         }
 
         await MainActor.run {
-        isSaving = true
+            isSaving = true
+        }
+
+        guard hasAttendees else {
+            await MainActor.run {
+                isSaving = false
+                showingMissingAttendeesAlert = true
+            }
+            return
         }
 
         let eventGroupId = UUID()
