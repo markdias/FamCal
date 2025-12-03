@@ -18,11 +18,6 @@ struct SpotlightView: View {
 
     let member: FamilyMember
 
-    private enum DeleteScope {
-        case single
-        case allLinked
-    }
-
     private var spotlightEventsPerPerson: Int { appSettingsManager.spotlightEventsPerPerson }
     private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
     private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
@@ -55,7 +50,12 @@ struct SpotlightView: View {
     @State private var pendingDeleteEvent: UpcomingCalendarEvent?
     @State private var pendingDeleteSpan: EKSpan = .thisEvent
     @State private var showingLinkedDeleteDialog = false
-    @State private var linkedDeleteScope: DeleteScope = .single
+    @State private var linkedDeleteScope: DeleteScope = .singleCalendar
+    @State private var selectedEventIdsForDeletion: Set<String> = []
+    @State private var showingBatchDeleteDialog = false
+    @State private var lastTapTime: Date = .distantPast
+    @State private var lastTappedEventId: String = ""
+    @State private var tapDelayTimer: Timer?
 
     private let calendar = Calendar.current
 
@@ -125,26 +125,13 @@ struct SpotlightView: View {
                                         }
                                     }
 
-                                    Button(action: {
-                                        selectedEvent = UpcomingCalendarEvent(
-                                            id: event.eventIdentifier,
-                                            title: event.title,
-                                            location: event.location,
-                                            meetingLink: event.meetingLink,
-                                            startDate: event.startDate,
-                                            endDate: event.endDate,
-                                            calendarID: event.calendarID,
-                                            calendarColor: event.memberColor,
-                                            calendarTitle: event.calendarTitle,
-                                            hasRecurrence: event.hasRecurrence,
-                                            recurrenceRule: nil,
-                                            isAllDay: event.isAllDay
-                                        )
-                                        showingEventDetail = true
-                                    }) {
+                                    Button(action: {}) {
                                         eventCard(event)
                                     }
                                     .buttonStyle(.plain)
+                                    .onTapGesture {
+                                        handleEventTap(event: event)
+                                    }
                                     .contextMenu {
                                         let upcomingEvent = UpcomingCalendarEvent(
                                             id: event.eventIdentifier,
@@ -244,6 +231,23 @@ struct SpotlightView: View {
         .sheet(isPresented: $showingLinkedDeleteDialog) {
             linkedDeleteDialog
         }
+        .confirmationDialog(
+            "Delete Selected Events",
+            isPresented: $showingBatchDeleteDialog,
+            titleVisibility: .visible
+        ) {
+            if selectedEventIdsForDeletion.isEmpty {
+                Button("Cancel", role: .cancel) { }
+            } else {
+                Button("Delete", role: .destructive) {
+                    batchDeleteSelectedEvents()
+                }
+                Button("Cancel", role: .cancel) { }
+            }
+        } message: {
+            let count = selectedEventIdsForDeletion.count
+            Text("Delete \(count) selected event\(count == 1 ? "" : "s")?")
+        }
     }
 
     // MARK: - Delete Dialog
@@ -255,42 +259,69 @@ struct SpotlightView: View {
                     .font(.system(size: 48))
                     .foregroundColor(.orange)
 
-                Text("Delete from Multiple Calendars?")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.primary)
+                // Check if event has linked copies
+                if let event = pendingDeleteEvent, linkedFamilyEvents(for: event.id).count > 1 {
+                    Text("Delete from Multiple Calendars?")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.primary)
 
-                Text("This event exists in multiple calendars. How would you like to delete it?")
-                    .font(.system(size: 14))
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
+                    Text("This event exists in multiple calendars. How would you like to delete it?")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                } else if let event = pendingDeleteEvent {
+                    Text("Delete Event")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.primary)
+
+                    Text("Are you sure you want to delete '\(event.title)'?")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                }
             }
             .padding(.vertical, 12)
 
             VStack(spacing: 12) {
-                Button(action: {
-                    if let event = pendingDeleteEvent {
-                        deleteEvent(event, span: pendingDeleteSpan, scope: .single)
+                if let event = pendingDeleteEvent, linkedFamilyEvents(for: event.id).count > 1 {
+                    Button(action: {
+                        if let event = pendingDeleteEvent {
+                            deleteEvent(event, span: pendingDeleteSpan, scope: .singleCalendar)
+                        }
+                        showingLinkedDeleteDialog = false
+                    }) {
+                        Label("Delete from This Calendar Only", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
                     }
-                    showingLinkedDeleteDialog = false
-                }) {
-                    Label("Delete from This Calendar Only", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                }
-                .buttonStyle(.bordered)
-                .foregroundColor(.primary)
+                    .buttonStyle(.bordered)
+                    .foregroundColor(.primary)
 
-                Button(role: .destructive, action: {
-                    if let event = pendingDeleteEvent {
-                        deleteEvent(event, span: pendingDeleteSpan, scope: .allLinked)
+                    Button(role: .destructive, action: {
+                        if let event = pendingDeleteEvent {
+                            deleteEvent(event, span: pendingDeleteSpan, scope: .allLinked)
+                        }
+                        showingLinkedDeleteDialog = false
+                    }) {
+                        Label("Delete from All Calendars", systemImage: "trash.fill")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
                     }
-                    showingLinkedDeleteDialog = false
-                }) {
-                    Label("Delete from All Calendars", systemImage: "trash.fill")
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                    .buttonStyle(.bordered)
+                } else {
+                    // Single event - just show delete button
+                    Button(role: .destructive, action: {
+                        if let event = pendingDeleteEvent {
+                            deleteEvent(event, span: pendingDeleteSpan, scope: .singleCalendar)
+                        }
+                        showingLinkedDeleteDialog = false
+                    }) {
+                        Label("Delete Event", systemImage: "trash.fill")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
 
                 Button(action: {
                     showingLinkedDeleteDialog = false
@@ -347,10 +378,11 @@ struct SpotlightView: View {
     private func eventCard(_ event: GroupedEvent) -> some View {
         let dateBoxWidth: CGFloat = 64
         let cardCornerRadius: CGFloat = 16
+        let isSelected = selectedEventIdsForDeletion.contains(event.eventIdentifier)
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(Color(uiColor: .systemBackground))
+                .fill(isSelected ? Color(event.memberColor).opacity(0.25) : Color(uiColor: .systemBackground))
 
             Group {
                 if event.memberColors.count > 1 {
@@ -506,6 +538,17 @@ struct SpotlightView: View {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .stroke(Color(.systemGray4), lineWidth: 1)
         )
+        .overlay(
+            // Selection indicator
+            isSelected ? AnyView(
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.white)
+                    .padding(6)
+                    .background(Circle().fill(Color(event.memberColor)))
+            ) : AnyView(EmptyView()),
+            alignment: .topTrailing
+        )
     }
 
     private func gapLabel(_ text: String) -> some View {
@@ -526,7 +569,107 @@ struct SpotlightView: View {
     }
 
     // MARK: - Private Methods
-    
+
+    private func handleEventTap(event: GroupedEvent) {
+        // Cancel any pending single tap timer
+        tapDelayTimer?.invalidate()
+
+        // Check if this is a double tap
+        let now = Date()
+        let timeSinceLastTap = now.timeIntervalSince(lastTapTime)
+
+        if lastTappedEventId == event.eventIdentifier && timeSinceLastTap < 0.3 {
+            // Double tap detected - toggle selection
+            if selectedEventIdsForDeletion.contains(event.eventIdentifier) {
+                selectedEventIdsForDeletion.remove(event.eventIdentifier)
+            } else {
+                selectedEventIdsForDeletion.insert(event.eventIdentifier)
+            }
+            lastTapTime = .distantPast
+            tapDelayTimer?.invalidate()
+            tapDelayTimer = nil
+        } else {
+            // Possible start of double tap or single tap
+            lastTapTime = now
+            lastTappedEventId = event.eventIdentifier
+
+            // Delay action to see if another tap comes
+            tapDelayTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { _ in
+                // Single tap - show event details
+                selectedEvent = UpcomingCalendarEvent(
+                    id: event.eventIdentifier,
+                    title: event.title,
+                    location: event.location,
+                    meetingLink: event.meetingLink,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    calendarID: event.calendarID,
+                    calendarColor: event.memberColor,
+                    calendarTitle: event.calendarTitle,
+                    hasRecurrence: event.hasRecurrence,
+                    recurrenceRule: nil,
+                    isAllDay: event.isAllDay
+                )
+                showingEventDetail = true
+                tapDelayTimer = nil
+            }
+        }
+    }
+
+    private func batchDeleteSelectedEvents() {
+        let selectedIds = selectedEventIdsForDeletion
+
+        Task {
+            var deletedCount = 0
+
+            for eventId in selectedIds {
+                if let event = events.first(where: { $0.eventIdentifier == eventId }) {
+                    let upcomingEvent = UpcomingCalendarEvent(
+                        id: event.eventIdentifier,
+                        title: event.title,
+                        location: event.location,
+                        meetingLink: event.meetingLink,
+                        startDate: event.startDate,
+                        endDate: event.endDate,
+                        calendarID: event.calendarID,
+                        calendarColor: event.memberColor,
+                        calendarTitle: event.calendarTitle,
+                        hasRecurrence: event.hasRecurrence,
+                        recurrenceRule: nil,
+                        isAllDay: event.isAllDay
+                    )
+
+                    let success = CalendarManager.shared.deleteEvent(
+                        withIdentifier: upcomingEvent.id,
+                        occurrenceStartDate: upcomingEvent.startDate,
+                        from: upcomingEvent.calendarID,
+                        span: .thisEvent
+                    )
+
+                    if success {
+                        deletedCount += 1
+                        await NotificationManager.shared.cancelEventNotifications(for: upcomingEvent.id)
+
+                        let fetchRequest = FamilyEvent.fetchRequest()
+                        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", upcomingEvent.id)
+                        if let familyEvent = try? viewContext.fetch(fetchRequest).first {
+                            viewContext.delete(familyEvent)
+                        }
+                    }
+                }
+            }
+
+            if deletedCount > 0 {
+                try? viewContext.save()
+                print("✅ Batch deleted \(deletedCount) event(s)")
+                await MainActor.run {
+                    selectedEventIdsForDeletion.removeAll()
+                    loadEvents()
+                }
+            }
+        }
+    }
+
     private func getSavedAddress(for location: String) -> SavedAddress? {
         // Try to find a saved address that matches this location
         return savedAddresses.first { savedAddr in
@@ -885,16 +1028,11 @@ struct SpotlightView: View {
     private func confirmDelete(_ event: UpcomingCalendarEvent, span: EKSpan) {
         pendingDeleteEvent = event
         pendingDeleteSpan = span
-
-        let linked = linkedFamilyEvents(for: event.id)
-        if linked.count > 1 {
-            showingLinkedDeleteDialog = true
-        } else {
-            deleteEvent(event, span: span, scope: .single)
-        }
+        // Always show delete confirmation
+        showingLinkedDeleteDialog = true
     }
 
-    private func deleteEvent(_ event: UpcomingCalendarEvent, span: EKSpan = .thisEvent, scope: DeleteScope = .single) {
+    private func deleteEvent(_ event: UpcomingCalendarEvent, span: EKSpan = .thisEvent, scope: DeleteScope = .singleCalendar) {
         Task {
             await deleteEventAndLinked(event: event, span: span, scope: scope)
             pendingDeleteEvent = nil
