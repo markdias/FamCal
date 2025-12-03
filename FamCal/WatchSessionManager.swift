@@ -277,18 +277,25 @@ private enum WatchSessionError: LocalizedError {
 
 extension WatchSessionManager: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        print("📱 WatchSession activation callback received")
         if let error {
             print("⚠️ WatchSession activation failed: \(error.localizedDescription)")
+        } else {
+            print("📱 WatchSession activation state: \(activationState.rawValue)")
         }
     }
 
-    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {
+        print("📱 WatchSession became inactive")
+    }
 
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
+        print("📱 WatchSession deactivated, reactivating...")
         session.activate()
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        print("📱 Received message from watch: \(message)")
         handleMessage(message, replyHandler: replyHandler)
     }
 }
