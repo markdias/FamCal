@@ -33,31 +33,36 @@ struct FamilyView: View {
         sortDescriptors: [
             NSSortDescriptor(keyPath: \FamilyMember.sortOrder, ascending: true),
             NSSortDescriptor(keyPath: \FamilyMember.name, ascending: true)
-        ]
+        ],
+        predicate: NSPredicate(format: "isSoftDeleted == NO OR isSoftDeleted == nil")
     )
     private var familyMembers: FetchedResults<FamilyMember>
 
     @FetchRequest(
         entity: FamilyMemberCalendar.entity(),
-        sortDescriptors: []
+        sortDescriptors: [],
+        predicate: NSPredicate(format: "isSoftDeleted == NO OR isSoftDeleted == nil")
     )
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
 
     @FetchRequest(
         entity: PersonalCalendar.entity(),
-        sortDescriptors: []
+        sortDescriptors: [],
+        predicate: NSPredicate(format: "isSoftDeleted == NO OR isSoftDeleted == nil")
     )
     private var personalCalendars: FetchedResults<PersonalCalendar>
 
     @FetchRequest(
         entity: SavedAddress.entity(),
-        sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)]
+        sortDescriptors: [NSSortDescriptor(keyPath: \SavedAddress.name, ascending: true)],
+        predicate: NSPredicate(format: "isSoftDeleted == NO OR isSoftDeleted == nil")
     )
     private var savedAddresses: FetchedResults<SavedAddress>
 
     @FetchRequest(
         entity: FamilyEvent.entity(),
-        sortDescriptors: []
+        sortDescriptors: [],
+        predicate: NSPredicate(format: "isSoftDeleted == NO OR isSoftDeleted == nil")
     )
     private var familyEvents: FetchedResults<FamilyEvent>
 
@@ -341,10 +346,23 @@ struct FamilyView: View {
                 }
             }
         }
-        .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }
-        .onChange(of: memberCalendarLinks.count) { _, _ in loadNextEvents() }
-        .onChange(of: personalCalendars.count) { _, _ in loadNextEvents() }
-        .onChange(of: familyEvents.count) { _, _ in loadNextEvents() }
+        .onChange(of: familyMembers.count) { _, _ in
+            // Don't reload if we're in the middle of fetching data
+            guard !dataManager.isLoading else { return }
+            loadNextEvents()
+        }
+        .onChange(of: memberCalendarLinks.count) { _, _ in
+            guard !dataManager.isLoading else { return }
+            loadNextEvents()
+        }
+        .onChange(of: personalCalendars.count) { _, _ in
+            guard !dataManager.isLoading else { return }
+            loadNextEvents()
+        }
+        .onChange(of: familyEvents.count) { _, _ in
+            guard !dataManager.isLoading else { return }
+            loadNextEvents()
+        }
         .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents() }
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: currentTime) { _, _ in /* Trigger re-render for status updates */ }
@@ -443,7 +461,7 @@ struct FamilyView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        if isLoadingEvents {
+        if isLoadingEvents || dataManager.isLoading {
             loadingView
         } else if memberEvents.isEmpty {
             emptyStateView
@@ -457,7 +475,7 @@ struct FamilyView: View {
             ProgressView()
                 .tint(theme.accentColor)
 
-            Text("Fetching upcoming events...")
+            Text(dataManager.isLoading ? "Loading your family data..." : "Fetching upcoming events...")
                 .font(.system(size: 15))
                 .foregroundColor(secondaryTextColor)
         }
@@ -1051,8 +1069,12 @@ struct FamilyView: View {
         // This prevents showing "Unknown" member names on first login
         if !SupabaseAuthManager.shared.isGuest && SupabaseAuthManager.shared.isAuthenticated {
             Task { @MainActor in
-                await dataManager.fetchUserData()
-                // Load events after Supabase data is fetched
+                // Only fetch if we don't have data yet (cold start)
+                // Auth change handler already fetches data on login, so avoid double-fetch
+                if familyMembers.isEmpty {
+                    await dataManager.fetchUserData()
+                }
+                // Load events after ensuring data is available
                 let hasCachedEvents = !memberEvents.isEmpty
                 loadNextEvents(showLoadingState: !hasCachedEvents)
             }

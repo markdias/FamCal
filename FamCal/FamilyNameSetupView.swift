@@ -17,6 +17,7 @@ struct FamilyNameSetupView: View {
     @State private var showVerificationSent = false
     @State private var showSignOutConfirmation = false
     @State private var isSigningOut = false
+    @State private var viewHasAppeared = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -84,7 +85,10 @@ struct FamilyNameSetupView: View {
 
                     // Verification Checkbox
                     HStack(spacing: 12) {
-                        Button(action: { isEmailVerified.toggle() }) {
+                        Button(action: {
+                            isEmailVerified.toggle()
+                            print("📧 Email verification checkbox toggled: \(isEmailVerified)")
+                        }) {
                             HStack(spacing: 10) {
                                 Image(systemName: isEmailVerified ? "checkmark.square.fill" : "square")
                                     .font(.system(size: 18))
@@ -95,6 +99,7 @@ struct FamilyNameSetupView: View {
                                     .foregroundColor(.primary)
                             }
                         }
+                        .buttonStyle(.plain)
 
                         Spacer()
                     }
@@ -161,6 +166,10 @@ struct FamilyNameSetupView: View {
             }
         } message: {
             Text("Are you sure you want to sign out? You'll need to sign in again to continue setup.")
+        }
+        .onAppear {
+            viewHasAppeared = true
+            print("📱 FamilyNameSetupView appeared - authManager ready: \(authManager.isAuthenticated)")
         }
     }
 

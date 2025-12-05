@@ -70,7 +70,12 @@ struct PersistenceController {
                 if let description = container.persistentStoreDescriptions.first {
                     description.url = storeURL
                     description.cloudKitContainerOptions = nil  // Disable CloudKit sync
-                    print("✅ Persistence: Configured store URL in description")
+
+                    // Enable automatic lightweight migration for schema changes
+                    description.shouldMigrateStoreAutomatically = true
+                    description.shouldInferMappingModelAutomatically = true
+
+                    print("✅ Persistence: Configured store URL in description with auto-migration enabled")
                 }
             } else {
                 print("❌ Persistence: App group container not found!")
@@ -100,7 +105,8 @@ struct PersistenceController {
 
         // Try app group container first (new location)
         if let appGroupURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
-            let markerFile = appGroupURL.appendingPathComponent(".famli_store_migrated_v1")
+            // UPDATED: v2 includes updatedAt, isSoftDeleted, deletedAt attributes for incremental sync
+            let markerFile = appGroupURL.appendingPathComponent(".famli_store_migrated_v2")
 
             // Check if we've already migrated this version
             if fileManager.fileExists(atPath: markerFile.path) {
@@ -133,9 +139,9 @@ struct PersistenceController {
                 }
 
                 // Always create marker file to track that migration happened for this version
-                let success = fileManager.createFile(atPath: markerFile.path, contents: "migrated_v1".data(using: .utf8), attributes: nil)
+                let success = fileManager.createFile(atPath: markerFile.path, contents: "migrated_v2".data(using: .utf8), attributes: nil)
                 if success {
-                    print("✅ Store migration completed and marked (v1)")
+                    print("✅ Store migration completed and marked (v2 - incremental sync schema)")
                 } else if deletedAny {
                     print("⚠️ Store deleted but could not create marker file")
                 }

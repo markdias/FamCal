@@ -203,7 +203,9 @@ struct FamCalApp: App {
                             .environmentObject(appSettingsManager)
                             .onAppear {
                                 dataManager.setManagedObjectContext(persistenceController.container.viewContext)
+                                // Delay background data loading to ensure UI is responsive first
                                 Task {
+                                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second delay
                                     await appSettingsManager.loadSettings()
                                     // Smart sync in background
                                     await dataManager.fetchUserDataIfNeeded()

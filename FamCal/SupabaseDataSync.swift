@@ -23,19 +23,26 @@ class SupabaseDataSync {
             // Build a set of Supabase member IDs for quick lookup
             let supabaseIds = Set(supabaseMembers.map { $0.id })
 
-            // Fetch existing members
+            // Fetch existing members (exclude soft-deleted)
             let fetchRequest: NSFetchRequest<FamilyMember> = FamilyMember.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "isSoftDeleted == NO OR isSoftDeleted == nil")
             let existingMembers = try context.fetch(fetchRequest)
 
-            if supabaseMembers.isEmpty && !existingMembers.isEmpty {
-                print("⚠️ Supabase returned 0 members while local cache has \(existingMembers.count) entries – preserving local data until remote data is available.")
+            // SAFETY: Validate response before applying any deletes
+            if !IncrementalSyncService.shared.validateResponse(
+                entities: supabaseMembers,
+                entityType: "family members",
+                existingCount: existingMembers.count
+            ) {
+                print("⚠️ Response validation failed - aborting sync to prevent data loss")
                 return
             }
 
-            // Delete members that no longer exist in Supabase
+            // Soft delete members that no longer exist in Supabase (don't hard delete)
             for existingMember in existingMembers {
                 if let memberId = existingMember.id?.uuidString, !supabaseIds.contains(memberId) {
-                    context.delete(existingMember)
+                    print("🗑️ Soft deleting member: \(existingMember.name ?? "Unknown")")
+                    IncrementalSyncService.shared.softDelete(existingMember, reason: "removed from Supabase")
                 }
             }
 
@@ -239,7 +246,10 @@ class SupabaseDataSync {
                 memberFetch.predicate = NSPredicate(format: "id == %@", linkedUUID as CVarArg)
                 linkedMember = try context.fetch(memberFetch).first
                 if linkedMember == nil {
-                    print("⚠️ No FamilyMember found for linkedFamilyMemberId: \(linkedFamilyMemberId)")
+                    // This can happen during initial setup when member was just created in Supabase
+                    // but hasn't synced to CoreData yet - not an error, just informational
+                    print("ℹ️ FamilyMember not yet synced for linkedFamilyMemberId: \(linkedFamilyMemberId)")
+                    print("   Personal calendars will be synced without owner link (can be linked later)")
                 }
             } else {
                 print("ℹ️ No linkedFamilyMemberId provided; personal calendars will not be attached to a member")

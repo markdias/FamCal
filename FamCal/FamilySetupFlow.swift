@@ -68,13 +68,16 @@ struct FamilySetupFlow: View {
                     )
                 }
             }
+            .allowsHitTesting(!isLoading)
 
             if isLoading {
+                Color.black.opacity(0.2)
+                    .ignoresSafeArea()
+
                 ProgressView()
                     .scaleEffect(1.5)
             }
         }
-        .disabled(isLoading)
         .alert("Error", isPresented: .constant(errorMessage != nil), presenting: errorMessage) { _ in
             Button("OK") { errorMessage = nil }
         } message: { msg in
@@ -196,20 +199,33 @@ struct FamilySetupFlow: View {
 
                     // Step 3: Create family members in Supabase with family_id
                     print("📤 Creating \(familyMembers.count) family members...")
+                    print("🔍 Selected member ID (local): \(selectedMemberId?.uuidString ?? "NONE")")
+
                     var selectedMemberSupabaseId: String?
                     for member in familyMembers {
+                        print("🔍 Checking member '\(member.name ?? "Unknown")' with ID: \(member.id?.uuidString ?? "nil")")
+
                         let createdMember = try await SupabaseManager.shared.createFamilyMember(
                             userId: userId,
                             name: member.name ?? "",
                             colorHex: member.colorHex ?? "#007AFF",
                             token: SupabaseAuthManager.shared.accessToken
                         )
+                        print("  ✅ Created in Supabase with ID: \(createdMember.id)")
+
                         // If this is the selected member, store their Supabase ID for linking
                         if member.id == selectedMemberId {
                             selectedMemberSupabaseId = createdMember.id
+                            print("  🎯 This is the selected member! Supabase ID: \(createdMember.id)")
                         }
                     }
                     print("✅ All family members created")
+
+                    if selectedMemberSupabaseId == nil && selectedMemberId != nil {
+                        print("⚠️ WARNING: User selected a member but match not found!")
+                        print("   Selected ID: \(selectedMemberId!.uuidString)")
+                        print("   Member IDs: \(familyMembers.compactMap { $0.id?.uuidString })")
+                    }
 
                     // Step 3b: Link authenticated user to their selected family member
                     if let memberSupabaseId = selectedMemberSupabaseId {

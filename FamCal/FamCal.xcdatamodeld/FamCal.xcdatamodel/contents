@@ -14,6 +14,9 @@
         <attribute name="isInvited" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="linkedUserId" optional="YES" attributeType="String"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="memberCalendars" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="FamilyMemberCalendar" inverseName="familyMember" inverseEntity="FamilyMemberCalendar"/>
         <relationship name="sharedCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SharedCalendar" inverseName="members" inverseEntity="SharedCalendar"/>
         <relationship name="familyEvents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="attendees" inverseEntity="FamilyEvent"/>
@@ -25,6 +28,9 @@
         <attribute name="calendarName" optional="YES" attributeType="String"/>
         <attribute name="calendarColorHex" optional="YES" attributeType="String"/>
         <attribute name="isAutoLinked" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="familyMember" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="memberCalendars" inverseEntity="FamilyMember"/>
     </entity>
     <entity name="SharedCalendar" representedClassName="SharedCalendar" syncable="YES" codeGenerationType="class">
@@ -32,12 +38,18 @@
         <attribute name="calendarID" optional="YES" attributeType="String"/>
         <attribute name="calendarName" optional="YES" attributeType="String"/>
         <attribute name="calendarColorHex" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="members" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="sharedCalendars" inverseEntity="FamilyMember"/>
     </entity>
     <entity name="FamilyInfo" representedClassName="FamilyInfo" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="familyId" optional="YES" attributeType="String"/>
         <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="FamilyEvent" representedClassName="FamilyEvent" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -52,6 +64,8 @@
         <attribute name="deletionType" optional="YES" attributeType="String"/>
         <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="deletionReason" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <relationship name="attendees" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="familyEvents" inverseEntity="FamilyMember"/>
         <relationship name="driver" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Driver" inverseName="events" inverseEntity="Driver"/>
     </entity>
@@ -65,6 +79,9 @@
         <attribute name="familyMemberId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="travelEventIdentifier" optional="YES" attributeType="String"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="events" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="driver" inverseEntity="FamilyEvent"/>
     </entity>
     <entity name="SavedAddress" representedClassName="SavedAddress" syncable="YES" codeGenerationType="class">
@@ -74,6 +91,9 @@
         <attribute name="latitude" optional="YES" attributeType="Double" usesScalarValueType="YES" defaultValue="0.0"/>
         <attribute name="longitude" optional="YES" attributeType="Double" usesScalarValueType="YES" defaultValue="0.0"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="RecentSearch" representedClassName="RecentSearch" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
@@ -94,6 +114,9 @@
         <attribute name="showInMonth" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
         <attribute name="showInDay" optional="YES" attributeType="Boolean" defaultValueString="YES"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <relationship name="owner" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="FamilyMember" inverseName="personalCalendars" inverseEntity="FamilyMember"/>
     </entity>
     <entity name="SyncMetadata" representedClassName="SyncMetadata" syncable="YES" codeGenerationType="class">

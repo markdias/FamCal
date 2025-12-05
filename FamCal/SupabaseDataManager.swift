@@ -31,11 +31,15 @@ class SupabaseDataManager: ObservableObject {
     private var managedObjectContext: NSManagedObjectContext?
     private var networkMonitor: NWPathMonitor?
     private var wasOffline = false
+    private var wasAuthenticated = false  // Track previous auth state
 
     init() {
         self.supabaseManager = SupabaseManager.shared
         self.authManager = SupabaseAuthManager.shared
         self.appSettingsManager = AppSettingsManager.shared
+
+        // Initialize auth state tracking with current state
+        self.wasAuthenticated = authManager.isAuthenticated
 
         // Setup network monitoring to detect offline→online transitions
         setupNetworkMonitoring()
@@ -43,28 +47,42 @@ class SupabaseDataManager: ObservableObject {
         // Observe authentication changes to fetch data
         authManager.$isAuthenticated
             .sink { [weak self] isAuthenticated in
-                if isAuthenticated {
-                    Task { @MainActor in
-                        print("ℹ️ Authentication state changed to authenticated, clearing guest data first...")
-                        // Clear guest/old data before fetching authenticated user's data
-                        self?.clearData()
+                guard let self = self else { return }
 
-                        // Clear CoreData and sync metadata
-                        if let context = self?.managedObjectContext {
-                            self?.clearAllLocalData()
+                Task { @MainActor in
+                    let previousAuthState = self.wasAuthenticated
 
-                            // Clear sync metadata so data is fetched fresh
-                            SyncMetadataManager.shared.clearAllMetadata(context: context)
+                    if isAuthenticated && !previousAuthState {
+                        // Transitioning from NOT authenticated → authenticated (login or guest→auth)
+                        print("ℹ️ Authentication transition: NOT authenticated → authenticated")
+
+                        // Set loading state immediately to show loading UI
+                        self.isLoading = true
+
+                        // Clear any existing data (guest or stale) before fetching
+                        if let context = self.managedObjectContext {
+                            print("ℹ️ Clearing existing data before fetching authenticated user data")
+                            self.clearAllLocalData()
                         }
 
-                        print("ℹ️ Authentication state changed to authenticated, attempting to fetch data...")
-                        // Fetch authenticated user's data immediately
-                        await self?.fetchUserData()
+                        // Fetch authenticated user's data
+                        await self.fetchUserData()
+
+                        print("✅ Authentication transition complete - new user data loaded")
+
+                    } else if isAuthenticated && previousAuthState {
+                        // Already authenticated, no transition - do nothing
+                        print("ℹ️ Auth state check: already authenticated, skipping data clear")
+
+                    } else if !isAuthenticated && previousAuthState {
+                        // Transitioning from authenticated → NOT authenticated (logout)
+                        print("ℹ️ Authentication transition: authenticated → NOT authenticated (logout)")
+                        // Only clear in-memory cache, keep CoreData for offline access
+                        self.clearData()
                     }
-                } else {
-                    Task { @MainActor in
-                        self?.clearData()
-                    }
+
+                    // Update tracked state
+                    self.wasAuthenticated = isAuthenticated
                 }
             }
             .store(in: &cancellables)
@@ -370,7 +388,7 @@ class SupabaseDataManager: ObservableObject {
 
             // Sync to CoreData for backward compatibility with existing views
             if let context = managedObjectContext {
-                print("ℹ️ Syncing data to CoreData...")
+                print("ℹ️ Syncing data to CoreData (atomic batch)...")
 
                 // Ensure linkedFamilyMemberId is loaded for personal calendar sync
                 if appSettingsManager.linkedFamilyMemberId == nil {
@@ -386,6 +404,9 @@ class SupabaseDataManager: ObservableObject {
 
                 print("  📌 linkedFamilyMemberId for personal calendars: \(appSettingsManager.linkedFamilyMemberId ?? "nil")")
 
+                // Perform all syncs in a single batch to prevent UI flicker
+                // Since we're already @MainActor and using viewContext, we can sync directly
+                // CoreData will batch the changes and notify views after save
                 SupabaseDataSync.shared.syncFamilyMembersFromSupabase(
                     supabaseMembers: self.familyMembers,
                     supabaseCalendars: calendarDTOs,
@@ -403,7 +424,7 @@ class SupabaseDataManager: ObservableObject {
                 SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
                     supabaseCalendars: self.personalCalendars,
                     to: context,
-                    linkedFamilyMemberId: appSettingsManager.linkedFamilyMemberId
+                    linkedFamilyMemberId: self.appSettingsManager.linkedFamilyMemberId
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .personalCalendars, context: context)
 
@@ -425,6 +446,8 @@ class SupabaseDataManager: ObservableObject {
                     to: context
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .calendarEventMetadata, context: context)
+
+                print("✅ CoreData sync complete - views will refresh automatically")
             } else {
                 print("⚠️ CoreData context not available - skipping sync")
             }
@@ -433,6 +456,7 @@ class SupabaseDataManager: ObservableObject {
         } catch {
             if let urlError = error as? URLError, urlError.code == .cancelled {
                 print("ℹ️ Data fetch cancelled (likely superseded by a newer request)")
+                isLoading = false  // Clear loading state even when cancelled
                 return
             }
 
@@ -444,8 +468,11 @@ class SupabaseDataManager: ObservableObject {
                 errorMessage = "Network unavailable and no cached data access"
                 print("❌ Network error and no CoreData context available")
             }
+
+            isLoading = false  // Clear loading state on error
         }
 
+        // Clear loading state on successful completion
         isLoading = false
     }
 
