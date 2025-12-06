@@ -61,7 +61,6 @@ struct FamCalApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
     @StateObject private var appSettingsManager = AppSettingsManager.shared
-    @StateObject private var watchSessionManager = WatchSessionManager.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var hasCompletedOnboarding: Bool = false
     @State private var deepLinkEventTitle: String?
@@ -126,8 +125,6 @@ struct FamCalApp: App {
         ) { _ in
             // Nudge widgets to reload quickly after data changes
             WidgetCenter.shared.reloadAllTimelines()
-            // Sync to watch when data changes
-            WatchSessionManager.shared.syncMembersToWatch()
         }
     }
 
@@ -314,8 +311,6 @@ struct FamCalApp: App {
                 if phase == .active {
                     print("🔄 App became active - calling resetStore()")
                     CalendarManager.shared.resetStore()
-                    // Sync members to watch when app becomes active
-                    watchSessionManager.syncMembersToWatch()
                     // NOTE: We only reset the EventKit store here. Data syncing happens via:
                     // 1. Automatic refresh timer (set by AppSettingsManager)
                     // 2. Manual pull-to-refresh in calendar views

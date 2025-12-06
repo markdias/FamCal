@@ -1,6 +1,6 @@
 # FamCal
 
-A family calendar application for iOS, watchOS, and widgets.
+A family calendar application for iOS with widgets.
 
 ## Project Structure
 
@@ -13,8 +13,7 @@ FamCal/
 │   │   ├── ContactsManager.swift
 │   │   ├── NotificationManager.swift
 │   │   ├── Supabase*Manager.swift
-│   │   ├── SyncMetadataManager.swift
-│   │   └── WatchSessionManager.swift
+│   │   └── SyncMetadataManager.swift
 │   ├── Views/                   # UI Views organized by feature
 │   │   ├── Calendar/           # Calendar and daily views
 │   │   ├── Events/             # Event creation, editing, display
@@ -32,9 +31,6 @@ FamCal/
 │   ├── MainTabView.swift       # Tab navigation
 │   └── Persistence.swift       # Core Data stack
 ├── NextEventWidget/             # Widget extension
-├── WatchApp/                    # watchOS app
-├── WatchAppExtension/           # watchOS extension
-├── WatchShared/                 # Shared code for Watch
 ├── FamCalNotificationContent/   # Rich notifications
 ├── Documentation/               # Project documentation
 │   ├── admob/                  # AdMob integration docs
@@ -82,7 +78,6 @@ See the [Documentation](Documentation/) folder for detailed guides on:
 - AdMob integration
 - Authentication flow
 - Feature implementations
-- Apple Watch connectivity
 
 ## Features
 
@@ -91,7 +86,6 @@ See the [Documentation](Documentation/) folder for detailed guides on:
 - Event linking and management
 - Morning briefing
 - Push notifications
-- Apple Watch companion app
 - Home screen widgets
 - Driver tracking
 - Saved addresses
@@ -100,7 +94,6 @@ See the [Documentation](Documentation/) folder for detailed guides on:
 ## Requirements
 
 - iOS 16.0+
-- watchOS 9.0+
 - Xcode 15.0+
 - CocoaPods
 

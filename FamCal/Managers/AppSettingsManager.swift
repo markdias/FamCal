@@ -579,6 +579,10 @@ class AppSettingsManager: ObservableObject {
             "morningBriefEnabled": .bool(morningBriefEnabled),
             "morningBriefTimeHour": .int(morningBriefTimeHour),
             "morningBriefTimeMinute": .int(morningBriefTimeMinute),
+            "morningBriefWeekdaysOnly": .bool(morningBriefWeekdaysOnly),
+            "morningBriefNotificationSound": .string(morningBriefNotificationSound),
+            "morningBriefSelectedMembers": morningBriefSelectedMembers != nil ? .array(morningBriefSelectedMembers!.map { .string($0) }) : .null,
+            "notificationHistoryEnabled": .bool(notificationHistoryEnabled),
 
             // Widget Settings
             "widgetShowEventsCount": .int(widgetShowEventsCount),
