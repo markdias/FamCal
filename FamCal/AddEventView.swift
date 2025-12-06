@@ -85,6 +85,7 @@ struct AddEventView: View {
     @State private var locationAddress: String = ""
     @State private var isAllDay: Bool = false
     @State private var showAsOption: ShowAsOption = .busy
+    @State private var eventDuration: TimeInterval = 3600 // Default 1 hour
     private let notificationManager = NotificationManager.shared
 
     // People selection
@@ -1191,15 +1192,8 @@ struct AddEventView: View {
                     .onChange(of: startTime) { _, newValue in
                         // Update eventDate for recurrence anchor if needed, or just keep it in sync
                         eventDate = newValue
-                        // When start date changes, also update end date to same date and end time to 1 hour later
-                        let calendar = Calendar.current
-                        let startComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: startTime)
-                        var endComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: endTime)
-                        endComponents.year = startComponents.year
-                        endComponents.month = startComponents.month
-                        endComponents.day = startComponents.day
-                        endComponents.hour = (startComponents.hour ?? 0) + 1
-                        endTime = calendar.date(from: endComponents) ?? endTime
+                        // When start date changes, maintain the same duration
+                        endTime = newValue.addingTimeInterval(eventDuration)
                     }
                 }
 
@@ -1235,13 +1229,8 @@ struct AddEventView: View {
                         get: { startTime },
                         set: { newValue in
                             startTime = newValue
-                            // When start time changes, update end time to 1 hour later
-                            let calendar = Calendar.current
-                            let startComponents = calendar.dateComponents([.hour, .minute], from: newValue)
-                            var endComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: endTime)
-                            endComponents.hour = (startComponents.hour ?? 0) + 1
-                            endComponents.minute = startComponents.minute
-                            endTime = calendar.date(from: endComponents) ?? endTime
+                            // When start time changes, maintain the same duration
+                            endTime = newValue.addingTimeInterval(eventDuration)
                         }
                     )
                 )
@@ -1250,7 +1239,14 @@ struct AddEventView: View {
             if activeTimePicker == .endTime {
                 timePickerWithFiveMinuteIntervals(
                     title: "End Time",
-                    selectedTime: $endTime
+                    selectedTime: Binding(
+                        get: { endTime },
+                        set: { newValue in
+                            endTime = newValue
+                            // When end time changes, update the duration
+                            eventDuration = newValue.timeIntervalSince(startTime)
+                        }
+                    )
                 )
             }
         }

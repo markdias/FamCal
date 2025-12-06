@@ -14,7 +14,6 @@ struct AppSettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
-    @State private var showingClearDataAlert = false
 
     private let mapsAppOptions = ["Apple Maps", "Google Maps", "Waze"]
     private let refreshIntervalOptions: [Int] = [1, 5, 10, 15, 30, 60]
@@ -345,36 +344,6 @@ struct AppSettingsView: View {
                             }
                         }
 
-                        // MARK: - Data Management Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Data Management")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .padding(.horizontal, 16)
-
-                            settingsContainer {
-                                Button(action: { showingClearDataAlert = true }) {
-                                    HStack(spacing: 16) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Clear local data")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(.red)
-
-                                            Text("Delete all local family members and calendar links")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "trash.fill")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.red)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
-                            }
-                        }
-
                         Spacer()
                     }
                     .padding(.vertical, 24)
@@ -396,15 +365,6 @@ struct AppSettingsView: View {
                     }
                 }
             }
-        }
-        .alert("Clear Local Data?", isPresented: $showingClearDataAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Clear", role: .destructive) {
-                dataManager.clearAllLocalData()
-                print("✅ Local data cleared from app settings")
-            }
-        } message: {
-            Text("This will delete all local family members, shared calendars, saved places, and drivers. This action cannot be undone.")
         }
     }
 
