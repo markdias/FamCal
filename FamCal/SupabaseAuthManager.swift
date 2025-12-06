@@ -244,10 +244,16 @@ class SupabaseAuthManager: ObservableObject {
                 throw error
             }
         } else {
-            // Refresh token is invalid or expired - throw error but don't log out yet
-            // This allows the app to continue; logout will happen on next app launch if needed
+            // Refresh token is invalid or expired
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("⚠️ Token refresh failed (HTTP \(httpResponse.statusCode)): \(errorMessage)")
+            
+            // Checks for unrecoverable errors where the refresh token is invalid/revoked
+            if httpResponse.statusCode == 400 || errorMessage.contains("refresh_token_not_found") {
+                print("🚨 Fatal refresh token error (Revoked/Invalid). Signing out user to prevent error loop.")
+                try? await self.signOut()
+            }
+            
             throw NSError(domain: "TokenRefreshFailed", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Unable to refresh session. Please try again."])
         }
     }

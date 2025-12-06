@@ -80,20 +80,45 @@ struct AddDriverView: View {
         }
     }
 
+    @Environment(\.managedObjectContext) private var viewContext
+
     private func saveDriver() {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespaces)
 
-        Task {
-            await dataManager.createDriver(
-                name: trimmedName,
-                phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
-                email: nil,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
-            await MainActor.run {
+        Task { @MainActor in
+            // 1. Optimistic Local Creation
+            let newDriver = Driver(context: viewContext)
+            newDriver.id = UUID()
+            newDriver.name = trimmedName
+            newDriver.phone = trimmedPhone.isEmpty ? nil : trimmedPhone
+            // email is not being set in this form
+            newDriver.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+            newDriver.modifiedAt = Date()
+            
+            do {
+                try viewContext.save()
+                print("✅ Driver '\(trimmedName)' created locally (optimistic)")
+                
+                // 2. Dismiss UI
                 dismiss()
+                
+                // 3. Background Sync
+                if let id = newDriver.id {
+                    let idString = id.uuidString
+                    Task.detached {
+                        await dataManager.createDriver(
+                            name: trimmedName,
+                            phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
+                            email: nil,
+                            notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
+                            id: idString
+                        )
+                    }
+                }
+            } catch {
+                print("❌ Error saving driver locally: \(error)")
             }
         }
     }

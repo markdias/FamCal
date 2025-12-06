@@ -202,9 +202,10 @@ struct FamilySetupFlow: View {
                             userId: userId,
                             name: member.name ?? "",
                             colorHex: member.colorHex ?? "#007AFF",
+                            id: member.id,
                             token: SupabaseAuthManager.shared.accessToken
                         )
-                        // If this is the selected member, store their Supabase ID for linking
+                        // If this is the selected member, store their Supabase ID (which should match local ID now) for linking
                         if member.id == selectedMemberId {
                             selectedMemberSupabaseId = createdMember.id
                         }
@@ -264,7 +265,7 @@ struct FamilySetupFlow: View {
 
                     if !isGuest {
                         print("🔄 Refreshing Supabase data after setup...")
-                        await dataManager.fetchUserData()
+                        await dataManager.fetchUserDataIfNeeded()
                     }
                 }
 

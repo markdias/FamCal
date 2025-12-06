@@ -22,7 +22,7 @@ Add a URL scheme to your app's Info.plist:
 **Key**: `URL types`
 **Value**: Array with one item:
   - **Item 0**: Dictionary
-    - **URL identifier**: `com.mdias.famcal`
+    - **URL identifier**: `mdias.famcal`
     - **URL Schemes**: Array with one item:
       - **Item 0**: `famcal`
 
@@ -35,7 +35,7 @@ Or add this XML directly to Info.plist:
         <key>CFBundleTypeRole</key>
         <string>Editor</string>
         <key>CFBundleURLName</key>
-        <string>com.mdias.famcal</string>
+        <string>mdias.famcal</string>
         <key>CFBundleURLSchemes</key>
         <array>
             <string>famcal</string>

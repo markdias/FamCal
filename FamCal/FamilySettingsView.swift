@@ -297,81 +297,90 @@ struct FamilySettingsView: View {
     }
 
     private func deleteMember(_ member: FamilyMember) {
-        Task {
-            do {
-                if authManager.isGuest {
-                    // Local-only delete for guests
-                    try dataManager.deleteFamilyMemberLocal(id: member.id ?? UUID())
-                    print("✅ Family member deleted locally (guest mode)")
-                } else {
-                    // Delete from Supabase for authenticated users
-                    if let memberId = member.id?.uuidString {
-                        try await dataManager.deleteFamilyMember(id: memberId)
-                        print("✅ Family member deleted from Supabase")
-                    }
+        let memberId = member.id?.uuidString
+        
+        // 1. Optimistic Local Deletion
+        viewContext.delete(member)
+        
+        do {
+            try viewContext.save()
+            print("✅ Family member deleted locally (optimistic)")
+        } catch {
+            print("❌ Error deleting local member: \(error)")
+            return
+        }
+        
+        // 2. Background Sync
+        if let id = memberId, !authManager.isGuest {
+            Task.detached {
+                do {
+                    try await SupabaseDataManager.shared.deleteFamilyMember(id: id)
+                    print("✅ Family member deleted from Supabase")
+                } catch {
+                    print("❌ Error deleting family member from Supabase: \(error)")
                 }
-
-                // Delete from CoreData
-                viewContext.delete(member)
-
-                try viewContext.save()
-                print("✅ Family member deleted successfully")
-            } catch {
-                print("❌ Error deleting family member: \(error)")
             }
         }
     }
 
     private func unlinkMember(_ member: FamilyMember) {
-        Task {
-            do {
-                if authManager.isGuest {
-                    // Local-only update for guests
-                    member.linkedUserId = nil
-                    try viewContext.save()
-                    print("✅ Account unlinked from family member locally (guest mode)")
-                } else {
-                    // Supabase update for authenticated users - unlink the specific member
-                    if let memberId = member.id?.uuidString {
-                        try await dataManager.supabaseManager.unlinkSpecificMember(memberId: memberId)
-                        member.linkedUserId = nil
-                        try viewContext.save()
-                        print("✅ Account unlinked from family member \(member.name ?? "Unknown")")
-
-                        // Refresh data from Supabase to ensure UI updates
-                        await dataManager.fetchUserData()
-                    }
+        let memberId = member.id?.uuidString
+        let memberName = member.name
+        
+        // 1. Optimistic Local Update
+        member.linkedUserId = nil
+        
+        do {
+            try viewContext.save()
+            print("✅ Account unlinked locally (optimistic)")
+            memberPendingUnlink = nil
+        } catch {
+            print("❌ Error unlinking local member: \(error)")
+            return
+        }
+        
+        // 2. Background Sync
+        if let id = memberId, !authManager.isGuest {
+            Task.detached {
+                do {
+                    try await SupabaseManager.shared.unlinkSpecificMember(memberId: id)
+                    print("✅ Account unlinked from family member \(memberName ?? "Unknown") in Supabase")
+                    // No need to fetch, local is accurate
+                } catch {
+                    print("❌ Error unlinking member in Supabase: \(error)")
                 }
-
-                memberPendingUnlink = nil
-            } catch {
-                print("❌ Error unlinking member: \(error)")
             }
         }
     }
 
     private func toggleDriverStatus(for member: FamilyMember) {
-        Task {
-            do {
-                let newDriverStatus = !member.isDriver
-                member.isDriver = newDriverStatus
-
-                if authManager.isGuest {
-                    // Local-only update for guests
-                    try viewContext.save()
-                    print("✅ Driver status updated locally (guest mode) to \(newDriverStatus)")
-                } else {
-                    // Update in Supabase for authenticated users
-                    if let memberId = member.id?.uuidString {
-                        try await dataManager.supabaseManager.updateFamilyMemberDriver(memberId: memberId, isDriver: newDriverStatus)
-                    }
-                    try viewContext.save()
-                    print("✅ Driver status updated to \(newDriverStatus) for \(member.name ?? "Unknown")")
+        let newStatus = !member.isDriver
+        let memberId = member.id?.uuidString
+        let memberName = member.name
+        
+        // 1. Optimistic Local Update
+        member.isDriver = newStatus
+        
+        do {
+            try viewContext.save()
+            print("✅ Driver status updated locally (optimistic) to \(newStatus)")
+        } catch {
+            print("❌ Error updating local driver status: \(error)")
+            return
+        }
+        
+        // 2. Background Sync
+        if let id = memberId, !authManager.isGuest {
+            Task.detached {
+                do {
+                    try await SupabaseManager.shared.updateFamilyMemberDriver(memberId: id, isDriver: newStatus)
+                    print("✅ Driver status updated to \(newStatus) for \(memberName ?? "Unknown") in Supabase")
+                } catch {
+                    print("❌ Error updating driver status in Supabase: \(error)")
                 }
-            } catch {
-                print("❌ Error updating driver status: \(error)")
             }
         }
+
     }
 
     private func saveFamilyName() {
@@ -384,32 +393,50 @@ struct FamilySettingsView: View {
         familyName = trimmedName
         isUpdatingFamilyName = true
         familyNameMessage = nil
+        
+        let currentFamilyId = familyId
+        let isOwnerUser = isOwner
+        let isGuestUser = authManager.isGuest
+        
         Task {
-            if authManager.isGuest || familyId == nil {
-                await persistFamilyNameLocally(trimmedName, familyId: nil)
-                familyNameMessage = "Saved locally"
-            } else {
-                guard isOwner else {
+            // 1. Optimistic Local Save
+            await persistFamilyNameLocally(trimmedName, familyId: currentFamilyId)
+            
+            if isGuestUser || currentFamilyId == nil {
+                await MainActor.run {
+                    familyNameMessage = "Saved locally"
+                    isUpdatingFamilyName = false
+                }
+                return
+            }
+            
+            guard isOwnerUser else {
+                await MainActor.run {
                     familyNameMessage = "Only the owner can update the family name."
                     isUpdatingFamilyName = false
-                    return
                 }
-
-                do {
-                    guard let ownerFamilyId = familyId else {
-                        familyNameMessage = "Family not found."
-                        isUpdatingFamilyName = false
-                        return
-                    }
-                    try await supabaseManager.updateFamilyName(familyId: ownerFamilyId, name: trimmedName)
-                    familyNameMessage = "Saved"
-                    await persistFamilyNameLocally(trimmedName, familyId: ownerFamilyId)
-                } catch {
-                    familyNameMessage = "Failed to save: \(error.localizedDescription)"
-                }
+                return
             }
 
-            isUpdatingFamilyName = false
+            // 2. Background Sync
+            if let ownerFamilyId = currentFamilyId {
+                Task.detached {
+                    do {
+                        try await SupabaseManager.shared.updateFamilyName(familyId: ownerFamilyId, name: trimmedName)
+                        await MainActor.run {
+                            familyNameMessage = "Saved"
+                        }
+                    } catch {
+                        await MainActor.run {
+                            familyNameMessage = "Failed to sync: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                isUpdatingFamilyName = false
+            }
         }
     }
 

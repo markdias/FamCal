@@ -201,7 +201,7 @@ struct DriversListView: View {
         }
 
         Task {
-            await dataManager.deleteDriver(id: id)
+            await dataManager.deleteDriver(id: id.uuidString)
         }
     }
 

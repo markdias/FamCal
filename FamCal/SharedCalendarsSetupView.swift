@@ -12,6 +12,7 @@ import EventKit
 struct SharedCalendarsSetupView: View {
     @Environment(\.managedObjectContext) var viewContext
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
+    @EnvironmentObject private var dataManager: SupabaseDataManager
     @Binding var sharedCalendars: [SharedCalendar]
     var onNext: () -> Void
     var onBack: () -> Void
@@ -20,6 +21,7 @@ struct SharedCalendarsSetupView: View {
     @State private var isLoadingCalendars = false
     @State private var selectedCalendarIds: Set<String> = []
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
     var maxCalendarsAllowed: Int {
         appSettingsManager.maxSharedCalendarsAllowed
@@ -142,14 +144,21 @@ struct SharedCalendarsSetupView: View {
                 }
 
                 Button(action: saveAndContinue) {
-                    Text("Next")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(Color.blue)
-                        .cornerRadius(12)
+                    HStack {
+                        if isSaving {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                        Text(isSaving ? "Saving..." : "Next")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(Color.blue)
+                    .cornerRadius(12)
                 }
+                .disabled(isSaving)
             }
         }
         .padding(24)
@@ -176,32 +185,50 @@ struct SharedCalendarsSetupView: View {
     }
 
     private func saveAndContinue() {
-        do {
-            // Create SharedCalendar entities for selected calendars
-            for calendarId in selectedCalendarIds {
-                if let calendar = availableCalendars.first(where: { $0.id == calendarId }) {
-                    // Check if already exists
-                    let fetchRequest: NSFetchRequest<SharedCalendar> = SharedCalendar.fetchRequest()
-                    fetchRequest.predicate = NSPredicate(format: "calendarID == %@", calendarId)
-                    let existing = try viewContext.fetch(fetchRequest)
+        isSaving = true
 
-                    if existing.isEmpty {
-                        let sharedCalendar = SharedCalendar(context: viewContext)
-                        sharedCalendar.id = UUID()
-                        sharedCalendar.calendarID = calendarId
-                        sharedCalendar.calendarName = calendar.title
-                        sharedCalendar.calendarColorHex = calendar.color.hex()
-                        sharedCalendars.append(sharedCalendar)
+        Task {
+            do {
+                // Save each selected calendar to both CoreData and Supabase
+                for calendarId in selectedCalendarIds {
+                    if let calendar = availableCalendars.first(where: { $0.id == calendarId }) {
+                        // Check if already exists in CoreData
+                        let fetchRequest: NSFetchRequest<SharedCalendar> = SharedCalendar.fetchRequest()
+                        fetchRequest.predicate = NSPredicate(format: "calendarID == %@", calendarId)
+                        let existing = try viewContext.fetch(fetchRequest)
+
+                        if existing.isEmpty {
+                            // Use dataManager to add calendar - this syncs to Supabase AND CoreData
+                            print("ℹ️ Adding shared calendar: \(calendar.title)")
+                            let _ = try await dataManager.addSharedCalendar(
+                                calendarName: calendar.title,
+                                calendarColorHex: calendar.color.hex()
+                            )
+                            print("✅ Shared calendar '\(calendar.title)' added successfully")
+                        } else {
+                            print("ℹ️ Shared calendar '\(calendar.title)' already exists, skipping")
+                        }
                     }
                 }
-            }
 
-            try viewContext.save()
-            print("✅ Shared calendars saved: \(selectedCalendarIds.count)")
-            onNext()
-        } catch {
-            errorMessage = "Failed to save calendars. Please try again."
-            print("❌ Error saving shared calendars: \(error)")
+                // Fetch the updated list of shared calendars from CoreData
+                await MainActor.run {
+                    let fetchRequest: NSFetchRequest<SharedCalendar> = SharedCalendar.fetchRequest()
+                    if let fetchedCalendars = try? viewContext.fetch(fetchRequest) {
+                        sharedCalendars = fetchedCalendars
+                    }
+
+                    isSaving = false
+                    print("✅ Shared calendars saved: \(selectedCalendarIds.count)")
+                    onNext()
+                }
+            } catch {
+                await MainActor.run {
+                    isSaving = false
+                    errorMessage = "Failed to save calendars: \(error.localizedDescription)"
+                    print("❌ Error saving shared calendars: \(error)")
+                }
+            }
         }
     }
 }

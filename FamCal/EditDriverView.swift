@@ -113,22 +113,40 @@ struct EditDriverView: View {
             print("❌ Cannot update driver: missing ID")
             return
         }
+        let idString = id.uuidString
 
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedPhone = phone.trimmingCharacters(in: .whitespaces)
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespaces)
 
-        Task {
-            await dataManager.updateDriver(
-                id: id,
-                name: trimmedName,
-                phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
-                email: trimmedEmail.isEmpty ? nil : trimmedEmail,
-                notes: trimmedNotes.isEmpty ? nil : trimmedNotes
-            )
-            await MainActor.run {
+        Task { @MainActor in
+            // 1. Optimistic Local Update
+            driver.name = trimmedName
+            driver.phone = trimmedPhone.isEmpty ? nil : trimmedPhone
+            driver.email = trimmedEmail.isEmpty ? nil : trimmedEmail
+            driver.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+            driver.modifiedAt = Date()
+            
+            do {
+                try driver.managedObjectContext?.save()
+                print("✅ Driver updated locally (optimistic)")
+                
+                // 2. Dismiss UI
                 dismiss()
+                
+                // 3. Background Sync
+                Task.detached {
+                    await dataManager.updateDriver(
+                        id: idString,
+                        name: trimmedName,
+                        phone: trimmedPhone.isEmpty ? nil : trimmedPhone,
+                        email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+                        notes: trimmedNotes.isEmpty ? nil : trimmedNotes
+                    )
+                }
+            } catch {
+                print("❌ Error updating driver locally: \(error)")
             }
         }
     }
@@ -138,11 +156,27 @@ struct EditDriverView: View {
             print("❌ Cannot delete driver: missing ID")
             return
         }
+        let idString = id.uuidString
 
-        Task {
-            await dataManager.deleteDriver(id: id)
-            await MainActor.run {
-                dismiss()
+        Task { @MainActor in
+            // 1. Optimistic Local Delete
+            if let context = driver.managedObjectContext {
+                context.delete(driver)
+                
+                do {
+                    try context.save()
+                    print("✅ Driver deleted locally (optimistic)")
+                    
+                    // 2. Dismiss UI
+                    dismiss()
+                    
+                    // 3. Background Sync
+                    Task.detached {
+                        await dataManager.deleteDriver(id: idString)
+                    }
+                } catch {
+                    print("❌ Error deleting driver locally: \(error)")
+                }
             }
         }
     }

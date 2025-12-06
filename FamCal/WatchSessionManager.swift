@@ -6,6 +6,8 @@ import Combine
 
 /// Bridges the phone's CoreData/EventKit state to WatchConnectivity requests.
 final class WatchSessionManager: NSObject, ObservableObject {
+    static let shared = WatchSessionManager()
+
     nonisolated private let session: WCSession?
     nonisolated private let persistenceController = PersistenceController.shared
     let objectWillChange = ObservableObjectPublisher()
@@ -28,6 +30,47 @@ final class WatchSessionManager: NSObject, ObservableObject {
             print("  - isReachable: \(session.isReachable)")
         } else {
             print("📱 WCSession not supported on this device")
+        }
+    }
+
+    /// Send member data to watch via application context (works even when watch isn't reachable)
+    func syncMembersToWatch() {
+        guard let session = session, session.activationState == .activated else {
+            print("📱 Cannot sync to watch: session not activated")
+            return
+        }
+
+        print("📱 Syncing members to watch via application context")
+
+        persistenceController.container.performBackgroundTask { context in
+            do {
+                let memberRequest = NSFetchRequest<NSManagedObject>(entityName: "FamilyMember")
+                memberRequest.returnsObjectsAsFaults = false
+                let members = try context.fetch(memberRequest)
+
+                var memberNames: [String] = []
+                for member in members {
+                    if let name = member.value(forKey: "name") as? String {
+                        memberNames.append(name)
+                    }
+                }
+
+                let response: [String: Any] = [
+                    "ok": "yes",
+                    "members": memberNames.joined(separator: ","),
+                    "timestamp": Date().timeIntervalSince1970
+                ]
+
+                do {
+                    try session.updateApplicationContext(response)
+                    print("📱 ✅ Application context updated with \(memberNames.count) members")
+                } catch {
+                    print("📱 ❌ Failed to update application context: \(error.localizedDescription)")
+                }
+
+            } catch {
+                print("📱 ❌ Error fetching members for watch sync: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -282,6 +325,16 @@ extension WatchSessionManager: WCSessionDelegate {
             print("⚠️ WatchSession activation failed: \(error.localizedDescription)")
         } else {
             print("📱 WatchSession activation state: \(activationState.rawValue)")
+            print("📱 Session details: reachable=\(session.isReachable), paired=\(session.isPaired), watchAppInstalled=\(session.isWatchAppInstalled)")
+
+            // Sync members to watch when session activates
+            if activationState == .activated {
+                Task { @MainActor in
+                    // Wait a bit for data to be available
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    WatchSessionManager.shared.syncMembersToWatch()
+                }
+            }
         }
     }
 
@@ -292,6 +345,10 @@ extension WatchSessionManager: WCSessionDelegate {
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
         print("📱 WatchSession deactivated, reactivating...")
         session.activate()
+    }
+
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        print("📱 WatchSession reachability changed: isReachable=\(session.isReachable)")
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {

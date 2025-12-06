@@ -45,37 +45,61 @@ final class WatchEventsViewModel: NSObject, ObservableObject {
             return
         }
 
-        guard session.isReachable else {
-            setState(.error("Open FamCal on your iPhone to sync."))
+        print("⌚ Session state: activated=\(session.activationState == .activated), reachable=\(session.isReachable)")
+
+        // Check if we have cached data in application context
+        let context = session.receivedApplicationContext
+        print("⌚ Application context keys: \(context.keys.sorted())")
+
+        if !context.isEmpty {
+            print("⌚ Using cached data from application context")
+            handleReply(context)
             return
         }
 
-        setState(.loading)
+        // If reachable, try interactive messaging
+        if session.isReachable {
+            setState(.loading)
+            print("⌚ iPhone is reachable - sending interactive message")
 
-        print("⌚ Requesting events from iPhone via WatchConnectivity")
-
-        // Add a timeout to prevent infinite loading
-        let timeoutTask = Task {
-            try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 second timeout
-            if case .loading = self.state {
-                self.setState(.error("Request timed out. Check iPhone connection."))
+            let timeoutTask = Task {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if case .loading = self.state {
+                    self.setState(.error("Request timed out. Check iPhone connection."))
+                }
             }
+
+            session.sendMessage(
+                ["action": "getMembers"],
+                replyHandler: { [weak self] reply in
+                    print("⌚ Received reply from iPhone: \(reply.keys)")
+                    timeoutTask.cancel()
+                    self?.handleReply(reply)
+                },
+                errorHandler: { [weak self] error in
+                    print("⌚ Error sending message: \(error.localizedDescription)")
+                    print("⌚ Error code: \((error as NSError).code)")
+                    timeoutTask.cancel()
+                    self?.setState(.error("Connection failed: \(error.localizedDescription)"))
+                }
+            )
+        } else {
+            // Not reachable - instruct user to open iPhone app
+            print("⌚ iPhone not reachable - showing instruction")
+            setState(.error("Open FamCal on your iPhone.\nEnsure Bluetooth is on."))
+            
+            // Attempt to send message anyway (sometimes wakes up phone app)
+             session.sendMessage(
+                ["action": "getMembers"],
+                replyHandler: { [weak self] reply in
+                    print("⌚ Received reply from iPhone (during unreachable state): \(reply.keys)")
+                    self?.handleReply(reply)
+                },
+                errorHandler: { [weak self] error in
+                    print("⌚ Error sending message (unreachable): \(error.localizedDescription)")
+                }
+            )
         }
-
-        // Request member names to test basic communication
-        session.sendMessage(
-            ["action": "getMembers"],
-            replyHandler: { [weak self] reply in
-                print("⌚ Received reply from iPhone: \(reply.keys)")
-                timeoutTask.cancel()
-                self?.handleReply(reply)
-            },
-            errorHandler: { [weak self] error in
-                print("⌚ Error sending message: \(error.localizedDescription)")
-                timeoutTask.cancel()
-                self?.setState(.error("Connection failed: \(error.localizedDescription)"))
-            }
-        )
     }
 
     private func handleReply(_ response: [String: Any]) {
@@ -151,10 +175,16 @@ extension WatchEventsViewModel: WCSessionDelegate {
             requestEvents()
         }
     }
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        print("⌚ Received application context update: \(applicationContext.keys.sorted())")
+        handleReply(applicationContext)
+    }
 }
 
 struct NextEventsView: View {
     @StateObject private var viewModel = WatchEventsViewModel()
+    @State private var showDebugInfo = false
 
     var body: some View {
         Group {
@@ -163,10 +193,24 @@ struct NextEventsView: View {
                 ProgressView()
                     .padding()
             case .error(let message):
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     Text(message)
                         .multilineTextAlignment(.center)
+                        .font(.caption)
                     Button("Retry", action: viewModel.requestEvents)
+                        .buttonStyle(.borderedProminent)
+                    Button("Debug") {
+                        showDebugInfo.toggle()
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+
+                    if showDebugInfo {
+                        Text("1. Open FamCal on iPhone\n2. Keep it in foreground\n3. Tap Retry here")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .padding(8)
             case .success(let events):

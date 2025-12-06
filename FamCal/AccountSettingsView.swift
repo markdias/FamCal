@@ -281,14 +281,24 @@ struct AccountSettingsView: View {
                     return member.name ?? "Unknown"
                 }
             } else {
-                // For authenticated users, check Supabase members
+                // For authenticated users, check both Supabase in-memory data AND CoreData
+                // This ensures we show the name even if Supabase data hasn't loaded yet
                 if let member = dataManager.familyMembers.first(where: { $0.id == linkedId }) {
                     return member.name
                 }
+
+                // Fallback to CoreData if Supabase data not yet loaded
+                if let uuid = UUID(uuidString: linkedId),
+                   let member = localFamilyMembers.first(where: { $0.id == uuid }) {
+                    return member.name ?? "Unknown"
+                }
             }
         }
-        // Fallback to email to avoid "Select a member" when user is linked but data not yet loaded
-        return authManager.userEmail ?? "Select a member"
+        // Last resort: show email or selection prompt
+        if authManager.isAuthenticated {
+            return authManager.userEmail ?? "Select a member"
+        }
+        return "Select a member"
     }
 
     private func isSelected(_ memberId: String) -> Bool {
@@ -337,7 +347,7 @@ struct AccountSettingsView: View {
                 // Clear links, then link to the selected member
                 try await supabaseManager.relinkCurrentUser(to: id, familyId: member.family_id)
                 await appSettingsManager.saveSettings()
-                await dataManager.fetchUserData()
+                await dataManager.fetchUserDataIfNeeded()
                 print("✅ Linked user to family member \(member.name)")
             } catch {
                 print("❌ Failed to link user to family member: \(error)")

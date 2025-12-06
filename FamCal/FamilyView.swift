@@ -629,13 +629,10 @@ struct FamilyView: View {
     }
 
     private func eventButton(for groupedEvent: GroupedEvent) -> some View {
-        Button(action: {}) {
-            eventCard(groupedEvent)
-        }
-        .buttonStyle(.plain)
-        .onTapGesture {
-            handleEventTap(event: groupedEvent)
-        }
+        eventCard(groupedEvent)
+            .onTapGesture {
+                handleEventTap(event: groupedEvent)
+            }
         .contextMenu {
             let event = UpcomingCalendarEvent(
                 id: groupedEvent.eventIdentifier,
@@ -1051,7 +1048,7 @@ struct FamilyView: View {
         // This prevents showing "Unknown" member names on first login
         if !SupabaseAuthManager.shared.isGuest && SupabaseAuthManager.shared.isAuthenticated {
             Task { @MainActor in
-                await dataManager.fetchUserData()
+                await dataManager.fetchUserDataIfNeeded()
                 // Load events after Supabase data is fetched
                 let hasCachedEvents = !memberEvents.isEmpty
                 loadNextEvents(showLoadingState: !hasCachedEvents)
@@ -1109,7 +1106,7 @@ struct FamilyView: View {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor in
                 currentTime = Date()
-                await dataManager.fetchUserData()
+                await dataManager.fetchUserDataIfNeeded()
                 // Refresh silently in background (no loading state flash)
                 loadNextEvents(showLoadingState: false)
             }

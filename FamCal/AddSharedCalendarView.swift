@@ -217,16 +217,24 @@ struct AddSharedCalendarView: View {
             print("❌ Shared calendar limit reached for Free plan. Enable Pro to add more.")
             return
         }
-        // Save to CoreData (for guests) or Supabase (for authenticated users)
+
+        // Use dataManager to add calendar - this syncs to both Supabase AND CoreData
+        // No optimistic update needed as the sync handles both operations
         Task {
             do {
-                _ = try await dataManager.addSharedCalendar(
+                print("ℹ️ Adding shared calendar: \(calendar.title)")
+                let _ = try await dataManager.addSharedCalendar(
                     calendarName: calendar.title,
                     calendarColorHex: calendar.color.hex()
                 )
-                print("✅ Shared calendar saved")
+                print("✅ Shared calendar '\(calendar.title)' added successfully")
             } catch {
                 print("❌ Error saving shared calendar: \(error)")
+
+                // Show error to user
+                await MainActor.run {
+                    // TODO: Show error alert to user
+                }
             }
         }
     }

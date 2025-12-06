@@ -377,87 +377,99 @@ struct EditFamilyMemberView: View {
     }
 
     private func saveMember() {
-        Task {
+        // Capture values for background task
+        let memberName = name
+        let memberIsDriver = isDriver
+        let matched = matchedCalendar
+        let isGuest = authManager.isGuest
+        let memberId = member.id
+        let memberUUIDString = member.id?.uuidString
+        
+        Task { @MainActor in
             do {
-                if authManager.isGuest {
-                    // Local-only update for guests
-                    member.name = name
-                    member.isDriver = isDriver
-                    member.modifiedAt = Date()
-                    try dataManager.updateFamilyMemberLocal(id: member.id ?? UUID(), name: name, colorHex: member.colorHex ?? "#555555")
+                // 1. Optimistic Local Update
+                member.name = memberName
+                member.isDriver = memberIsDriver
+                member.avatarInitials = getInitials(from: memberName)
+                if !isGuest {
+                    member.linkedCalendarID = matched?.id
+                }
+                member.modifiedAt = Date() // Mark for sync
+                
+                // Handle auto-linked calendar updates locally
+                let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }
 
-                    // Handle auto-linked calendar updates locally
-                    let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }
-
-                    if let matched = matchedCalendar {
-                        if autoLinkedCal?.calendarID != matched.id {
-                            if let oldCal = autoLinkedCal {
-                                viewContext.delete(oldCal)
-                            }
-
-                            let memberCalendar = FamilyMemberCalendar(context: viewContext)
-                            memberCalendar.id = UUID()
-                            memberCalendar.calendarID = matched.id
-                            memberCalendar.calendarName = matched.title
-                            memberCalendar.calendarColorHex = matched.color.hex()
-                            memberCalendar.isAutoLinked = true
-                            memberCalendar.familyMember = member
-                        }
-                    } else {
+                if let matched = matched {
+                    if autoLinkedCal?.calendarID != matched.id {
                         if let oldCal = autoLinkedCal {
                             viewContext.delete(oldCal)
                         }
-                    }
 
-                    try viewContext.save()
-                    print("✅ Family member '\(name)' updated locally (guest mode) with driver status: \(isDriver)")
+                        let memberCalendar = FamilyMemberCalendar(context: viewContext)
+                        memberCalendar.id = UUID()
+                        memberCalendar.calendarID = matched.id
+                        memberCalendar.calendarName = matched.title
+                        memberCalendar.calendarColorHex = matched.color.hex()
+                        memberCalendar.isAutoLinked = true
+                        memberCalendar.familyMember = member
+                    }
                 } else {
-                    // Supabase sync for authenticated users
-                    member.name = name
-                    member.isDriver = isDriver
-                    member.avatarInitials = getInitials(from: name)
-                    member.linkedCalendarID = matchedCalendar?.id
-                    member.modifiedAt = Date()
-
-                    // Handle auto-linked calendar updates
-                    let autoLinkedCal = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first { $0.isAutoLinked }
-
-                    if let matched = matchedCalendar {
-                        if autoLinkedCal?.calendarID != matched.id {
-                            if let oldCal = autoLinkedCal {
-                                viewContext.delete(oldCal)
-                            }
-
-                            let memberCalendar = FamilyMemberCalendar(context: viewContext)
-                            memberCalendar.id = UUID()
-                            memberCalendar.calendarID = matched.id
-                            memberCalendar.calendarName = matched.title
-                            memberCalendar.calendarColorHex = matched.color.hex()
-                            memberCalendar.isAutoLinked = true
-                            memberCalendar.familyMember = member
-                        }
-                    } else {
-                        if let oldCal = autoLinkedCal {
-                            viewContext.delete(oldCal)
-                        }
-                    }
-
-                    try viewContext.save()
-
-                    // Update in Supabase
-                    if let memberId = member.id?.uuidString {
-                        try await dataManager.updateFamilyMember(id: memberId, name: name, colorHex: member.colorHex ?? "#555555")
-
-                        // Update driver status if it changed
-                        try await dataManager.supabaseManager.updateFamilyMemberDriver(memberId: memberId, isDriver: isDriver)
+                    if let oldCal = autoLinkedCal {
+                        viewContext.delete(oldCal)
                     }
                 }
 
+                try viewContext.save()
+                print("✅ Family member '\(memberName)' updated locally (optimistic)")
+                
+                // 2. Dismiss UI immediately
                 dismiss()
+                
+                // Capture colorHex for background task
+                let memberColorHex = member.colorHex ?? "#555555"
+                
+                // 3. Background Sync (if authenticated)
+                if !isGuest, let memberId = memberUUIDString {
+                    Task.detached {
+                        do {
+                            // Update in Supabase
+                            try await dataManager.supabaseManager.updateFamilyMember(
+                                id: memberId, 
+                                name: memberName, 
+                                colorHex: memberColorHex
+                            )
+
+                            // Update driver status
+                            try await dataManager.supabaseManager.updateFamilyMemberDriver(
+                                memberId: memberId, 
+                                isDriver: memberIsDriver
+                            )
+                            
+                            // Handle calendar linking explicitly
+                            if let matched = matched {
+                                // We can't easily check if it's already linked in Supabase without fetching
+                                // But addFamilyMemberCalendar might be idempotent or we can ignore error
+                                // For now, let's just trigger a refresh to ensure consistency
+                                // Or try to add it?
+                                try? await dataManager.supabaseManager.addFamilyMemberCalendar(
+                                    memberId: memberId,
+                                    calendarName: matched.title,
+                                    calendarColorHex: matched.color.hex(),
+                                    isAutoLinked: true
+                                )
+                            }
+                            
+                            // Final sync to ensure consistency
+                            await dataManager.fetchUserDataIfNeeded(force: true)
+                        } catch {
+                            print("❌ Background sync failed for update member: \(error)")
+                        }
+                    }
+                }
             } catch {
                 saveError = "Failed to update family member: \(error.localizedDescription)"
                 showSaveError = true
-                print("❌ Error updating member '\(name)': \(error)")
+                print("❌ Error updating member '\(memberName)': \(error)")
             }
         }
     }
@@ -493,8 +505,16 @@ struct EditFamilyMemberView: View {
     }
 
     private func deleteMember(deleteCalendar: Bool) {
-        // If user wants to delete the calendar too, do it first
-        if deleteCalendar, let calendar = matchedCalendar {
+        // Capture values
+        let memberId = member.id
+        let memberUUIDString = member.id?.uuidString
+        let isGuest = authManager.isGuest
+        let memberCalendars = member.memberCalendars?.allObjects as? [FamilyMemberCalendar]
+        let sharedCalendars = member.sharedCalendars?.allObjects as? [SharedCalendar]
+        let calendarToDelete = matchedCalendar
+        
+        // If user wants to delete the calendar too, do it first (local iOS calendar)
+        if deleteCalendar, let calendar = calendarToDelete {
             let deleted = CalendarManager.shared.deleteCalendar(withIdentifier: calendar.id)
             if deleted {
                 print("✅ Calendar deleted from iOS Calendar app")
@@ -503,27 +523,18 @@ struct EditFamilyMemberView: View {
             }
         }
 
-        Task {
+        Task { @MainActor in
             do {
-                if authManager.isGuest {
-                    // Local-only delete for guests
-                    try dataManager.deleteFamilyMemberLocal(id: member.id ?? UUID())
-                } else {
-                    // Delete from Supabase for authenticated users
-                    if let memberId = member.id?.uuidString {
-                        try await dataManager.deleteFamilyMember(id: memberId)
-                    }
-                }
-
+                // 1. Optimistic Local Delete
                 // Delete all associated calendar entries (auto-linked and manually added)
-                if let memberCalendars = member.memberCalendars?.allObjects as? [FamilyMemberCalendar] {
+                if let memberCalendars = memberCalendars {
                     for calendar in memberCalendars {
                         viewContext.delete(calendar)
                     }
                 }
 
                 // Delete shared calendar associations
-                if let sharedCalendars = member.sharedCalendars?.allObjects as? [SharedCalendar] {
+                if let sharedCalendars = sharedCalendars {
                     for sharedCalendar in sharedCalendars {
                         sharedCalendar.removeFromMembers(member)
                     }
@@ -533,8 +544,22 @@ struct EditFamilyMemberView: View {
                 viewContext.delete(member)
 
                 try viewContext.save()
-                print("✅ Family member deleted successfully")
+                print("✅ Family member deleted locally (optimistic)")
+                
+                // 2. Dismiss UI
                 dismiss()
+                
+                // 3. Background Sync
+                if !isGuest, let memberId = memberUUIDString {
+                    Task.detached {
+                        do {
+                            try await dataManager.supabaseManager.deleteFamilyMember(id: memberId)
+                            print("✅ Family member deleted from Supabase")
+                        } catch {
+                            print("❌ Background sync failed for delete member: \(error)")
+                        }
+                    }
+                }
             } catch {
                 saveError = "Failed to delete family member: \(error.localizedDescription)"
                 showSaveError = true
@@ -544,30 +569,37 @@ struct EditFamilyMemberView: View {
     }
 
     private func unlinkAccount() {
-        Task {
+        let memberUUIDString = member.id?.uuidString
+        let isGuest = authManager.isGuest
+        let memberName = member.name
+        
+        Task { @MainActor in
             do {
                 isUnlinking = true
 
-                if authManager.isGuest {
-                    // Local-only update for guests
-                    member.linkedUserId = nil
-                    try viewContext.save()
-                    print("✅ Account unlinked from family member locally (guest mode)")
-                } else {
-                    // Supabase update for authenticated users - unlink the specific member
-                    if let memberId = member.id?.uuidString {
-                        try await dataManager.supabaseManager.unlinkSpecificMember(memberId: memberId)
-                        member.linkedUserId = nil
-                        try viewContext.save()
-                        print("✅ Account unlinked from family member \(member.name ?? "Unknown")")
-
-                        // Refresh data from Supabase to ensure UI updates
-                        await dataManager.fetchUserData()
-                    }
-                }
-
+                // 1. Optimistic Local Update
+                member.linkedUserId = nil
+                try viewContext.save()
+                print("✅ Account unlinked from family member locally (optimistic)")
+                
+                // 2. Dismiss UI
                 isUnlinking = false
                 dismiss()
+                
+                // 3. Background Sync
+                if !isGuest, let memberId = memberUUIDString {
+                    Task.detached {
+                        do {
+                            try await dataManager.supabaseManager.unlinkSpecificMember(memberId: memberId)
+                            print("✅ Account unlinked from family member \(memberName ?? "Unknown") on Supabase")
+                            
+                            // Refresh data
+                            await dataManager.fetchUserDataIfNeeded(force: true)
+                        } catch {
+                            print("❌ Background sync failed for unlink account: \(error)")
+                        }
+                    }
+                }
             } catch {
                 saveError = "Failed to unlink account: \(error.localizedDescription)"
                 showSaveError = true

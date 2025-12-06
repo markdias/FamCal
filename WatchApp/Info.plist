@@ -4,10 +4,10 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
-	<key>CFBundleIdentifier</key>
-	<string>mdias.FamCal.watchapp</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleName</key>
 	<string>FamCal</string>
 	<key>CFBundlePackageType</key>
@@ -19,7 +19,7 @@
 	<key>MinimumOSVersion</key>
 	<string>10.0</string>
 	<key>WKAppBundleIdentifier</key>
-	<string>mdias.FamCal.watchkitextension</string>
+	<string>mdias.FamCal.watchapp.watchkitextension</string>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>mdias.FamCal</string>
 	<key>WKWatchKitApp</key>

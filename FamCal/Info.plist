@@ -2,48 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-6842193682076971~7907201759</string>
-	<key>GIDClientID</key>
-	<string>555073180680-eku35n9vu7rgvr8nohtc0l5dai0fi5av.apps.googleusercontent.com</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>FamCal needs access to your calendars to display family members' events and sync them.</string>
-	<key>NSCalendarsWriteOnlyUsageDescription</key>
-	<string>FamCal writes new family events, reminders, alerts, and travel time blocks to your calendars.</string>
-	<key>NSContactsUsageDescription</key>
-	<string>FamCal uses your contacts to help identify family members' calendars automatically.</string>
-	<key>NSPrivacyContactsUsageDescription</key>
-	<string>FamCal uses your contacts to help identify family members' calendars automatically.</string>
-	<key>NSUserNotificationsUsageDescription</key>
-	<string>FamCal sends notifications for upcoming family events and morning summaries.</string>
-	<key>NSPrivacyCalendarsUsageDescription</key>
-	<string>FamCal needs access to your calendars to display family members' events and sync them.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-		<string>fetch</string>
-	</array>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.mdias.famcal</string>
+			<string>mdias.famcal</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>famcal</string>
@@ -60,16 +25,33 @@
 			</array>
 		</dict>
 	</array>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-6842193682076971~7907201759</string>
+	<key>GIDClientID</key>
+	<string>555073180680-eku35n9vu7rgvr8nohtc0l5dai0fi5av.apps.googleusercontent.com</string>
+	<key>NSCalendarsWriteOnlyUsageDescription</key>
+	<string>FamCal writes new family events, reminders, alerts, and travel time blocks to your calendars.</string>
+	<key>NSPrivacyCalendarsUsageDescription</key>
+	<string>FamCal needs access to your calendars to display family members' events and sync them.</string>
+	<key>NSPrivacyContactsUsageDescription</key>
+	<string>FamCal uses your contacts to help identify family members' calendars automatically.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>FamCal sends notifications for upcoming family events and morning summaries.</string>
 	<key>UIApplicationShortcutItems</key>
 	<array>
 		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>com.mdias.famcal.logout</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Sign Out</string>
 			<key>UIApplicationShortcutItemIconType</key>
 			<string>UIApplicationShortcutIconTypeAccount</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Sign Out</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>mdias.famcal.logout</string>
 		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
 	</array>
 </dict>
 </plist>

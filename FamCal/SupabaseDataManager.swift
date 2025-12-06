@@ -31,6 +31,7 @@ class SupabaseDataManager: ObservableObject {
     private var managedObjectContext: NSManagedObjectContext?
     private var networkMonitor: NWPathMonitor?
     private var wasOffline = false
+    private var lastAuthenticatedUserId: String?
 
     init() {
         self.supabaseManager = SupabaseManager.shared
@@ -41,29 +42,43 @@ class SupabaseDataManager: ObservableObject {
         setupNetworkMonitoring()
 
         // Observe authentication changes to fetch data
+        // IMPORTANT: Only clear data when there's an ACTUAL user change, not just session restoration
         authManager.$isAuthenticated
-            .sink { [weak self] isAuthenticated in
+            .combineLatest(authManager.$userId)
+            .sink { [weak self] (isAuthenticated, userId) in
                 if isAuthenticated {
                     Task { @MainActor in
-                        print("ℹ️ Authentication state changed to authenticated, clearing guest data first...")
-                        // Clear guest/old data before fetching authenticated user's data
-                        self?.clearData()
+                        // Check if this is a different user than the last one
+                        let isDifferentUser = self?.lastAuthenticatedUserId != nil && self?.lastAuthenticatedUserId != userId
 
-                        // Clear CoreData and sync metadata
-                        if let context = self?.managedObjectContext {
-                            self?.clearAllLocalData()
+                        if isDifferentUser {
+                            print("ℹ️ Different user detected, clearing previous user's data...")
+                            // Clear previous user's data before fetching new user's data
+                            self?.clearData()
 
-                            // Clear sync metadata so data is fetched fresh
-                            SyncMetadataManager.shared.clearAllMetadata(context: context)
+                            // Clear CoreData and sync metadata
+                            if let context = self?.managedObjectContext {
+                                self?.clearAllLocalData()
+
+                                // Clear sync metadata so data is fetched fresh
+                                SyncMetadataManager.shared.clearAllMetadata(context: context)
+                            }
+                        } else {
+                            print("ℹ️ Same user session restored, keeping existing data...")
                         }
 
+                        // Update the last authenticated user ID
+                        self?.lastAuthenticatedUserId = userId
+
                         print("ℹ️ Authentication state changed to authenticated, attempting to fetch data...")
-                        // Fetch authenticated user's data immediately
+                        // Fetch authenticated user's data (with change detection, won't refetch if not needed)
                         await self?.fetchUserData()
                     }
                 } else {
                     Task { @MainActor in
+                        print("ℹ️ User logged out, clearing data...")
                         self?.clearData()
+                        self?.lastAuthenticatedUserId = nil
                     }
                 }
             }
@@ -128,6 +143,8 @@ class SupabaseDataManager: ObservableObject {
 
     // MARK: - Data Fetching
 
+    // MARK: - Data Fetching
+
     /// Fetch user data only if changes detected or sync interval exceeded
     /// This is the primary method to use for background syncing with change detection
     @MainActor
@@ -179,17 +196,59 @@ class SupabaseDataManager: ObservableObject {
             syncIntervalMinutes: syncIntervalMinutes,
             context: context
         )
+        
+        // Always fetch metadata if we are fetching anything else, or if it's stale
+        let shouldFetchMetadata = shouldFetchMembers || shouldFetchSharedCalendars || SyncMetadataManager.shared.shouldFetchData(
+            entityType: .calendarEventMetadata,
+            syncIntervalMinutes: syncIntervalMinutes,
+            context: context
+        )
 
         // If nothing needs fetching, load from CoreData and return
         if !shouldFetchMembers && !shouldFetchSharedCalendars && !shouldFetchPersonalCalendars &&
-           !shouldFetchDrivers && !shouldFetchAddresses {
+           !shouldFetchDrivers && !shouldFetchAddresses && !shouldFetchMetadata {
             print("✅ All data is fresh - loading from CoreData cache")
             loadCachedDataFromCoreData(context)
             return
         }
 
         print("🔄 Change detection: fetching updated data from Supabase")
-        await fetchUserData()
+
+        // Execute granular fetches
+        isLoading = true
+        errorMessage = nil
+
+        // IMPORTANT: Fetch family members FIRST before shared/personal calendars
+        // because calendars need to be linked to members
+        if shouldFetchMembers {
+            await fetchFamilyMembers()
+        }
+
+        // Now fetch everything else in parallel
+        await withTaskGroup(of: Void.self) { group in
+            if shouldFetchSharedCalendars {
+                group.addTask { await self.fetchSharedCalendars() }
+            }
+            if shouldFetchPersonalCalendars {
+                group.addTask { await self.fetchPersonalCalendars() }
+            }
+            if shouldFetchDrivers {
+                group.addTask { await self.fetchDrivers() }
+            }
+            if shouldFetchAddresses {
+                group.addTask { await self.fetchSavedAddresses() }
+            }
+            if shouldFetchMetadata {
+                group.addTask { await self.fetchEventMetadata() }
+            }
+        }
+        
+        // Refresh local family info if needed
+        if !authManager.isGuest, let userId = authManager.userId {
+             await refreshLocalFamilyInfo(userId: userId)
+        }
+        
+        isLoading = false
     }
 
     /// Phase 5: Sync pending offline changes to Supabase, then refresh all data
@@ -260,13 +319,15 @@ class SupabaseDataManager: ObservableObject {
             // If driver was modified after last sync, upload the change
             if modifiedAt > lastSync {
                 print("📤 Uploading pending change for driver: \(driver.name ?? "Unknown")")
-                await updateDriver(
-                    id: driver.id ?? UUID(),
-                    name: driver.name ?? "",
-                    phone: driver.phone,
-                    email: driver.email,
-                    notes: driver.notes
-                )
+                if let driverId = driver.id {
+                    await updateDriver(
+                        id: driverId.uuidString,
+                        name: driver.name ?? "",
+                        phone: driver.phone,
+                        email: driver.email,
+                        notes: driver.notes
+                    )
+                }
             }
         }
     }
@@ -296,96 +357,43 @@ class SupabaseDataManager: ObservableObject {
 
     @MainActor
     func fetchUserData() async {
-        guard let userId = authManager.userId else {
-            errorMessage = "User ID not available"
-            print("❌ Cannot fetch data: User ID is nil")
-            return
-        }
-
-            print("ℹ️ Starting data fetch for user: \(userId)")
-            isLoading = true
-            errorMessage = nil
-
-            do {
-                print("ℹ️ Fetching family members from Supabase...")
-            async let familyMembers = supabaseManager.getFamilyMembers(userId: userId)
-            async let sharedCalendars = supabaseManager.getSharedCalendars(userId: userId)
-            async let personalCalendars = supabaseManager.getPersonalCalendars(userId: userId)
-            async let drivers = supabaseManager.getDrivers(userId: userId)
-            async let savedAddresses = supabaseManager.getSavedAddresses(userId: userId)
-            async let eventMetadata = supabaseManager.getCalendarEventMetadata(userId: userId)
-
-            self.familyMembers = try await familyMembers
+        await fetchUserDataIfNeeded(force: true)
+    }
+    
+    // MARK: - Granular Fetch Methods
+    
+    @MainActor
+    func fetchFamilyMembers() async {
+        guard let userId = authManager.userId else { return }
+        print("ℹ️ Fetching family members from Supabase...")
+        
+        do {
+            self.familyMembers = try await supabaseManager.getFamilyMembers(userId: userId)
             print("✅ Fetched \(self.familyMembers.count) family members from Supabase")
+            
             await populateMemberEmails(from: self.familyMembers)
+            
             // Auto-select linked family member for current user
             if let authUserId = authManager.userId,
                let linkedMember = self.familyMembers.first(where: { $0.linked_user_id == authUserId }) {
                 appSettingsManager.linkedFamilyMemberId = linkedMember.id
                 await appSettingsManager.saveSettings()
-                print("✅ Linked current user to family member: \(linkedMember.name)")
             }
-
+            
+            // Also fetch calendars for these members
             print("ℹ️ Fetching family member calendars from Supabase...")
             var calendarDTOs = try await fetchAllFamilyMemberCalendars()
             self.familyMemberCalendars = calendarDTOs
-            print("✅ Fetched \(calendarDTOs.count) family member calendars from Supabase")
-
-            // If no calendars are linked yet, attempt an auto-link pass by matching calendar names on device
+            
+            // If no calendars are linked yet, attempt an auto-link pass
             if calendarDTOs.isEmpty, await autoLinkCalendarsIfEmpty(familyMembers: self.familyMembers) {
                 print("ℹ️ Refetching calendars after auto-link...")
                 calendarDTOs = try await fetchAllFamilyMemberCalendars()
                 self.familyMemberCalendars = calendarDTOs
-                print("✅ Fetched \(calendarDTOs.count) family member calendars after auto-link")
             }
-
-            self.sharedCalendars = try await sharedCalendars
-            print("✅ Fetched \(self.sharedCalendars.count) shared calendars from Supabase")
-
-            self.personalCalendars = try await personalCalendars
-            print("✅ Fetched \(self.personalCalendars.count) personal calendars from Supabase")
-
-            if let fetchedDrivers = try? await drivers {
-                self.drivers = fetchedDrivers
-                print("✅ Fetched \(self.drivers.count) drivers from Supabase")
-            } else {
-                self.drivers = []
-                print("⚠️ Failed to fetch drivers from Supabase, continuing with empty list")
-            }
-
-            if let fetchedAddresses = try? await savedAddresses {
-                self.savedAddresses = fetchedAddresses
-                print("✅ Fetched \(self.savedAddresses.count) saved addresses from Supabase")
-            } else {
-                self.savedAddresses = []
-                print("⚠️ Failed to fetch saved addresses from Supabase, continuing with empty list")
-            }
-
-            let calendarEventMetadata = (try? await eventMetadata) ?? []
-            print("✅ Fetched \(calendarEventMetadata.count) calendar event metadata records from Supabase")
-
-            if !authManager.isGuest {
-                await refreshLocalFamilyInfo(userId: userId)
-            }
-
-            // Sync to CoreData for backward compatibility with existing views
+            
+            // Sync to CoreData
             if let context = managedObjectContext {
-                print("ℹ️ Syncing data to CoreData...")
-
-                // Ensure linkedFamilyMemberId is loaded for personal calendar sync
-                if appSettingsManager.linkedFamilyMemberId == nil {
-                    print("⚠️ linkedFamilyMemberId not yet set - attempting to auto-link current user...")
-                    // Auto-select linked family member for current user if not already set
-                    if let authUserId = authManager.userId,
-                       let linkedMember = self.familyMembers.first(where: { $0.linked_user_id == authUserId }) {
-                        appSettingsManager.linkedFamilyMemberId = linkedMember.id
-                        await appSettingsManager.saveSettings()
-                        print("✅ Auto-linked current user to family member: \(linkedMember.name)")
-                    }
-                }
-
-                print("  📌 linkedFamilyMemberId for personal calendars: \(appSettingsManager.linkedFamilyMemberId ?? "nil")")
-
                 SupabaseDataSync.shared.syncFamilyMembersFromSupabase(
                     supabaseMembers: self.familyMembers,
                     supabaseCalendars: calendarDTOs,
@@ -393,60 +401,150 @@ class SupabaseDataManager: ObservableObject {
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .familyMembers, context: context)
                 SyncMetadataManager.shared.recordSync(entityType: .familyMemberCalendars, context: context)
-
+            }
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                print("ℹ️ Fetching family members cancelled")
+            } else {
+                print("❌ Error fetching family members: \(error)")
+            }
+        }
+    }
+    
+    @MainActor
+    func fetchSharedCalendars() async {
+        guard let userId = authManager.userId else { return }
+        print("ℹ️ Fetching shared calendars from Supabase...")
+        
+        do {
+            self.sharedCalendars = try await supabaseManager.getSharedCalendars(userId: userId)
+            print("✅ Fetched \(self.sharedCalendars.count) shared calendars from Supabase")
+            
+            if let context = managedObjectContext {
                 SupabaseDataSync.shared.syncSharedCalendarsFromSupabase(
                     supabaseCalendars: self.sharedCalendars,
                     to: context
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .sharedCalendars, context: context)
-
+            }
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                print("ℹ️ Fetching shared calendars cancelled")
+            } else {
+                print("❌ Error fetching shared calendars: \(error)")
+            }
+        }
+    }
+    
+    @MainActor
+    func fetchPersonalCalendars() async {
+        guard let userId = authManager.userId else { return }
+        print("ℹ️ Fetching personal calendars from Supabase...")
+        
+        do {
+            self.personalCalendars = try await supabaseManager.getPersonalCalendars(userId: userId)
+            print("✅ Fetched \(self.personalCalendars.count) personal calendars from Supabase")
+            
+            if let context = managedObjectContext {
+                // Ensure linkedFamilyMemberId is loaded
+                if appSettingsManager.linkedFamilyMemberId == nil {
+                    if let authUserId = authManager.userId,
+                       let linkedMember = self.familyMembers.first(where: { $0.linked_user_id == authUserId }) {
+                        appSettingsManager.linkedFamilyMemberId = linkedMember.id
+                        await appSettingsManager.saveSettings()
+                    }
+                }
+                
                 SupabaseDataSync.shared.syncPersonalCalendarsFromSupabase(
                     supabaseCalendars: self.personalCalendars,
                     to: context,
                     linkedFamilyMemberId: appSettingsManager.linkedFamilyMemberId
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .personalCalendars, context: context)
-
+            }
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                print("ℹ️ Fetching personal calendars cancelled")
+            } else {
+                print("❌ Error fetching personal calendars: \(error)")
+            }
+        }
+    }
+    
+    @MainActor
+    func fetchDrivers() async {
+        guard let userId = authManager.userId else { return }
+        print("ℹ️ Fetching drivers from Supabase...")
+        
+        do {
+            self.drivers = try await supabaseManager.getDrivers(userId: userId)
+            print("✅ Fetched \(self.drivers.count) drivers from Supabase")
+            
+            if let context = managedObjectContext {
                 SupabaseDataSync.shared.syncDriversFromSupabase(
                     supabaseDrivers: self.drivers,
                     to: context
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .drivers, context: context)
-
+            }
+        } catch {
+             if (error as NSError).code == NSURLErrorCancelled {
+                 print("ℹ️ Fetching drivers cancelled")
+             } else {
+                 print("❌ Error fetching drivers: \(error)")
+             }
+        }
+    }
+    
+    @MainActor
+    func fetchSavedAddresses() async {
+        guard let userId = authManager.userId else { return }
+        print("ℹ️ Fetching saved addresses from Supabase...")
+        
+        do {
+            self.savedAddresses = try await supabaseManager.getSavedAddresses(userId: userId)
+            print("✅ Fetched \(self.savedAddresses.count) saved addresses from Supabase")
+            
+            if let context = managedObjectContext {
                 SupabaseDataSync.shared.syncSavedAddressesFromSupabase(
                     supabaseAddresses: self.savedAddresses,
                     to: context
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .savedAddresses, context: context)
-
+            }
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                print("ℹ️ Fetching saved addresses cancelled")
+            } else {
+                print("❌ Error fetching saved addresses: \(error)")
+            }
+        }
+    }
+    
+    @MainActor
+    func fetchEventMetadata() async {
+        guard let userId = authManager.userId else { return }
+        print("ℹ️ Fetching calendar event metadata from Supabase...")
+        
+        do {
+            let metadata = try await supabaseManager.getCalendarEventMetadata(userId: userId)
+            print("✅ Fetched \(metadata.count) event metadata records from Supabase")
+            
+            if let context = managedObjectContext {
                 SupabaseDataSync.shared.syncEventMetadataFromSupabase(
-                    supabaseMetadata: calendarEventMetadata,
+                    supabaseMetadata: metadata,
                     self.drivers,
                     to: context
                 )
                 SyncMetadataManager.shared.recordSync(entityType: .calendarEventMetadata, context: context)
-            } else {
-                print("⚠️ CoreData context not available - skipping sync")
             }
-
-            print("✅ Data fetch complete: \(self.familyMembers.count) family members and \(self.sharedCalendars.count) shared calendars")
         } catch {
-            if let urlError = error as? URLError, urlError.code == .cancelled {
-                print("ℹ️ Data fetch cancelled (likely superseded by a newer request)")
-                return
-            }
-
-            // Network error detected - load from CoreData cache instead of clearing
-            print("⚠️ Network error fetching data, will load from cached CoreData: \(error.localizedDescription)")
-            if let context = managedObjectContext {
-                loadCachedDataFromCoreData(context)
+            if (error as NSError).code == NSURLErrorCancelled {
+                print("ℹ️ Fetching event metadata cancelled")
             } else {
-                errorMessage = "Network unavailable and no cached data access"
-                print("❌ Network error and no CoreData context available")
+                print("❌ Error fetching event metadata: \(error)")
             }
         }
-
-        isLoading = false
     }
 
     /// Load cached data from CoreData when network is unavailable
@@ -606,7 +704,11 @@ class SupabaseDataManager: ObservableObject {
         do {
             fetchedFamily = try await supabaseManager.getFamilyForOwner(userId: userId)
         } catch {
-            print("⚠️ Unable to fetch owner family info: \(error)")
+            if (error as NSError).code == NSURLErrorCancelled {
+                print("ℹ️ Fetching owner family info cancelled")
+            } else {
+                print("⚠️ Unable to fetch owner family info: \(error)")
+            }
         }
 
         if fetchedFamily == nil {
@@ -723,13 +825,9 @@ class SupabaseDataManager: ObservableObject {
         return createdMember
     }
 
-    /// Create family member locally only (for guest mode - no Supabase sync)
+    /// Create family member locally (optimistic update)
     @MainActor
     func createFamilyMemberLocal(name: String, colorHex: String) throws -> FamilyMember {
-        guard authManager.isGuest else {
-            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use createFamilyMember for authenticated users"])
-        }
-
         guard let context = managedObjectContext else {
             throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
         }
@@ -740,10 +838,11 @@ class SupabaseDataManager: ObservableObject {
         member.colorHex = colorHex
         member.avatarInitials = getInitials(from: name)
         member.sortOrder = Int16(familyMembers.count)
+        member.modifiedAt = Date() // Mark as modified for sync
 
         do {
             try context.save()
-            print("✅ Family member '\(name)' saved locally (guest mode)")
+            print("✅ Family member '\(name)' saved locally (optimistic)")
             return member
         } catch {
             print("❌ Error saving family member locally: \(error)")
@@ -765,16 +864,12 @@ class SupabaseDataManager: ObservableObject {
         try await supabaseManager.updateFamilyMember(id: id, name: name, colorHex: colorHex)
 
         // Refresh family members list
-        await fetchUserData()
+        await fetchFamilyMembers()
     }
 
-    /// Update family member locally only (for guest mode - no Supabase sync)
+    /// Update family member locally (optimistic update)
     @MainActor
     func updateFamilyMemberLocal(id: UUID, name: String, colorHex: String) throws {
-        guard authManager.isGuest else {
-            throw NSError(domain: "NotGuestMode", code: -1, userInfo: ["message": "Use updateFamilyMember for authenticated users"])
-        }
-
         guard let context = managedObjectContext else {
             throw NSError(domain: "NoContext", code: -1, userInfo: ["message": "CoreData context not available"])
         }
@@ -789,10 +884,11 @@ class SupabaseDataManager: ObservableObject {
         member.name = name
         member.colorHex = colorHex
         member.avatarInitials = getInitials(from: name)
+        member.modifiedAt = Date() // Mark as modified for sync
 
         do {
             try context.save()
-            print("✅ Family member '\(name)' updated locally (guest mode)")
+            print("✅ Family member '\(name)' updated locally (optimistic)")
         } catch {
             print("❌ Error updating family member locally: \(error)")
             throw error
@@ -1145,7 +1241,7 @@ class SupabaseDataManager: ObservableObject {
     // MARK: - Drivers
 
     @MainActor
-    func createDriver(name: String, phone: String?, email: String?, notes: String?, travelTimeMinutes: Int = 0, familyMemberId: UUID? = nil) async {
+    func createDriver(name: String, phone: String?, email: String?, notes: String?, travelTimeMinutes: Int = 0, familyMemberId: UUID? = nil, id: String? = nil) async {
         guard appSettingsManager.isProUser else {
             print("❌ Drivers are Pro-only. Enable Pro to add drivers.")
             return
@@ -1165,24 +1261,25 @@ class SupabaseDataManager: ObservableObject {
                 notes: notes,
                 travelTimeMinutes: travelTimeMinutes,
                 familyMemberId: familyMemberId?.uuidString,
-                familyId: familyId
+                familyId: familyId,
+                id: id
             )
             print("✅ Driver created in Supabase")
-            await fetchUserData()
+            // No full fetch needed, local is already updated
         } catch {
             print("❌ Error creating driver in Supabase: \(error)")
         }
     }
 
     @MainActor
-    func updateDriver(id: UUID, name: String, phone: String?, email: String?, notes: String?, travelTimeMinutes: Int = 0, familyMemberId: UUID? = nil) async {
+    func updateDriver(id: String, name: String, phone: String?, email: String?, notes: String?, travelTimeMinutes: Int = 0, familyMemberId: UUID? = nil) async {
         guard appSettingsManager.isProUser else {
             print("❌ Drivers are Pro-only. Enable Pro to edit drivers.")
             return
         }
         do {
             try await supabaseManager.updateDriver(
-                id: id.uuidString,
+                id: id,
                 name: name,
                 phone: phone,
                 email: email,
@@ -1191,22 +1288,22 @@ class SupabaseDataManager: ObservableObject {
                 familyMemberId: familyMemberId?.uuidString
             )
             print("✅ Driver updated in Supabase")
-            await fetchUserData()
+            // No full fetch needed
         } catch {
             print("❌ Error updating driver in Supabase: \(error)")
         }
     }
 
     @MainActor
-    func deleteDriver(id: UUID) async {
+    func deleteDriver(id: String) async {
         guard appSettingsManager.isProUser else {
             print("❌ Drivers are Pro-only. Enable Pro to remove drivers.")
             return
         }
         do {
-            try await supabaseManager.deleteDriver(id: id.uuidString)
+            try await supabaseManager.deleteDriver(id: id)
             print("✅ Driver deleted in Supabase")
-            await fetchUserData()
+            // No full fetch needed
         } catch {
             print("❌ Error deleting driver in Supabase: \(error)")
         }
@@ -1215,7 +1312,7 @@ class SupabaseDataManager: ObservableObject {
     // MARK: - Saved Addresses
 
     @MainActor
-    func createSavedAddress(name: String, address: String, latitude: Double, longitude: Double) async {
+    func createSavedAddress(name: String, address: String, latitude: Double, longitude: Double, id: String? = nil) async {
         guard appSettingsManager.isProUser else {
             print("❌ Saved places are Pro-only. Enable Pro to add saved places.")
             return
@@ -1231,23 +1328,24 @@ class SupabaseDataManager: ObservableObject {
                 name: name,
                 address: address,
                 latitude: latitude,
-                longitude: longitude
+                longitude: longitude,
+                id: id
             )
             print("✅ Saved address created in Supabase")
-            await fetchUserData()
+            // No full fetch needed
         } catch {
             print("❌ Error creating saved address in Supabase: \(error)")
         }
     }
 
     @MainActor
-    func deleteSavedAddress(id: UUID) async {
+    func deleteSavedAddress(id: String) async {
         guard appSettingsManager.isProUser else {
             print("❌ Saved places are Pro-only. Enable Pro to delete saved places.")
             return
         }
         do {
-            try await supabaseManager.deleteSavedAddress(id: id.uuidString)
+            try await supabaseManager.deleteSavedAddress(id: id)
             print("✅ Saved address deleted in Supabase")
             await fetchUserData()
         } catch {

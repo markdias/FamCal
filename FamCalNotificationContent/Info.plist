@@ -11,10 +11,10 @@
 				<string>EVENT_NOTIFICATION</string>
 				<string>MORNING_BRIEF</string>
 			</array>
-			<key>UNNotificationExtensionInitialContentSizeRatio</key>
-			<real>2.5</real>
 			<key>UNNotificationExtensionDefaultContentHidden</key>
 			<true/>
+			<key>UNNotificationExtensionInitialContentSizeRatio</key>
+			<real>2.5</real>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.usernotifications.content</string>

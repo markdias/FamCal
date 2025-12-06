@@ -115,7 +115,7 @@ class SupabaseManager: @unchecked Sendable {
 
     // MARK: - Family Members
 
-    func createFamilyMember(userId: String, name: String, colorHex: String, token: String? = nil) async throws -> FamilyMemberDTO {
+    func createFamilyMember(userId: String, name: String, colorHex: String, id: UUID? = nil, token: String? = nil) async throws -> FamilyMemberDTO {
         let userToken = token ?? authManager.accessToken
 
         // Fetch profile to get family_id so the row is visible under family-scoped RLS
@@ -143,12 +143,16 @@ class SupabaseManager: @unchecked Sendable {
             }
         }
 
-        let body: [String: String] = [
+        var body: [String: String] = [
             "user_id": userId,
             "family_id": familyId,
             "name": name,
             "color_hex": colorHex
         ]
+        
+        if let id = id {
+            body["id"] = id.uuidString
+        }
 
         let (data, statusCode) = try await makeRequest("POST", path: "rest/v1/family_members", body: body, userToken: userToken)
 
@@ -968,12 +972,21 @@ class SupabaseManager: @unchecked Sendable {
     func addSharedCalendar(userId: String, calendarName: String, calendarColorHex: String, token: String? = nil) async throws -> SharedCalendarDTO {
         // Resolve family_id for shared visibility
         let familyId: String
-        if let profile = try? await getProfile(userId: userId, token: token), let fid = profile.family_id {
+        let profile = try? await getProfile(userId: userId, token: token)
+        
+        if let fid = profile?.family_id {
+            print("ℹ️ Found family_id from profile: \(fid)")
             familyId = fid
         } else if let family = try? await getCurrentFamily(token: token) {
+            print("ℹ️ Found family_id from current family: \(family.id)")
             familyId = family.id
         } else {
+            print("❌ Could not resolve family_id from profile or current family. Profile family_id: \(String(describing: profile?.family_id))")
             throw NSError(domain: "AddSharedCalendar", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing family_id on profile or current family"])
+        }
+
+        if familyId.isEmpty {
+             throw NSError(domain: "AddSharedCalendar", code: -1, userInfo: [NSLocalizedDescriptionKey: "Resolved family_id is empty"])
         }
 
         let body: [String: String] = [
@@ -982,6 +995,8 @@ class SupabaseManager: @unchecked Sendable {
             "calendar_name": calendarName,
             "calendar_color_hex": calendarColorHex
         ]
+        
+        print("📤 Creating shared calendar with body: \(body)")
 
         let userToken = token ?? authManager.accessToken
         let (data, statusCode) = try await makeRequest("POST", path: "rest/v1/shared_calendars", body: body, userToken: userToken)
@@ -1247,6 +1262,7 @@ class SupabaseManager: @unchecked Sendable {
         travelTimeMinutes: Int,
         familyMemberId: String?,
         familyId: String,
+        id: String? = nil,
         token: String? = nil
     ) async throws {
         struct CreateDriverBody: Encodable {
@@ -1258,6 +1274,7 @@ class SupabaseManager: @unchecked Sendable {
             let travel_time_minutes: Int
             let family_member_id: String?
             let family_id: String
+            let id: String?
         }
 
         let body = CreateDriverBody(
@@ -1268,7 +1285,8 @@ class SupabaseManager: @unchecked Sendable {
             notes: notes,
             travel_time_minutes: travelTimeMinutes,
             family_member_id: familyMemberId,
-            family_id: familyId
+            family_id: familyId,
+            id: id
         )
 
         let userToken = token ?? authManager.accessToken
@@ -1348,6 +1366,7 @@ class SupabaseManager: @unchecked Sendable {
         address: String,
         latitude: Double,
         longitude: Double,
+        id: String? = nil,
         token: String? = nil
     ) async throws {
         struct CreateSavedAddressBody: Encodable {
@@ -1357,6 +1376,7 @@ class SupabaseManager: @unchecked Sendable {
             let address: String
             let latitude: Double
             let longitude: Double
+            let id: String?
         }
 
         // Resolve family_id for shared visibility
@@ -1375,7 +1395,8 @@ class SupabaseManager: @unchecked Sendable {
             name: name,
             address: address,
             latitude: latitude,
-            longitude: longitude
+            longitude: longitude,
+            id: id
         )
 
         let userToken = token ?? authManager.accessToken

@@ -61,7 +61,7 @@ struct FamCalApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var dataManager = SupabaseDataManager.shared
     @StateObject private var appSettingsManager = AppSettingsManager.shared
-    @StateObject private var watchSessionManager = WatchSessionManager()
+    @StateObject private var watchSessionManager = WatchSessionManager.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var hasCompletedOnboarding: Bool = false
     @State private var deepLinkEventTitle: String?
@@ -126,6 +126,8 @@ struct FamCalApp: App {
         ) { _ in
             // Nudge widgets to reload quickly after data changes
             WidgetCenter.shared.reloadAllTimelines()
+            // Sync to watch when data changes
+            WatchSessionManager.shared.syncMembersToWatch()
         }
     }
 
@@ -312,6 +314,8 @@ struct FamCalApp: App {
                 if phase == .active {
                     print("🔄 App became active - calling resetStore()")
                     CalendarManager.shared.resetStore()
+                    // Sync members to watch when app becomes active
+                    watchSessionManager.syncMembersToWatch()
                     // NOTE: We only reset the EventKit store here. Data syncing happens via:
                     // 1. Automatic refresh timer (set by AppSettingsManager)
                     // 2. Manual pull-to-refresh in calendar views
@@ -493,7 +497,7 @@ struct FamCalApp: App {
     /// Handle quick action from app icon
     private func handleQuickAction(_ shortcutItem: UIApplicationShortcutItem) {
         print("🔔 Quick action handled in onContinueUserActivity: \(shortcutItem.type)")
-        if shortcutItem.type == "com.mdias.famcal.logout" {
+        if shortcutItem.type == "mdias.famcal.logout" {
             print("🔔 Sign Out quick action detected")
             Task { @MainActor in
                 do {
@@ -572,7 +576,7 @@ struct FamCalApp: App {
                     if let inviteToken {
                         do {
                             try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
-                            await SupabaseDataManager.shared.fetchUserData()
+                            await SupabaseDataManager.shared.fetchUserDataIfNeeded()
                             print("✅ Invitation accepted and data refreshed")
                         } catch {
                             print("❌ Failed to accept invitation: \(error)")
@@ -581,7 +585,7 @@ struct FamCalApp: App {
                         // Fallback: accept by current user's email via service-role function when token is missing
                         do {
                             try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
-                            await SupabaseDataManager.shared.fetchUserData()
+                            await SupabaseDataManager.shared.fetchUserDataIfNeeded()
                             print("✅ Invitation accepted via email fallback and data refreshed")
                         } catch {
                             print("❌ Failed to accept invitation via email fallback: \(error)")
@@ -601,7 +605,7 @@ struct FamCalApp: App {
                 Task { @MainActor in
                     do {
                         try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
-                        await SupabaseDataManager.shared.fetchUserData()
+                        await SupabaseDataManager.shared.fetchUserDataIfNeeded()
                         print("✅ Invitation accepted and data refreshed")
 
                         checkFamilySetupNeeded()

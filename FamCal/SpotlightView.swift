@@ -125,13 +125,10 @@ struct SpotlightView: View {
                                         }
                                     }
 
-                                    Button(action: {}) {
-                                        eventCard(event)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .onTapGesture {
-                                        handleEventTap(event: event)
-                                    }
+                                    eventCard(event)
+                                        .onTapGesture {
+                                            handleEventTap(event: event)
+                                        }
                                     .contextMenu {
                                         let upcomingEvent = UpcomingCalendarEvent(
                                             id: event.eventIdentifier,
