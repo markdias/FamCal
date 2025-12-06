@@ -93,7 +93,6 @@ struct DeletionContext {
     }
 
     var displayMessage: String {
-        let linkedText = linkedEventCount > 1 ? " (\(linkedEventCount) people)" : ""
         let eventDetails = eventDetailsSection
 
         switch (scope, target, actionType) {

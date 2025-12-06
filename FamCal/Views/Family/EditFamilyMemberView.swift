@@ -382,7 +382,6 @@ struct EditFamilyMemberView: View {
         let memberIsDriver = isDriver
         let matched = matchedCalendar
         let isGuest = authManager.isGuest
-        let memberId = member.id
         let memberUUIDString = member.id?.uuidString
         
         Task { @MainActor in
@@ -506,7 +505,6 @@ struct EditFamilyMemberView: View {
 
     private func deleteMember(deleteCalendar: Bool) {
         // Capture values
-        let memberId = member.id
         let memberUUIDString = member.id?.uuidString
         let isGuest = authManager.isGuest
         let memberCalendars = member.memberCalendars?.allObjects as? [FamilyMemberCalendar]

@@ -54,7 +54,7 @@ struct AddSavedAddressView: View {
                             .padding()
                             .background(theme.cardBackground)
                             .cornerRadius(8)
-                            .onChange(of: address) { newValue in
+                            .onChange(of: address) { _, newValue in
                                 locationSearcher.searchQuery = newValue
                                 isSearching = !newValue.isEmpty
                             }

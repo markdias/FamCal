@@ -95,8 +95,8 @@ class SupabaseDataSync {
                 // SAFETY: Only delete if we got data back from Supabase FOR THIS MEMBER to avoid data loss on partial API responses
                 if !supabaseMemberCalendars.isEmpty {
                     let calendarMetadata = SyncMetadataManager.shared.fetchMetadata(entityType: .familyMemberCalendars, context: context)
-                    let lastCalendarSync = calendarMetadata?.lastSyncTime ?? .distantPast
-                    
+                    _ = calendarMetadata?.lastSyncTime ?? .distantPast
+
                     for calendar in existingCalendars {
                         if let calendarId = calendar.id?.uuidString, !supabaseCalendarIds.contains(calendarId) {
                             // If calendar was modified/created locally after last sync, keep it
