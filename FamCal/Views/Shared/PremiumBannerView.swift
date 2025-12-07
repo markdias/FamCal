@@ -13,40 +13,84 @@ struct PremiumBannerView: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("FamCal Pro")
-                        .font(.system(size: 18, weight: .bold))
+            if isPro {
+                // Minimal badge for Pro users
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 16))
                         .foregroundColor(.white)
 
-                    Text(isPro ? "All perks unlocked" : "Click to see premium features")
-                        .font(.system(size: 14, weight: .medium))
+                    Text("Pro Active")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    Spacer()
+
+                    Text("Manage")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.9))
                 }
-
-                Spacer()
-
-                Text(isPro ? "Active" : "View")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.18))
-                    .clipShape(Capsule())
-            }
-            .padding(20)
-            .background(
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(red: 0.09, green: 0.42, blue: 0.94),
-                        Color(red: 0.33, green: 0.74, blue: 0.91)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    LinearGradient(
+                        colors: [Color.green, Color.teal],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-            )
-            .cornerRadius(20)
-            .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 6)
+                .cornerRadius(12)
+            } else {
+                // Compact card for Free users
+                HStack(spacing: 14) {
+                    // Icon
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 22))
+                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.4))
+
+                    // Content
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("FamCal Pro")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+
+                        Text("Unlimited family, themes & more")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.85))
+
+                        Text("3-day free trial")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.4))
+                    }
+
+                    Spacer()
+
+                    // CTA
+                    VStack(spacing: 2) {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.white)
+
+                        Text("View")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.22, green: 0.24, blue: 0.30),
+                            Color(red: 0.30, green: 0.34, blue: 0.42)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
+            }
         }
         .buttonStyle(.plain)
     }

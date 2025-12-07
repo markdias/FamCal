@@ -31,7 +31,7 @@ struct SettingsRowView: View {
             Spacer()
 
             if showChevron {
-                Image(systemName: "chevron.right")
+                Image(systemName: "pencil")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(secondaryTextColor.opacity(0.6))
             }

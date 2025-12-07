@@ -24,7 +24,7 @@ struct PersonalCalendarsView: View {
     @State private var showingAddPersonalCalendar = false
     @State private var calendarPendingDelete: PersonalCalendar?
     @State private var showingDeleteConfirmation = false
-    @State private var visibilityState: [NSManagedObjectID: VisibilityState] = [:]
+    @State private var visibilityState: [NSManagedObjectID: Bool] = [:]
 
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
@@ -35,103 +35,25 @@ struct PersonalCalendarsView: View {
             theme.backgroundLayer().ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if personalCalendars.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "calendar")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(secondaryTextColor)
+                VStack(alignment: .leading, spacing: 16) {
+                    if !personalCalendars.isEmpty {
+                        infoNote
+                    }
 
-                                Text("No personal calendars")
-                                    .font(.system(size: 16, weight: .semibold, design: .default))
-                                    .foregroundColor(primaryTextColor)
-
-                                Text("Add calendars for your eyes only")
-                                    .font(.system(size: 14, weight: .regular, design: .default))
-                                    .foregroundColor(secondaryTextColor)
-                                    .multilineTextAlignment(.center)
+                    if personalCalendars.isEmpty {
+                        emptyStateView
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(personalCalendars, id: \.objectID) { calendar in
+                                calendarCard(calendar)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 32)
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .padding(.horizontal, 16)
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(personalCalendars, id: \.objectID) { calendar in
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        CalendarRow(
-                                            title: calendar.calendarName ?? "Unknown",
-                                            subtitle: "Personal only",
-                                            colorHex: calendar.calendarColorHex ?? "#007AFF",
-                                            onDelete: {
-                                                calendarPendingDelete = calendar
-                                                showingDeleteConfirmation = true
-                                            }
-                                        )
-
-                                        Divider()
-                                            .padding(.horizontal, 16)
-
-                                        VStack(spacing: 12) {
-                                            toggleRow(
-                                                title: "Family View",
-                                                icon: "person.3.fill",
-                                                binding: visibilityBinding(for: calendar, keyPath: \.familyView)
-                                            )
-                                            toggleRow(
-                                                title: "Calendar View",
-                                                icon: "calendar",
-                                                binding: visibilityBinding(for: calendar, keyPath: \.calendarView)
-                                            )
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.bottom, 12)
-                                    }
-                                }
-                            }
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .padding(.horizontal, 16)
-                        }
-
-                        Button(action: { showingAddPersonalCalendar = true }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(theme.accentColor)
-
-                                Text("Add Personal Calendar")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(theme.accentColor)
-
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
                         }
                         .padding(.horizontal, 16)
                     }
 
-                    Spacer()
+                    addCalendarButton
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
                 }
                 .padding(.vertical, 16)
             }
@@ -155,6 +77,129 @@ struct PersonalCalendarsView: View {
         .onAppear(perform: hydrateVisibilityState)
         .onChange(of: personalCalendars.count) { _, _ in
             hydrateVisibilityState()
+        }
+    }
+
+    // MARK: - View Components
+
+    private var infoNote: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: 14))
+                .foregroundColor(theme.accentColor.opacity(0.8))
+
+            Text("All personal calendars are visible in Calendar view")
+                .font(.system(size: 13))
+                .foregroundColor(secondaryTextColor)
+
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(theme.accentColor.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 16)
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 48))
+                .foregroundColor(secondaryTextColor.opacity(0.6))
+
+            Text("No personal calendars")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(primaryTextColor)
+
+            Text("Add calendars for your eyes only")
+                .font(.system(size: 14))
+                .foregroundColor(secondaryTextColor)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
+        .padding(.horizontal, 16)
+    }
+
+    private func calendarCard(_ calendar: PersonalCalendar) -> some View {
+        let isFamilyViewOn = visibilityState[calendar.objectID] ?? (calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming)
+
+        return HStack(spacing: 12) {
+            // Color indicator
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.fromHex(calendar.calendarColorHex ?? "#007AFF"))
+                .frame(width: 4, height: 44)
+
+            // Calendar info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(calendar.calendarName ?? "Unknown")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(primaryTextColor)
+
+                Text(isFamilyViewOn ? "Family view on" : "Family view off")
+                    .font(.system(size: 12))
+                    .foregroundColor(isFamilyViewOn ? theme.accentColor : secondaryTextColor)
+            }
+
+            Spacer()
+
+            // Family view toggle
+            Toggle("", isOn: familyViewBinding(for: calendar))
+                .labelsHidden()
+                .toggleStyle(SwitchToggleStyle(tint: theme.accentColor))
+                .scaleEffect(0.85)
+
+            // Delete button
+            Button(action: {
+                calendarPendingDelete = calendar
+                showingDeleteConfirmation = true
+            }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 16))
+                    .foregroundColor(Color(.systemGray))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
+    }
+
+    private var addCalendarButton: some View {
+        Button(action: { showingAddPersonalCalendar = true }) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(theme.accentColor)
+
+                Text("Add Personal Calendar")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(theme.accentColor)
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                    .foregroundColor(theme.accentColor.opacity(0.4))
+            )
         }
     }
 
@@ -189,62 +234,48 @@ struct PersonalCalendarsView: View {
 
     // MARK: - Visibility State
 
-    private struct VisibilityState {
-        var familyView: Bool
-        var calendarView: Bool
-    }
-
     private func hydrateVisibilityState() {
         for calendar in personalCalendars {
             guard visibilityState[calendar.objectID] == nil else { continue }
-            // Consolidate old toggles: familyView = (next OR spotlight OR upcoming), calendarView = (month OR day)
+            // Determine if family view is enabled (any of the three family flags)
             let familyView = calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming
-            let calendarView = calendar.showInMonth || calendar.showInDay
-            visibilityState[calendar.objectID] = VisibilityState(
-                familyView: familyView,
-                calendarView: calendarView
-            )
+            visibilityState[calendar.objectID] = familyView
+
+            // Always enable calendar views on load
+            calendar.showInMonth = true
+            calendar.showInDay = true
         }
+
+        // Save initial calendar view state
+        try? viewContext.save()
     }
 
-    private func visibilityBinding(for calendar: PersonalCalendar, keyPath: WritableKeyPath<VisibilityState, Bool>) -> Binding<Bool> {
+    private func familyViewBinding(for calendar: PersonalCalendar) -> Binding<Bool> {
         Binding(
             get: {
-                let familyView = calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming
-                let calendarView = calendar.showInMonth || calendar.showInDay
-                return (visibilityState[calendar.objectID] ?? VisibilityState(
-                    familyView: familyView,
-                    calendarView: calendarView
-                ))[keyPath: keyPath]
+                visibilityState[calendar.objectID] ?? (calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming)
             },
             set: { newValue in
-                updateVisibility(for: calendar, keyPath: keyPath, value: newValue)
+                updateFamilyViewVisibility(for: calendar, value: newValue)
             }
         )
     }
 
-    private func updateVisibility(for calendar: PersonalCalendar, keyPath: WritableKeyPath<VisibilityState, Bool>, value: Bool) {
-        let familyView = calendar.showInNext || calendar.showInSpotlight || calendar.showInUpcoming
-        let calendarView = calendar.showInMonth || calendar.showInDay
-        var state = visibilityState[calendar.objectID] ?? VisibilityState(
-            familyView: familyView,
-            calendarView: calendarView
-        )
-        state[keyPath: keyPath] = value
-        visibilityState[calendar.objectID] = state
+    private func updateFamilyViewVisibility(for calendar: PersonalCalendar, value: Bool) {
+        visibilityState[calendar.objectID] = value
 
         // Update CoreData immediately for snappy UI
-        // When familyView is toggled, set all three family view fields to the same value
-        calendar.showInNext = state.familyView
-        calendar.showInSpotlight = state.familyView
-        calendar.showInUpcoming = state.familyView
-        // When calendarView is toggled, set both calendar view fields to the same value
-        calendar.showInMonth = state.calendarView
-        calendar.showInDay = state.calendarView
+        // When family view is toggled, set all three family view fields
+        calendar.showInNext = value
+        calendar.showInSpotlight = value
+        calendar.showInUpcoming = value
+        // Always keep calendar views enabled
+        calendar.showInMonth = true
+        calendar.showInDay = true
 
         do {
             try viewContext.save()
-            print("✅ Updated visibility in CoreData: Family=\(state.familyView), Calendar=\(state.calendarView)")
+            print("✅ Updated visibility in CoreData: FamilyView=\(value) (CalendarView always true)")
         } catch {
             print("❌ Failed to save visibility locally: \(error)")
         }
@@ -258,11 +289,11 @@ struct PersonalCalendarsView: View {
             do {
                 try await dataManager.updatePersonalCalendarVisibility(
                     id: id,
-                    showInNext: state.familyView,
-                    showInSpotlight: state.familyView,
-                    showInUpcoming: state.familyView,
-                    showInMonth: state.calendarView,
-                    showInDay: state.calendarView
+                    showInNext: value,
+                    showInSpotlight: value,
+                    showInUpcoming: value,
+                    showInMonth: true,
+                    showInDay: true
                 )
                 print("ℹ️ Updated personal calendar visibility for \(calendar.calendarName ?? id)")
 
@@ -272,19 +303,6 @@ struct PersonalCalendarsView: View {
                 print("❌ Failed to update visibility in Supabase: \(error)")
             }
         }
-    }
-
-    @ViewBuilder
-    private func toggleRow(title: String, icon: String, binding: Binding<Bool>) -> some View {
-        Toggle(isOn: binding) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .foregroundColor(theme.accentColor)
-                Text(title)
-                    .foregroundColor(primaryTextColor)
-            }
-        }
-        .toggleStyle(SwitchToggleStyle(tint: theme.accentColor))
     }
 }
 

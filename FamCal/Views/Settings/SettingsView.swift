@@ -96,8 +96,8 @@ struct SettingsView: View {
                                         }
                                         
                                         Spacer()
-                                        
-                                        Image(systemName: "chevron.right")
+
+                                        Image(systemName: "pencil")
                                             .font(.system(size: 14, weight: .semibold))
                                             .foregroundColor(secondaryTextColor.opacity(0.6))
                                     }
@@ -125,6 +125,28 @@ struct SettingsView: View {
                                 }
                                 Divider().padding(.leading, 56)
 
+                                Button(action: { showingPersonalCalendars = true }) {
+                                    SettingsRowView(iconName: "calendar", title: "Personal Calendars", showChevron: true)
+                                }
+                                Divider().padding(.leading, 56)
+
+                                Button(action: { showingSharedCalendars = true }) {
+                                    SettingsRowView(iconName: "calendar.badge.plus", title: "Shared Calendars", showChevron: true)
+                                }
+                                if !appSettingsManager.isProUser {
+                                    HStack {
+                                        Text("Currently limited to 1")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(secondaryTextColor)
+                                        Spacer()
+                                    }
+                                    .padding(.leading, 56)
+                                    .padding(.trailing, 16)
+                                    .padding(.top, -8)
+                                    .padding(.bottom, 12)
+                                }
+                                Divider().padding(.leading, 56)
+
                                 if appSettingsManager.isProUser {
                                     Button(action: { showingThemeSettings = true }) {
                                         SettingsRowView(iconName: "paintpalette", title: "Themes", showChevron: true)
@@ -140,7 +162,7 @@ struct SettingsView: View {
                                             Text("Themes")
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(primaryTextColor)
-                                            Text("Unlock all themes with FamCal Pro")
+                                            Text("Premium color themes")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(secondaryTextColor)
                                         }
@@ -160,23 +182,6 @@ struct SettingsView: View {
                                 }
                                 Divider().padding(.leading, 56)
 
-                                Button(action: { showingSharedCalendars = true }) {
-                                    SettingsRowView(iconName: "calendar.badge.plus", title: "Shared Calendars", showChevron: true)
-                                }
-                                if !appSettingsManager.isProUser {
-                                    Text("Free plan includes one shared calendar; upgrade to FamCal Pro for unlimited shared calendars.")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(secondaryTextColor)
-                                        .padding(.horizontal, 56)
-                                        .padding(.top, 4)
-                                }
-                                Divider().padding(.leading, 56)
-
-                                Button(action: { showingPersonalCalendars = true }) {
-                                    SettingsRowView(iconName: "calendar", title: "Personal Calendars", showChevron: true)
-                                }
-                                Divider().padding(.leading, 56)
-
                                 if appSettingsManager.isProUser {
                                     Button(action: { showingSavedPlaces = true }) {
                                         SettingsRowView(iconName: "mappin.circle", title: "Saved Places", showChevron: true)
@@ -192,7 +197,7 @@ struct SettingsView: View {
                                             Text("Saved Places")
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(primaryTextColor)
-                                            Text("Pro unlocks Saved Places for quick access")
+                                            Text("Store favorite places")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(secondaryTextColor)
                                         }
@@ -227,7 +232,7 @@ struct SettingsView: View {
                                             Text("Drivers")
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(primaryTextColor)
-                                            Text("Pro unlocks Drivers to coordinate pickups")
+                                            Text("Pickup planning")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(secondaryTextColor)
                                         }
@@ -262,7 +267,7 @@ struct SettingsView: View {
                                             Text("Widgets")
                                                 .font(.system(size: 16, weight: .medium))
                                                 .foregroundColor(primaryTextColor)
-                                            Text("Pro unlocks Widgets for home screen")
+                                            Text("Add home widgets")
                                                 .font(.system(size: 13))
                                                 .foregroundColor(secondaryTextColor)
                                         }

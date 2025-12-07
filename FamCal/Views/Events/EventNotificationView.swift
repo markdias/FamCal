@@ -105,7 +105,7 @@ struct EventNotificationView: View {
                             Text("Get Directions")
                                 .font(.system(size: 14, weight: .semibold))
                             Spacer()
-                            Image(systemName: "chevron.right")
+                            Image(systemName: "pencil")
                                 .font(.system(size: 11, weight: .semibold))
                         }
                         .frame(maxWidth: .infinity)
@@ -127,7 +127,7 @@ struct EventNotificationView: View {
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(.blue)
                                 Spacer()
-                                Image(systemName: "chevron.right")
+                                Image(systemName: "pencil")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundColor(.blue)
                             }

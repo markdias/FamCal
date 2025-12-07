@@ -151,9 +151,9 @@ struct ResourceCard: View {
                 }
                 
                 Spacer()
-                
-                // Chevron
-                Image(systemName: "chevron.right")
+
+                // Edit icon
+                Image(systemName: "pencil")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(Color(red: 0.78, green: 0.78, blue: 0.80))
             }

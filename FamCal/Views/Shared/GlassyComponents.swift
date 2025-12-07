@@ -70,7 +70,7 @@ struct GlassyRow<Content: View>: View {
                 HStack {
                     content
                     Spacer()
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "pencil")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(themeManager.selectedTheme.textSecondary)
                 }
@@ -85,7 +85,7 @@ struct GlassyRow<Content: View>: View {
                 HStack {
                     content
                     Spacer()
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "pencil")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.gray)
                 }

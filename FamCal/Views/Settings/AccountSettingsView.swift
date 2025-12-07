@@ -79,24 +79,6 @@ struct AccountSettingsView: View {
                         }
                     }
 
-                    // Name Field
-                    VStack(alignment: .leading, spacing: 8) {
-                        settingsContainer {
-                            HStack {
-                                Text("Name")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(secondaryTextColor)
-
-                                Spacer()
-
-                                Text(getDisplayName())
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(primaryTextColor)
-                            }
-                            .padding()
-                        }
-                    }
-                    
                     // "Which family member are you?" Section
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Which family member are you?")
@@ -196,8 +178,8 @@ struct AccountSettingsView: View {
                                         .foregroundColor(primaryTextColor)
                                     
                                     Spacer()
-                                    
-                                    Image(systemName: "chevron.right")
+
+                                    Image(systemName: "pencil")
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(secondaryTextColor.opacity(0.6))
                                 }
@@ -205,7 +187,7 @@ struct AccountSettingsView: View {
                             }
                         }
                     }
-                    
+
                     // Sign Out Section
                     VStack(alignment: .leading, spacing: 8) {
                         settingsContainer {

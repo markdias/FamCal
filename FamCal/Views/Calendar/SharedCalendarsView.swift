@@ -37,108 +37,21 @@ struct SharedCalendarsView: View {
             theme.backgroundLayer().ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // MARK: - Shared Calendars Section
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Shared Calendars")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
-                            .padding(.horizontal, 16)
-
-                        if sharedCalendars.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "calendar.badge.exclamationmark")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(secondaryTextColor)
-
-                                Text("No shared calendars")
-                                    .font(.system(size: 16, weight: .semibold, design: .default))
-                                    .foregroundColor(primaryTextColor)
-
-                                Text("Add calendars to share with all family members")
-                                    .font(.system(size: 14, weight: .regular, design: .default))
-                                    .foregroundColor(secondaryTextColor)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 32)
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .padding(.horizontal, 16)
-                        } else {
-                            VStack(spacing: 0) {
-                                ForEach(sharedCalendars, id: \.self) { calendar in
-                                    CalendarRow(
-                                        title: calendar.calendarName ?? "Unknown",
-                                        subtitle: "Shared with all",
-                                        colorHex: calendar.calendarColorHex ?? "#007AFF",
-                                        onDelete: {
-                                            calendarPendingDelete = calendar
-                                            showingDeleteConfirmation = true
-                                        }
-                                    )
-
-                                    if calendar.id != sharedCalendars.last?.id {
-                                        Divider()
-                                            .padding(.horizontal, 16)
-                                    }
-                                }
-                            }
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .padding(.horizontal, 16)
-                        }
-
-                        Button(action: { showingAddSharedCalendar = true }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
-
-                                Text("Add Shared Calendar")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
-
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .overlay(alignment: .trailing) {
-                                if reachedFreeLimit {
-                                    Text("Pro")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(theme.accentColor)
-                                        .clipShape(Capsule())
-                                        .offset(x: -6)
-                                }
+                VStack(alignment: .leading, spacing: 16) {
+                    if sharedCalendars.isEmpty {
+                        emptyStateView
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(sharedCalendars, id: \.objectID) { calendar in
+                                calendarCard(calendar)
                             }
                         }
                         .padding(.horizontal, 16)
-                        .disabled(reachedFreeLimit)
-                        .opacity(reachedFreeLimit ? 0.6 : 1.0)
                     }
 
-                    Spacer()
+                    addCalendarButton
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
                 }
                 .padding(.vertical, 16)
             }
@@ -159,6 +72,114 @@ struct SharedCalendarsView: View {
         } message: { calendar in
             Text("Are you sure you want to delete \(calendar.calendarName ?? "this calendar")?")
         }
+    }
+
+    // MARK: - View Components
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .font(.system(size: 48))
+                .foregroundColor(secondaryTextColor.opacity(0.6))
+
+            Text("No shared calendars")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(primaryTextColor)
+
+            Text("Add calendars to share with all family members")
+                .font(.system(size: 14))
+                .foregroundColor(secondaryTextColor)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
+        .padding(.horizontal, 16)
+    }
+
+    private func calendarCard(_ calendar: SharedCalendar) -> some View {
+        HStack(spacing: 12) {
+            // Color indicator
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.fromHex(calendar.calendarColorHex ?? "#007AFF"))
+                .frame(width: 4, height: 44)
+
+            // Calendar info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(calendar.calendarName ?? "Unknown")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(primaryTextColor)
+
+                Text("Shared with all")
+                    .font(.system(size: 12))
+                    .foregroundColor(secondaryTextColor)
+            }
+
+            Spacer()
+
+            // Delete button
+            Button(action: {
+                calendarPendingDelete = calendar
+                showingDeleteConfirmation = true
+            }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 16))
+                    .foregroundColor(Color(.systemGray))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
+    }
+
+    private var addCalendarButton: some View {
+        Button(action: { showingAddSharedCalendar = true }) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
+
+                Text("Add Shared Calendar")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(reachedFreeLimit ? secondaryTextColor : theme.accentColor)
+
+                Spacer()
+
+                if reachedFreeLimit {
+                    Text("Pro")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(theme.accentColor)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                    .foregroundColor(reachedFreeLimit ? secondaryTextColor.opacity(0.4) : theme.accentColor.opacity(0.4))
+            )
+        }
+        .disabled(reachedFreeLimit)
+        .opacity(reachedFreeLimit ? 0.6 : 1.0)
     }
 
     private func deleteSharedCalendar(_ calendar: SharedCalendar) {
@@ -188,47 +209,6 @@ struct SharedCalendarsView: View {
                 // On next sync/refresh, it may reappear if still in Supabase
             }
         }
-    }
-}
-
-// MARK: - CalendarRow View
-
-struct CalendarRow: View {
-    @EnvironmentObject private var themeManager: ThemeManager
-    let title: String
-    let subtitle: String
-    let colorHex: String
-    var onDelete: (() -> Void)? = nil
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(Color.fromHex(colorHex))
-                .frame(width: 10, height: 10)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 16, weight: .regular, design: .default))
-                    .foregroundColor(themeManager.selectedTheme.textPrimary)
-
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .regular, design: .default))
-                    .foregroundColor(themeManager.selectedTheme.textSecondary)
-            }
-
-            Spacer()
-
-            if let onDelete = onDelete {
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(Color(.systemGray3))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 }
 

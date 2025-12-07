@@ -117,7 +117,7 @@ private struct SettingsMenuRow: View {
 
             Spacer()
 
-            Image(systemName: "chevron.right")
+            Image(systemName: "pencil")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.gray.opacity(0.5))
         }

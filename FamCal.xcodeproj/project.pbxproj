@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		2E05DA63F8C0EA8BA0DB9A45 /* libPods-FamCal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 456D32625B66C279B8BED7A5 /* libPods-FamCal.a */; };
-		3a0192659a8a4bfcb239d9d3 /* BuildFile in Embed Foundation Extensions */ = {isa = PBXBuildFile; };
+		3a0192659a8a4bfcb239d9d3 /* (null) in Embed Foundation Extensions */ = {isa = PBXBuildFile; };
 		FD05CD302ED3830B003A2662 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD2F2ED3830B003A2662 /* Auth */; };
 		FD05CD322ED3830B003A2662 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD312ED3830B003A2662 /* PostgREST */; };
 		FD05CD342ED3830B003A2662 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD332ED3830B003A2662 /* Realtime */; };
@@ -48,7 +48,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				3a0192659a8a4bfcb239d9d3 /* BuildFile in Embed Foundation Extensions */,
+				3a0192659a8a4bfcb239d9d3 /* (null) in Embed Foundation Extensions */,
 				FD1CA6092F0F5C4100A1C5E8 /* FamCalNotificationContent.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
@@ -109,15 +109,11 @@
 		};
 		FD1B9A842ECB1ED800B8C72E /* FamCalTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FamCalTests;
 			sourceTree = "<group>";
 		};
 		FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = FamCalUITests;
 			sourceTree = "<group>";
 		};
@@ -421,9 +417,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FamCal/Pods-FamCal-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FamCal/Pods-FamCal-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

@@ -2073,7 +2073,7 @@ struct EditEventView: View {
                         Text("Custom repeat options")
                             .font(.system(size: 15, weight: .semibold))
                         Spacer()
-                        Image(systemName: "chevron.right")
+                        Image(systemName: "pencil")
                             .font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundColor(accentColor)

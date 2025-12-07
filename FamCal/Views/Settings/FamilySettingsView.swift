@@ -40,7 +40,8 @@ struct FamilySettingsView: View {
     @State private var familyNameMessage: String?
     @State private var isOwner: Bool = false
     @State private var familyId: String?
-    
+    @State private var isEditingFamilyName = false
+
     private var theme: AppTheme { themeManager.selectedTheme }
     private var primaryTextColor: Color { theme.textPrimary }
     private var secondaryTextColor: Color { theme.textSecondary }
@@ -80,68 +81,27 @@ struct FamilySettingsView: View {
                 theme.backgroundLayer().ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // MARK: - Family Name Section
+                        familyNameCard
+
                         // MARK: - Family Members Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Family Members")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .padding(.horizontal, 16)
-
-                            if familyMembers.isEmpty {
-                                emptyStateView
-                            } else {
-                                settingsContainer {
-                                    ForEach(Array(familyMembers.enumerated()), id: \.element.id) { index, member in
-                                        memberRow(for: member)
-
-                                        if index < familyMembers.count - 1 {
-                                            Divider()
-                                                .padding(.leading, 56)
-                                        }
-                                    }
+                        if familyMembers.isEmpty {
+                            emptyStateView
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(familyMembers, id: \.objectID) { member in
+                                    memberCard(member)
                                 }
-                                .padding(.vertical, 8)
                             }
+                            .padding(.horizontal, 16)
                         }
 
                         // MARK: - Add Button Section
-                        Button(action: { activeSheet = .addMember }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor : theme.accentColor)
-
-                                Text("Add Family Member")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor : theme.accentColor)
-
-                                Spacer()
-                            }
+                        addMemberButton
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(theme.cardStroke, lineWidth: 1)
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
-                            .overlay(alignment: .trailing) {
-                                if isAtFamilyLimit {
-                                    Text("Pro")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(theme.accentColor)
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .disabled(isAtFamilyLimit)
-                        .opacity(isAtFamilyLimit ? 0.7 : 1.0)
+                            .padding(.top, 8)
+
                         if isAtFamilyLimit {
                             Text("Add up to 2 family members on Free. Enable FamCal Pro in Settings to keep adding.")
                                 .font(.system(size: 12, weight: .semibold))
@@ -149,105 +109,15 @@ struct FamilySettingsView: View {
                                 .padding(.horizontal, 16)
                         }
 
-                        // MARK: - Family Name Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Family Name")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .padding(.horizontal, 16)
-
-                            settingsContainer {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    TextField("e.g. The Dias Family", text: $familyName)
-                                        .padding(12)
-                                        .background(theme.cardBackground)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .stroke(theme.cardStroke, lineWidth: 1)
-                                        )
-                                        .cornerRadius(10)
-                                        .disabled(!(authManager.isGuest || isOwner))
-
-                                    if let familyNameMessage {
-                                        Text(familyNameMessage)
-                                            .font(.system(size: 13))
-                                            .foregroundColor(theme.accentColor)
-                                    }
-
-                                    Button(action: saveFamilyName) {
-                                        HStack {
-                                            if isUpdatingFamilyName { ProgressView() }
-                                            Text("Save Family Name")
-                                                .font(.system(size: 15, weight: .semibold))
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(theme.accentColor)
-                                    .disabled(!canSaveFamilyName)
-                                }
-                                .padding(12)
-                            }
-                        }
-
                         // MARK: - Invite Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Invite to FamCal")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .padding(.horizontal, 16)
-
-                            settingsContainer {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Picker("Select member", selection: $selectedInviteMember) {
-                                        Text("Choose a member").tag(Optional<FamilyMember>.none)
-                                        ForEach(availableInviteMembers, id: \.self) { member in
-                                            Text(member.name ?? "Member").tag(Optional(member))
-                                        }
-                                    }
-                                    .pickerStyle(.menu)
-
-                                    TextField("Invitee email", text: $inviteEmail)
-                                        .textContentType(.emailAddress)
-                                        .keyboardType(.emailAddress)
-                                        .autocapitalization(.none)
-                                        .padding(12)
-                                        .background(theme.cardBackground)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                .stroke(theme.cardStroke, lineWidth: 1)
-                                        )
-                                        .cornerRadius(10)
-
-                                    if let inviteMessage {
-                                        Text(inviteMessage)
-                                            .font(.system(size: 13))
-                                            .foregroundColor(theme.accentColor)
-                                    }
-
-                                    Button(action: sendInvite) {
-                                        HStack {
-                                            if isSendingInvite {
-                                                ProgressView()
-                                                    .progressViewStyle(.circular)
-                                            }
-                                            Text("Send Invite")
-                                                .font(.system(size: 15, weight: .semibold))
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(theme.accentColor)
-                                    .disabled(isSendingInvite || selectedInviteMember == nil || inviteEmail.isEmpty)
-                                }
-                                .padding(12)
-                            }
-                        }
+                        inviteCard
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
 
                         Spacer()
-                            .frame(height: 24)
+                            .frame(height: 16)
                     }
-                    .padding(.vertical, 24)
+                    .padding(.vertical, 16)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -557,89 +427,361 @@ struct FamilySettingsView: View {
         .padding(.horizontal, 16)
     }
 
-    private func memberRow(for member: FamilyMember) -> some View {
-        Menu {
-            Button(action: {
-                activeSheet = .selectCalendars(member)
-            }) {
-                Label("Edit Calendars", systemImage: "pencil.circle.fill")
-            }
+    // MARK: - View Components
 
-            Button(action: {
-                toggleDriverStatus(for: member)
-            }) {
-                let isDriver = member.isDriver
-                Label(isDriver ? "Remove as Driver" : "Set as Driver", systemImage: isDriver ? "car.fill" : "car")
-            }
+    private var familyNameCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                // Family icon
+                Image(systemName: "person.3.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(theme.accentColor)
 
-            if member.linkedUserId == nil {
-                Button(action: {
-                    activeSheet = .editMember(member)
-                }) {
-                    Label("Edit Member", systemImage: "square.and.pencil")
-                }
-            }
-
-            Divider()
-
-            if member.linkedUserId != nil {
-                Button(role: .destructive, action: {
-                    memberPendingUnlink = member
-                    showingUnlinkConfirmation = true
-                }) {
-                    Label("Unlink Account", systemImage: "lock.open.fill")
-                }
-            } else {
-                Button(role: .destructive, action: {
-                    memberPendingDelete = member
-                    showingDeleteConfirmation = true
-                }) {
-                    Label("Delete Member", systemImage: "trash.fill")
-                }
-            }
-        } label: {
-            HStack(spacing: 16) {
-                if let firstCalendar = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first {
-                    Circle()
-                        .fill(Color.fromHex(firstCalendar.calendarColorHex ?? "#007AFF"))
-                        .frame(width: 12, height: 12)
-                } else {
-                    Circle()
-                        .fill(Color.gray)
-                        .frame(width: 12, height: 12)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text(member.name ?? "Unknown")
+                // Family info
+                VStack(alignment: .leading, spacing: 4) {
+                    if !isEditingFamilyName {
+                        // Display mode
+                        Text(familyName.isEmpty ? "Family Name" : familyName)
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(primaryTextColor)
-
-                        if member.linkedUserId != nil {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.orange)
-                        }
                     }
 
-                    Text("\((member.memberCalendars?.count) ?? 0) calendar\((member.memberCalendars?.count) ?? 0 != 1 ? "s" : "")")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(secondaryTextColor)
-                    Text(linkedEmail(for: member) ?? "Not linked")
+                    Text("\(familyMembers.count) member\(familyMembers.count != 1 ? "s" : "")")
                         .font(.system(size: 12))
-                        .foregroundColor(member.linkedUserId != nil ? theme.accentColor : secondaryTextColor)
+                        .foregroundColor(secondaryTextColor)
                 }
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(secondaryTextColor.opacity(0.6))
+                // Edit/Save button
+                if !isEditingFamilyName {
+                    Button(action: {
+                        if authManager.isGuest || isOwner {
+                            isEditingFamilyName = true
+                        }
+                    }) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 16))
+                            .foregroundColor(Color(.systemGray))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!(authManager.isGuest || isOwner))
+                } else {
+                    Button(action: {
+                        saveFamilyName()
+                        isEditingFamilyName = false
+                    }) {
+                        if isUpdatingFamilyName {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 16))
+                                .foregroundColor(theme.accentColor)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSaveFamilyName)
+                }
+            }
+
+            // Edit mode text field
+            if isEditingFamilyName {
+                TextField("Family Name", text: $familyName)
+                    .font(.system(size: 15))
+                    .padding(10)
+                    .background(theme.backgroundLayer())
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(theme.cardStroke, lineWidth: 1)
+                    )
+            }
+
+            if let familyNameMessage {
+                Text(familyNameMessage)
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.accentColor)
+            }
+        }
+        .padding(16)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
+        .padding(.horizontal, 16)
+    }
+
+    private func memberCard(_ member: FamilyMember) -> some View {
+        HStack(spacing: 12) {
+            // Member color circle
+            if let firstCalendar = (member.memberCalendars?.allObjects as? [FamilyMemberCalendar])?.first {
+                Circle()
+                    .fill(Color.fromHex(firstCalendar.calendarColorHex ?? "#007AFF"))
+                    .frame(width: 12, height: 12)
+            } else {
+                Circle()
+                    .fill(Color.fromHex(member.colorHex ?? "#007AFF"))
+                    .frame(width: 12, height: 12)
+            }
+
+            // Member info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(member.name ?? "Unknown")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(primaryTextColor)
+
+                // Linked calendars count
+                let calendarCount = (member.memberCalendars?.count ?? 0)
+                Text("\(calendarCount) linked calendar\(calendarCount != 1 ? "s" : "")")
+                    .font(.system(size: 12))
+                    .foregroundColor(secondaryTextColor)
+
+                // Linked email (if account is linked)
+                if let email = linkedEmail(for: member) {
+                    Text(email)
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.accentColor)
+                }
+            }
+
+            Spacer()
+
+            // Non-linked members: Edit, Driver, Calendar, Bin
+            // Linked members: Clickable Padlock (unlink), Driver, Calendar, Red disabled Bin
+
+            if member.linkedUserId == nil {
+                // Non-linked member icons
+
+                // 1. Edit button
+                Button(action: {
+                    activeSheet = .editMember(member)
+                }) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(.systemGray))
+                }
+                .buttonStyle(.plain)
+
+                // 2. Driver status toggle
+                Button(action: {
+                    toggleDriverStatus(for: member)
+                }) {
+                    Image(systemName: member.isDriver ? "car.fill" : "car")
+                        .font(.system(size: 16))
+                        .foregroundColor(member.isDriver ? .green : .red)
+                }
+                .buttonStyle(.plain)
+
+                // 3. Calendar button
+                Button(action: {
+                    activeSheet = .selectCalendars(member)
+                }) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(.systemGray))
+                }
+                .buttonStyle(.plain)
+
+                // 4. Delete button
+                Button(action: {
+                    memberPendingDelete = member
+                    showingDeleteConfirmation = true
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(.systemGray))
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Linked member icons
+
+                // 1. Clickable Padlock (to unlink)
+                Button(action: {
+                    memberPendingUnlink = member
+                    showingUnlinkConfirmation = true
+                }) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(theme.accentColor)
+                }
+                .buttonStyle(.plain)
+
+                // 2. Driver status toggle
+                Button(action: {
+                    toggleDriverStatus(for: member)
+                }) {
+                    Image(systemName: member.isDriver ? "car.fill" : "car")
+                        .font(.system(size: 16))
+                        .foregroundColor(member.isDriver ? .green : .red)
+                }
+                .buttonStyle(.plain)
+
+                // 3. Calendar button
+                Button(action: {
+                    activeSheet = .selectCalendars(member)
+                }) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(.systemGray))
+                }
+                .buttonStyle(.plain)
+
+                // 4. Red disabled bin
+                Image(systemName: "trash")
+                    .font(.system(size: 16))
+                    .foregroundColor(.red.opacity(0.5))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
+    }
+
+    private var addMemberButton: some View {
+        Button(action: { activeSheet = .addMember }) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor : theme.accentColor)
+
+                Text("Add Family Member")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor : theme.accentColor)
+
+                Spacer()
+
+                if isAtFamilyLimit {
+                    Text("Pro")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(theme.accentColor)
+                        .clipShape(Capsule())
+                }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .padding(.vertical, 14)
+            .background(theme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                    .foregroundColor(isAtFamilyLimit ? secondaryTextColor.opacity(0.4) : theme.accentColor.opacity(0.4))
+            )
         }
+        .disabled(isAtFamilyLimit)
+        .opacity(isAtFamilyLimit ? 0.6 : 1.0)
+    }
+
+    private var inviteCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with icon and title
+            HStack(spacing: 10) {
+                Image(systemName: "envelope.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(theme.accentColor)
+
+                Text("Invite Family Member")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(primaryTextColor)
+
+                Spacer()
+            }
+
+            // Member picker - full width
+            Picker("", selection: $selectedInviteMember) {
+                Text("Select Member").tag(Optional<FamilyMember>.none)
+                ForEach(availableInviteMembers, id: \.self) { member in
+                    Text(member.name ?? "Member").tag(Optional(member))
+                }
+            }
+            .pickerStyle(.menu)
+            .font(.system(size: 14))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.backgroundLayer())
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(theme.cardStroke, lineWidth: 1)
+            )
+
+            // Email and send button row
+            HStack(spacing: 8) {
+                // Email input
+                TextField("Email address", text: $inviteEmail)
+                    .textContentType(.emailAddress)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(theme.backgroundLayer())
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(theme.cardStroke, lineWidth: 1)
+                    )
+
+                // Send button
+                Button(action: sendInvite) {
+                    if isSendingInvite {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .frame(width: 24, height: 24)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 16))
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .background(
+                    (isSendingInvite || selectedInviteMember == nil || inviteEmail.isEmpty)
+                        ? Color.gray.opacity(0.3)
+                        : theme.accentColor
+                )
+                .foregroundColor(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .disabled(isSendingInvite || selectedInviteMember == nil || inviteEmail.isEmpty)
+            }
+
+            // Status message
+            if let inviteMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.accentColor)
+
+                    Text(inviteMessage)
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.accentColor)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(theme.accentColor.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
+        .padding(14)
+        .background(theme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.3 : 0.05), radius: theme.prefersDarkInterface ? 10 : 4, x: 0, y: 2)
     }
 
     private func settingsContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
