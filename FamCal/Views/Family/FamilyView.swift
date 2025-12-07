@@ -158,6 +158,7 @@ struct FamilyView: View {
     @State private var lastTapTime: Date = .distantPast
     @State private var lastTappedEventId: String = ""
     @State private var tapDelayTimer: Timer?
+    @State private var dataChangeDebounceTimer: Timer?
 
     private let calendar = Calendar.current
     private var theme: AppTheme { themeManager.selectedTheme }
@@ -330,22 +331,11 @@ struct FamilyView: View {
             await refreshAllData()
         }
         .onAppear(perform: setupView)
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
-                // Delay to allow EventKit to repopulate cache after resetStore() in FamCalApp
-                // This prevents events from disappearing when returning from background
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    // Refresh silently if we already have cached events (no loading flash)
-                    loadNextEvents(showLoadingState: memberEvents.isEmpty)
-                    loadAvailableCalendars()
-                }
-            }
-        }
-        .onChange(of: familyMembers.count) { _, _ in loadNextEvents() }
-        .onChange(of: memberCalendarLinks.count) { _, _ in loadNextEvents() }
-        .onChange(of: personalCalendars.count) { _, _ in loadNextEvents() }
-        .onChange(of: familyEvents.count) { _, _ in loadNextEvents() }
-        .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents() }
+        .onChange(of: familyMembers.count) { _, _ in triggerDebouncedReload() }
+        .onChange(of: memberCalendarLinks.count) { _, _ in triggerDebouncedReload() }
+        .onChange(of: personalCalendars.count) { _, _ in triggerDebouncedReload() }
+        .onChange(of: familyEvents.count) { _, _ in triggerDebouncedReload() }
+        .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents(showLoadingState: false) }
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: currentTime) { _, _ in /* Trigger re-render for status updates */ }
         .onChange(of: appSettingsManager.familyMemberOrder) { _, newOrder in
@@ -490,7 +480,7 @@ struct FamilyView: View {
         return VStack(alignment: .leading, spacing: 24) {
             // MARK: Next Events Section
             VStack(alignment: .leading, spacing: 16) {
-                let spacing: CGFloat = nextEventColumns <= 2 ? 24 : 12
+                let spacing: CGFloat = nextEventColumns <= 2 ? 16 : 8
                 let columns = isLandscape
                     ? Array(repeating: GridItem(.flexible(), spacing: spacing), count: nextEventColumns + 2)
                     : Array(repeating: GridItem(.flexible(), spacing: spacing), count: nextEventColumns)
@@ -546,7 +536,7 @@ struct FamilyView: View {
                         }
                     }
                 }
-                .padding(.horizontal, nextEventColumns > 2 ? 16 : 32)
+                .padding(.horizontal, 16)
             }
 
             // MARK: Important Events Section
@@ -781,17 +771,20 @@ struct FamilyView: View {
                     }
                 }
 
-                // Status on separate line with color
-                Text(statusText)
-                    .font(.system(size: detailSize, weight: .semibold))
-                    .foregroundColor(statusColor)
+                // Time remaining/status inline (instead of bubble)
+                if let bubble = timeBubble(for: event) {
+                    Text(bubble.text)
+                        .font(.system(size: detailSize, weight: .semibold))
+                        .foregroundColor(bubble.foreground)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(12)
         }
 
-        .aspectRatio(1, contentMode: .fill)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Dynamic layout - height adjusts to content, rows align to tallest card
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minHeight: 120)
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(theme.cardStroke, lineWidth: 1)
@@ -808,18 +801,6 @@ struct FamilyView: View {
                 .frame(maxHeight: .infinity, alignment: .center),
             alignment: .leading
         )
-        .overlay(alignment: .bottomTrailing) {
-            if nextEventColumns <= 2, let bubble = timeBubble(for: event) {
-                Text(bubble.text)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(bubble.foreground)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(bubble.background)
-                    .clipShape(Capsule())
-                    .padding(10)
-            }
-        }
     }
 
     private func getTimeUntilEvent(_ eventDate: Date) -> String {
@@ -1096,6 +1077,7 @@ struct FamilyView: View {
         eventsTask?.cancel()
         NotificationCenter.default.removeObserver(self, name: NSNotification.Name.EKEventStoreChanged, object: eventStore)
         stopRefreshTimer()
+        dataChangeDebounceTimer?.invalidate()
     }
 
     @MainActor
@@ -1646,7 +1628,15 @@ struct FamilyView: View {
         await dataManager.fetchUserDataIfNeeded(force: true)
         loadNextEvents()
     }
-    
+
+    private func triggerDebouncedReload() {
+        // Debounce data changes to prevent cascading reloads
+        dataChangeDebounceTimer?.invalidate()
+        dataChangeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+            loadNextEvents(showLoadingState: false)
+        }
+    }
+
     private func formatRelativeDate(_ date: Date) -> String {
         let calendar = Calendar.current
         
@@ -1678,26 +1668,27 @@ struct FamilyView: View {
         return ("Upcoming", .gray)
     }
 
-    private func timeBubble(for event: GroupedEvent) -> (text: String, background: Color, foreground: Color)? {
+    private func timeBubble(for event: GroupedEvent) -> (text: String, foreground: Color)? {
         let now = Date()
         let calendar = Calendar.current
 
         if now < event.startDate {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.startDate)
-            guard let text = bubbleText(from: components) else { return nil }
+            guard let text = bubbleText(from: components, columns: nextEventColumns) else { return nil }
             let color = Color.blue
-            return (text, color.opacity(0.16), color)
+            return (text, color)
         } else if now < event.endDate {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.endDate)
-            guard let text = bubbleText(from: components) else { return nil }
+            guard let text = bubbleText(from: components, columns: nextEventColumns) else { return nil }
             let color = Color.green
-            return (text, color.opacity(0.16), color)
+            return (text, color)
         }
 
         return nil
     }
 
-    private func bubbleText(from components: DateComponents) -> String? {
+    private func bubbleText(from components: DateComponents, columns: Int) -> String? {
+        // No need for ultra-compact format anymore since we have dynamic height
         if let days = components.day, days > 0 {
             if let hours = components.hour, hours > 0 {
                 return "\(days)d \(hours)h"

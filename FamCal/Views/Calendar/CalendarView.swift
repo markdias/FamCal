@@ -79,6 +79,7 @@ struct CalendarView: View {
     @State private var lastTapTimeMonth: Date = .distantPast
     @State private var lastTappedEventIdMonth: String = ""
     @State private var tapDelayTimerMonth: Timer?
+    @State private var dataChangeDebounceTimer: Timer?
     private var externalDisplayMode: Binding<CalendarDisplayMode>?
     private var todayTrigger: Binding<UUID>?
 
@@ -148,25 +149,15 @@ struct CalendarView: View {
     var body: some View {
         mainView
             .onAppear(perform: setupView)
-            .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
-                    // Delay to allow EventKit to repopulate cache after resetStore() in FamCalApp
-                    // This prevents events from disappearing when returning from background
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        loadEvents()
-                        loadAvailableCalendars()
-                    }
-                }
-            }
             .onChange(of: currentMonth) { _, _ in loadEvents() }
             .onChange(of: selectedDate) { _, _ in
                 if calendarDisplayMode == .day {
                     loadEvents()
                 }
             }
-            .onChange(of: familyMembers.count) { _, _ in loadEvents() }
-            .onChange(of: memberCalendarLinks.count) { _, _ in loadEvents() }
-            .onChange(of: personalCalendars.count) { _, _ in loadEvents() }
+            .onChange(of: familyMembers.count) { _, _ in triggerDebouncedReload() }
+            .onChange(of: memberCalendarLinks.count) { _, _ in triggerDebouncedReload() }
+            .onChange(of: personalCalendars.count) { _, _ in triggerDebouncedReload() }
             .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
             .onChange(of: verticalSizeClass) { _, newValue in
                 if newValue == .compact {
@@ -207,9 +198,6 @@ struct CalendarView: View {
             print("🔔 CalendarView: Received EKEventStoreChanged")
             loadEvents()
             loadAvailableCalendars()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
-            loadEvents()
         }
         .onChange(of: calendarDisplayMode) { _, newValue in
             externalDisplayMode?.wrappedValue = newValue
@@ -316,13 +304,6 @@ struct CalendarView: View {
         let fullScreenDay = isCompactHeight && isDayMode
 
         VStack(alignment: .leading, spacing: isDayMode ? 16 : 24) {
-            // Observe FamilyEvent changes to reload calendar events
-            Group {
-                EmptyView()
-                    .onChange(of: familyEvents.count) { _, _ in loadEvents() }
-            }
-            .frame(height: 0)
-            .hidden()
             if !fullScreenDay {
                 // Header with centered month/year
                 HStack {
@@ -1268,6 +1249,15 @@ struct CalendarView: View {
 
     private func cleanupView() {
         stopRefreshTimer()
+        dataChangeDebounceTimer?.invalidate()
+    }
+
+    private func triggerDebouncedReload() {
+        // Debounce data changes to prevent cascading reloads
+        dataChangeDebounceTimer?.invalidate()
+        dataChangeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+            loadEvents()
+        }
     }
 
     private func startRefreshTimer() {
