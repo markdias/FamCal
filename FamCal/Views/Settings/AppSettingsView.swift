@@ -14,6 +14,7 @@ struct AppSettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
     @EnvironmentObject private var dataManager: SupabaseDataManager
+    @State private var showingCompactStylePicker = false
 
     private let mapsAppOptions = ["Apple Maps", "Google Maps", "Waze"]
     private let refreshIntervalOptions: [Int] = [1, 5, 10, 15, 30, 60]
@@ -288,7 +289,35 @@ struct AppSettingsView: View {
                                         .frame(width: 120)
                                     )
                                 )
-                                
+
+                                Divider().padding(.leading, 16)
+
+                                // Compact View Style Navigation
+                                Button(action: {
+                                    showingCompactStylePicker = true
+                                }) {
+                                    HStack(spacing: 16) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Compact view style")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+
+                                            Text("Choose your compact event card layout")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
+                                .buttonStyle(.plain)
+
                                 Divider().padding(.leading, 16)
                                 
                                 settingCard(
@@ -364,6 +393,11 @@ struct AppSettingsView: View {
                             .foregroundColor(primaryTextColor)
                     }
                 }
+            }
+            .sheet(isPresented: $showingCompactStylePicker) {
+                CompactViewStylePicker()
+                    .environmentObject(themeManager)
+                    .environmentObject(appSettingsManager)
             }
         }
     }

@@ -573,10 +573,6 @@ struct DailyEventsView: View {
                             }
                         }
                     }
-                } else {
-                     // For short events, maybe show time in a more compact way or hide it if it doesn't fit
-                     // User only asked to remove member name, but 15pt is very small.
-                     // Let's try showing just the title for maximum "thinner" look.
                 }
             }
             .padding(isShortEvent ? 2 : 6)

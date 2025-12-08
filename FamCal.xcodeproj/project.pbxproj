@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		2E05DA63F8C0EA8BA0DB9A45 /* libPods-FamCal.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 456D32625B66C279B8BED7A5 /* libPods-FamCal.a */; };
-		3a0192659a8a4bfcb239d9d3 /* (null) in Embed Foundation Extensions */ = {isa = PBXBuildFile; };
+		3a0192659a8a4bfcb239d9d3 /* NextEventWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1D9CDB402D434692A51CC6A9 /* NextEventWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FD05CD302ED3830B003A2662 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD2F2ED3830B003A2662 /* Auth */; };
 		FD05CD322ED3830B003A2662 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD312ED3830B003A2662 /* PostgREST */; };
 		FD05CD342ED3830B003A2662 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = FD05CD332ED3830B003A2662 /* Realtime */; };
@@ -60,6 +60,7 @@
 		363D1C58560F637A3316330C /* Pods-FamCal.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FamCal.release.xcconfig"; path = "Target Support Files/Pods-FamCal/Pods-FamCal.release.xcconfig"; sourceTree = "<group>"; };
 		42777D4DCE838F9134688B94 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/WatchConnectivity.framework; sourceTree = DEVELOPER_DIR; };
 		4422D0B07B993B90E48CF99D /* Pods-FamCal.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-FamCal.debug.xcconfig"; path = "Target Support Files/Pods-FamCal/Pods-FamCal.debug.xcconfig"; sourceTree = "<group>"; };
+		1D9CDB402D434692A51CC6A9 /* NextEventWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NextEventWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		456D32625B66C279B8BED7A5 /* libPods-FamCal.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-FamCal.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A6D2ECB1ED700B8C72E /* FamCal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FamCal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FamCalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -210,6 +211,7 @@
 			children = (
 				FD1B9A6D2ECB1ED700B8C72E /* FamCal.app */,
 				FD1B9A812ECB1ED800B8C72E /* FamCalTests.xctest */,
+				1D9CDB402D434692A51CC6A9 /* NextEventWidget.appex */,
 				FD1CA6012F0F5C4100A1C5E8 /* FamCalNotificationContent.appex */,
 			);
 			name = Products;
@@ -235,6 +237,7 @@
 			);
 			name = NextEventWidget;
 			productName = NextEventWidget;
+			productReference = 1D9CDB402D434692A51CC6A9 /* NextEventWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		FD1B9A6C2ECB1ED700B8C72E /* FamCal */ = {
@@ -806,6 +809,7 @@
 		FD1CA6032F0F5C4100A1C5E8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = FamCalNotificationContent/FamCalNotificationContent.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = M7KXVX37Y7;
@@ -832,6 +836,7 @@
 		FD1CA6042F0F5C4100A1C5E8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = FamCalNotificationContent/FamCalNotificationContent.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = M7KXVX37Y7;

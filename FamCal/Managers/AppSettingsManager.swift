@@ -7,6 +7,7 @@
 import Foundation
 import Combine
 import WidgetKit
+import CoreData
 
 class AppSettingsManager: ObservableObject {
     static let shared = AppSettingsManager()
@@ -22,6 +23,13 @@ class AppSettingsManager: ObservableObject {
     @Published var eventsFutureDays: Int = 180
     @Published var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
     @Published var isProUser: Bool = UserDefaults.standard.bool(forKey: "com.famcal.pro.enabled")
+
+    // Upcoming Events Display Settings
+    @Published var upcomingEventsDensityMode: String = "detailed" // "detailed" or "compact"
+    @Published var compactViewStyle: String = "option1" // "option1", "option3", or "option4"
+
+    // Calendar View Display Settings
+    @Published var calendarEventsDensityMode: String = "detailed" // "detailed" or "compact"
 
     // Notification Settings
     @Published var notificationsEnabled: Bool = false
@@ -64,6 +72,9 @@ class AppSettingsManager: ObservableObject {
         "eventsFutureDays",
         "defaultAlertOptionRawValue",
         "isProUser",
+        "upcomingEventsDensityMode",
+        "compactViewStyle",
+        "calendarEventsDensityMode",
         "notificationsEnabled",
         "morningBriefEnabled",
         "morningBriefTimeHour",
@@ -244,6 +255,15 @@ class AppSettingsManager: ObservableObject {
         if let value = defaults.string(forKey: "defaultAlertOptionRawValue") {
             defaultAlertOptionRawValue = value
         }
+        if let value = defaults.string(forKey: "upcomingEventsDensityMode") {
+            upcomingEventsDensityMode = value
+        }
+        if let value = defaults.string(forKey: "compactViewStyle") {
+            compactViewStyle = value
+        }
+        if let value = defaults.string(forKey: "calendarEventsDensityMode") {
+            calendarEventsDensityMode = value
+        }
         if defaults.object(forKey: "notificationsEnabled") != nil {
             notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
         }
@@ -289,6 +309,8 @@ class AppSettingsManager: ObservableObject {
         if let value = defaults.array(forKey: "familyMemberOrder") as? [String] {
             familyMemberOrder = value
         }
+
+        loadCompactViewSettingsFromCoreData(for: authManager.userId)
     }
 
     private func persistProFlag() {
@@ -308,6 +330,9 @@ class AppSettingsManager: ObservableObject {
         defaults.set(eventsPastDays, forKey: "eventsPastDays")
         defaults.set(eventsFutureDays, forKey: "eventsFutureDays")
         defaults.set(defaultAlertOptionRawValue, forKey: "defaultAlertOptionRawValue")
+        defaults.set(upcomingEventsDensityMode, forKey: "upcomingEventsDensityMode")
+        defaults.set(compactViewStyle, forKey: "compactViewStyle")
+        defaults.set(calendarEventsDensityMode, forKey: "calendarEventsDensityMode")
         defaults.set(notificationsEnabled, forKey: "notificationsEnabled")
         defaults.set(morningBriefEnabled, forKey: "morningBriefEnabled")
         defaults.set(morningBriefTimeHour, forKey: "morningBriefTimeHour")
@@ -333,6 +358,8 @@ class AppSettingsManager: ObservableObject {
         }
 
         defaults.set(familyMemberOrder, forKey: "familyMemberOrder")
+
+        persistCompactViewSettingsToCoreData(for: authManager.userId)
     }
 
     private func startAutoRefreshTimer() {
@@ -436,6 +463,15 @@ class AppSettingsManager: ObservableObject {
         if case .bool(let value) = dict["isProUser"] {
             isProUser = value
         }
+        if case .string(let value) = dict["upcomingEventsDensityMode"] {
+            upcomingEventsDensityMode = value
+        }
+        if case .string(let value) = dict["compactViewStyle"] {
+            compactViewStyle = value
+        }
+        if case .string(let value) = dict["calendarEventsDensityMode"] {
+            calendarEventsDensityMode = value
+        }
 
         // Notification Settings
         if case .bool(let value) = dict["notificationsEnabled"] {
@@ -493,6 +529,8 @@ class AppSettingsManager: ObservableObject {
             hasCompletedFamilySetup = value
             UserDefaults.standard.set(value, forKey: "hasCompletedFamilySetup")
         }
+
+        persistCompactViewSettingsToCoreData(for: authManager.userId)
     }
 
     @MainActor
@@ -534,6 +572,9 @@ class AppSettingsManager: ObservableObject {
         eventsFutureDays = 180
         defaultAlertOptionRawValue = AlertOption.none.rawValue
         isProUser = false
+        upcomingEventsDensityMode = "detailed"
+        compactViewStyle = "option1"
+        calendarEventsDensityMode = "detailed"
 
         notificationsEnabled = false
         morningBriefEnabled = false
@@ -573,6 +614,9 @@ class AppSettingsManager: ObservableObject {
             "eventsFutureDays": .int(eventsFutureDays),
             "defaultAlertOptionRawValue": .string(defaultAlertOptionRawValue),
             "isProUser": .bool(isProUser),
+            "upcomingEventsDensityMode": .string(upcomingEventsDensityMode),
+            "compactViewStyle": .string(compactViewStyle),
+            "calendarEventsDensityMode": .string(calendarEventsDensityMode),
 
             // Notification Settings
             "notificationsEnabled": .bool(notificationsEnabled),
@@ -620,6 +664,65 @@ class AppSettingsManager: ObservableObject {
 
         DispatchQueue.main.async {
             WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    private func loadCompactViewSettingsFromCoreData(for userId: String?) {
+        let context = PersistenceController.shared.container.viewContext
+        context.performAndWait {
+            let fetchRequest: NSFetchRequest<AppSettings> = AppSettings.fetchRequest()
+            if let userId {
+                fetchRequest.predicate = NSPredicate(format: "userId == %@", userId)
+            } else {
+                fetchRequest.predicate = NSPredicate(format: "userId == nil")
+            }
+            fetchRequest.fetchLimit = 1
+
+            do {
+                if let cached = try context.fetch(fetchRequest).first {
+                    if let value = cached.upcomingEventsDensityMode {
+                        upcomingEventsDensityMode = value
+                    }
+                    if let value = cached.compactViewStyle {
+                        compactViewStyle = value
+                    }
+                    if let value = cached.calendarEventsDensityMode {
+                        calendarEventsDensityMode = value
+                    }
+                }
+            } catch {
+                print("⚠️ Failed to load compact view settings from CoreData: \(error)")
+            }
+        }
+    }
+
+    private func persistCompactViewSettingsToCoreData(for userId: String?) {
+        let context = PersistenceController.shared.container.viewContext
+        context.perform {
+            let fetchRequest: NSFetchRequest<AppSettings> = AppSettings.fetchRequest()
+            if let userId {
+                fetchRequest.predicate = NSPredicate(format: "userId == %@", userId)
+            } else {
+                fetchRequest.predicate = NSPredicate(format: "userId == nil")
+            }
+            fetchRequest.fetchLimit = 1
+
+            do {
+                let existing = try context.fetch(fetchRequest).first ?? AppSettings(context: context)
+                existing.userId = userId
+                existing.upcomingEventsDensityMode = self.upcomingEventsDensityMode
+                existing.compactViewStyle = self.compactViewStyle
+                existing.calendarEventsDensityMode = self.calendarEventsDensityMode
+                existing.modifiedAt = Date()
+
+                if existing.id == nil {
+                    existing.id = UUID()
+                }
+
+                try context.save()
+            } catch {
+                print("⚠️ Failed to persist compact view settings to CoreData: \(error)")
+            }
         }
     }
 

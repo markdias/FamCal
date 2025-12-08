@@ -1,24 +1,45 @@
 {
-  "deno.enablePaths": [
-    "supabase/functions"
-  ],
-  "deno.lint": true,
-  "deno.unstable": [
-    "bare-node-builtins",
-    "byonm",
-    "sloppy-imports",
-    "unsafe-proto",
-    "webgpu",
-    "broadcast-channel",
-    "worker-options",
-    "cron",
-    "kv",
-    "ffi",
-    "fs",
-    "http",
-    "net"
-  ],
-  "[typescript]": {
-    "editor.defaultFormatter": "denoland.vscode-deno"
-  }
+    "deno.enablePaths": [
+        "supabase/functions"
+    ],
+    "deno.lint": true,
+    "deno.unstable": [
+        "bare-node-builtins",
+        "byonm",
+        "sloppy-imports",
+        "unsafe-proto",
+        "webgpu",
+        "broadcast-channel",
+        "worker-options",
+        "cron",
+        "kv",
+        "ffi",
+        "fs",
+        "http",
+        "net"
+    ],
+    "[typescript]": {
+        "editor.defaultFormatter": "denoland.vscode-deno"
+    },
+    "triggerTaskOnSave.tasks": {
+        "sweetpad: build": [
+            "**/*.swift"
+        ]
+    },
+    "triggerTaskOnSave.on": true,
+    "triggerTaskOnSave.showNotifications": false,
+    "triggerTaskOnSave.restart": true,
+    "triggerTaskOnSave.delay": 1000,
+    "triggerTaskOnSave.resultIndicatorResetTimeout": 5,
+    "workbench.colorCustomizations": {},
+    "sweetpad.format.args": [
+        "--in-place",
+        "--configuration",
+        ".vscode/.swift-format",
+        "${file}"
+    ],
+    "[swift]": {
+        "editor.defaultFormatter": "sweetpad.sweetpad",
+        "editor.formatOnSave": true
+    }
 }

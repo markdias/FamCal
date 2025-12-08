@@ -184,12 +184,12 @@ struct NextEventWidgetView: View {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.startDate)
             guard let text = bubbleText(from: components) else { return nil }
             let color = Color.blue
-            return (text, color.opacity(0.16), color)
+            return ("\(text) Till", color.opacity(0.16), color)
         } else if now < event.endDate {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.endDate)
             guard let text = bubbleText(from: components) else { return nil }
             let color = Color.green
-            return (text, color.opacity(0.16), color)
+            return ("\(text) Left", color.opacity(0.16), color)
         }
 
         return nil

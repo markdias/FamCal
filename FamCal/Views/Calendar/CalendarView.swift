@@ -463,17 +463,142 @@ struct CalendarView: View {
         let now = Date()
         let isInProgress = groupedEvent.startDate <= now && now < groupedEvent.endDate
         let isSelected = selectedEventIdsForDeletion.contains(groupedEvent.eventIdentifier)
+        let isCompactMode = appSettingsManager.calendarEventsDensityMode == "compact"
 
         Button(action: {
             handleMonthViewEventTap(groupedEvent: groupedEvent, upcomingEvent: upcomingEvent)
         }) {
-            let timeBoxWidth: CGFloat = 76
+            let timeBoxWidth: CGFloat = isCompactMode ? 60 : 76
             let spacerWidth: CGFloat = 2
-            let cardCornerRadius: CGFloat = 16
+            let cardCornerRadius: CGFloat = isCompactMode ? 12 : 16
             let memberLabel = groupedEvent.memberNames.count > 1 ? "All" : (groupedEvent.memberNames.first ?? "")
             let timeLabel = groupedEvent.isAllDay ? "All day" : (groupedEvent.startTime ?? "")
 
-            ZStack(alignment: .leading) {
+            if isCompactMode {
+                // Compact mode: simplified layout
+                compactEventCard(
+                    groupedEvent: groupedEvent,
+                    timeLabel: timeLabel,
+                    memberLabel: memberLabel,
+                    isPast: isPast,
+                    isSelected: isSelected,
+                    isInProgress: isInProgress,
+                    timeBoxWidth: timeBoxWidth,
+                    spacerWidth: spacerWidth,
+                    cardCornerRadius: cardCornerRadius
+                )
+            } else {
+                // Detailed mode: original layout
+                detailedEventCard(
+                    groupedEvent: groupedEvent,
+                    timeLabel: timeLabel,
+                    memberLabel: memberLabel,
+                    isPast: isPast,
+                    isSelected: isSelected,
+                    isInProgress: isInProgress,
+                    timeBoxWidth: timeBoxWidth,
+                    spacerWidth: spacerWidth,
+                    cardCornerRadius: cardCornerRadius
+                )
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            dayEventContextMenu(for: upcomingEvent)
+        }
+    }
+
+    @ViewBuilder
+    private func compactEventCard(
+        groupedEvent: GroupedDayEvent,
+        timeLabel: String,
+        memberLabel: String,
+        isPast: Bool,
+        isSelected: Bool,
+        isInProgress: Bool,
+        timeBoxWidth: CGFloat,
+        spacerWidth: CGFloat,
+        cardCornerRadius: CGFloat
+    ) -> some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .fill(isInProgress ? Color.green.opacity(0.12) : theme.cardBackground)
+
+            if !isSelected {
+                memberColorBackground(for: groupedEvent)
+                    .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
+                    .frame(width: timeBoxWidth)
+                    .opacity(isPast ? 0.6 : 1.0)
+            } else {
+                Color(groupedEvent.color).opacity(0.2)
+                    .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
+                    .frame(width: timeBoxWidth)
+            }
+
+            HStack(spacing: 0) {
+                // Compact time block
+                ZStack {
+                    if !isSelected {
+                        memberColorBackground(for: groupedEvent)
+                    } else {
+                        Color(groupedEvent.color).opacity(0.2)
+                    }
+
+                    Text(timeLabel)
+                        .font(.system(size: 11, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundColor(isSelected ? .primary : .white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .frame(width: timeBoxWidth, height: 36)
+                .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
+
+                Color.white
+                    .frame(width: spacerWidth)
+                    .frame(height: 36)
+
+                // Compact title only
+                Text(groupedEvent.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .opacity(isPast ? 0.5 : 1.0)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.blue)
+                        .padding(.trailing, 12)
+                }
+            }
+            .frame(height: 36)
+        }
+        .frame(height: 36)
+        .overlay(
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .stroke(isInProgress ? Color.green : theme.cardStroke, lineWidth: isInProgress ? 2 : 1)
+        )
+    }
+
+    @ViewBuilder
+    private func detailedEventCard(
+        groupedEvent: GroupedDayEvent,
+        timeLabel: String,
+        memberLabel: String,
+        isPast: Bool,
+        isSelected: Bool,
+        isInProgress: Bool,
+        timeBoxWidth: CGFloat,
+        spacerWidth: CGFloat,
+        cardCornerRadius: CGFloat
+    ) -> some View {
+        ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .fill(isInProgress ? Color.green.opacity(0.12) : theme.cardBackground)
 
@@ -634,13 +759,13 @@ struct CalendarView: View {
 
                         Spacer(minLength: 0)
                     }
-                    .padding(.vertical, isCompact ? 8 : 10)
+                    .padding(.vertical, 10)
                     .padding(.horizontal, 12)
 
                     Spacer(minLength: 0)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: isCompact ? 70 : 84, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
             .overlay(
                 RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                     .stroke(theme.cardStroke, lineWidth: 1)
@@ -662,11 +787,6 @@ struct CalendarView: View {
                 ) : AnyView(EmptyView())
             )
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            dayEventContextMenu(for: upcomingEvent)
-        }
-    }
 
     @ViewBuilder
     private func memberColorBackground(for groupedEvent: GroupedDayEvent) -> some View {
@@ -752,6 +872,23 @@ struct CalendarView: View {
                     .padding(.horizontal, 2)
 
                 Spacer()
+
+                // Density toggle button
+                if selectedEventIdsForDeletion.isEmpty {
+                    Button(action: {
+                        appSettingsManager.calendarEventsDensityMode =
+                            appSettingsManager.calendarEventsDensityMode == "detailed" ? "compact" : "detailed"
+                    }) {
+                        Image(systemName: appSettingsManager.calendarEventsDensityMode == "detailed" ? "list.bullet" : "list.bullet.rectangle")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(theme.accentColor)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                Circle()
+                                    .fill(theme.chromeOverlay)
+                            )
+                    }
+                }
 
                 // Show selection count and delete button in month view
                 if !selectedEventIdsForDeletion.isEmpty {
@@ -1135,7 +1272,7 @@ struct CalendarView: View {
                 futureDays: appSettingsManager.eventsFutureDays
             )
 
-            let initials = member.avatarInitials ?? Self.initials(for: member.name)
+            let initials = member.avatarInitials ?? initials(for: member.name)
 
             for event in events {
                 let eventDate = calendar.startOfDay(for: event.startDate)
@@ -1203,7 +1340,7 @@ struct CalendarView: View {
         isLoadingEvents = false
     }
 
-    private static func initials(for name: String?) -> String {
+    private func initials(for name: String?) -> String {
         guard let name = name, !name.isEmpty else { return "?" }
         let parts = name.split(separator: " ")
         let first = parts.first?.first.map(String.init) ?? ""

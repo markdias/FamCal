@@ -575,14 +575,33 @@ struct FamilyView: View {
 
             // MARK: Upcoming Events Section
             VStack(alignment: .leading, spacing: 16) {
-                Text("Upcoming Events")
-                    .font(.system(size: 16, weight: .semibold))
-                    .padding(.horizontal, 16)
+                HStack {
+                    Text("Upcoming Events")
+                        .font(.system(size: 16, weight: .semibold))
+
+                    Spacer()
+
+                    // Density toggle button
+                    Button(action: {
+                        appSettingsManager.upcomingEventsDensityMode =
+                            appSettingsManager.upcomingEventsDensityMode == "detailed" ? "compact" : "detailed"
+                    }) {
+                        Image(systemName: appSettingsManager.upcomingEventsDensityMode == "detailed" ? "list.bullet" : "list.bullet.rectangle")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(theme.accentColor)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                Circle()
+                                    .fill(theme.chromeOverlay)
+                            )
+                    }
+                }
+                .padding(.horizontal, 16)
 
                 if isLandscape {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 20, alignment: .top), GridItem(.flexible(), spacing: 20, alignment: .top)], spacing: 20) {
                         ForEach(displayedEvents) { memberGroup in
-                            if !memberGroup.upcomingEvents.isEmpty {
+                            if memberGroup.upcomingEvents.count > 1 {
                                 memberUpcomingEventsColumn(memberGroup: memberGroup)
                             }
                         }
@@ -591,7 +610,7 @@ struct FamilyView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 20) {
                         ForEach(displayedEvents) { memberGroup in
-                            if !memberGroup.upcomingEvents.isEmpty {
+                            if memberGroup.upcomingEvents.count > 1 {
                                 memberUpcomingEventsColumn(memberGroup: memberGroup)
                             }
                         }
@@ -609,9 +628,9 @@ struct FamilyView: View {
                 .foregroundColor(secondaryTextColor)
                 .padding(.horizontal, verticalSizeClass == .compact ? 0 : 16)
 
-            // Events for this member (limited by eventsPerPerson, only future events)
+            // Events for this member (skip the first one as it's shown in "Next Event" section)
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(memberGroup.upcomingEvents, id: \.id) { groupedEvent in
+                ForEach(Array(memberGroup.upcomingEvents.dropFirst().enumerated()), id: \.element.id) { _, groupedEvent in
                     eventButton(for: groupedEvent)
                 }
             }
@@ -619,10 +638,20 @@ struct FamilyView: View {
     }
 
     private func eventButton(for groupedEvent: GroupedEvent) -> some View {
-        eventCard(groupedEvent)
-            .onTapGesture {
-                handleEventTap(event: groupedEvent)
+        Group {
+            if appSettingsManager.upcomingEventsDensityMode == "compact" {
+                CompactEventCard(
+                    groupedEvent: groupedEvent,
+                    style: appSettingsManager.compactViewStyle,
+                    theme: theme
+                )
+            } else {
+                eventCard(groupedEvent)
             }
+        }
+        .onTapGesture {
+            handleEventTap(event: groupedEvent)
+        }
         .contextMenu {
             let event = UpcomingCalendarEvent(
                 id: groupedEvent.eventIdentifier,
@@ -695,7 +724,7 @@ struct FamilyView: View {
     }
 
     private func nextEventCard(for memberGroup: MemberEventGroup, event: GroupedEvent) -> some View {
-        let (statusText, statusColor) = getEventStatus(event)
+        let _ = getEventStatus(event)
         let barColor = Color(uiColor: event.calendarColor)
         let barWidth: CGFloat = 6
         
@@ -1351,8 +1380,9 @@ struct FamilyView: View {
                 print("🔍 DEBUG: Member '\(member.name ?? "nil")' - sortedGroupedEvents count: \(sortedGroupedEvents.count)")
                 print("🔍 DEBUG: eventsPerPerson limit: \(eventsPerPerson)")
 
-                // Keep all events (including all-day) for upcoming events display
-                let limitedEvents = Array(sortedGroupedEvents.prefix(eventsPerPerson))
+                // Fetch one extra event to account for the first event being shown in "Next Event" section
+                // This ensures we display the configured number of events in "Upcoming Events"
+                let limitedEvents = Array(sortedGroupedEvents.prefix(eventsPerPerson + 1))
                 print("🔍 DEBUG: Member '\(member.name ?? "nil")' - limitedEvents count: \(limitedEvents.count)")
 
                 // Create member event group
@@ -1676,12 +1706,12 @@ struct FamilyView: View {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.startDate)
             guard let text = bubbleText(from: components, columns: nextEventColumns) else { return nil }
             let color = Color.blue
-            return (text, color)
+            return ("\(text) Until", color)
         } else if now < event.endDate {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.endDate)
             guard let text = bubbleText(from: components, columns: nextEventColumns) else { return nil }
             let color = Color.green
-            return (text, color)
+            return ("\(text) Left", color)
         }
 
         return nil
@@ -2195,6 +2225,244 @@ private struct MemberEventGroup: Identifiable, Equatable {
 
     static func == (lhs: MemberEventGroup, rhs: MemberEventGroup) -> Bool {
         lhs.memberName == rhs.memberName && lhs.id == rhs.id
+    }
+}
+
+// MARK: - Compact Event Cards
+
+private struct CompactEventCard: View {
+    let groupedEvent: GroupedEvent
+    let style: String
+    let theme: AppTheme
+
+    var body: some View {
+        switch style {
+        case "option1":
+            CompactCardStyle1(event: groupedEvent, theme: theme)
+        case "option3":
+            CompactCardStyle3(event: groupedEvent, theme: theme)
+        case "option4":
+            CompactCardStyle4(event: groupedEvent, theme: theme)
+        default:
+            CompactCardStyle1(event: groupedEvent, theme: theme)
+        }
+    }
+}
+
+private struct CompactCardStyle1: View {
+    let event: GroupedEvent
+    let theme: AppTheme
+
+    private var secondaryTextColor: Color { theme.mutedTagColor }
+
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Rectangle()
+                .fill(Color(uiColor: event.calendarColor))
+                .frame(width: 4)
+
+            HStack(spacing: 8) {
+                Text("\(Self.dayOfWeekFormatter.string(from: event.startDate)) \(Self.dayFormatter.string(from: event.startDate))")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(secondaryTextColor)
+                    .frame(width: 50, alignment: .leading)
+
+                if let timeRange = event.timeRange {
+                    let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+                    Text(startTime)
+                        .font(.system(size: 12, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundColor(secondaryTextColor)
+                        .frame(width: 50, alignment: .leading)
+                } else {
+                    Text("All Day")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(secondaryTextColor)
+                        .frame(width: 50, alignment: .leading)
+                }
+
+                Text(event.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if event.isImportant {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+        .background(theme.cardBackground)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+    }
+}
+
+private struct CompactCardStyle3: View {
+    let event: GroupedEvent
+    let theme: AppTheme
+
+    private var secondaryTextColor: Color { theme.mutedTagColor }
+
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color(uiColor: event.calendarColor))
+                .frame(height: 3)
+
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Self.dayOfWeekFormatter.string(from: event.startDate))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(secondaryTextColor)
+                    Text(Self.dayFormatter.string(from: event.startDate))
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.primary)
+                }
+                .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(event.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if event.isImportant {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    if let timeRange = event.timeRange {
+                        let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+                        Text(startTime)
+                            .font(.system(size: 11, weight: .regular))
+                            .monospacedDigit()
+                            .foregroundColor(secondaryTextColor)
+                    } else {
+                        Text("All Day")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundColor(secondaryTextColor)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(theme.cardBackground)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
+    }
+}
+
+private struct CompactCardStyle4: View {
+    let event: GroupedEvent
+    let theme: AppTheme
+
+    private var secondaryTextColor: Color { theme.mutedTagColor }
+
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(spacing: 2) {
+                Text(Self.dayOfWeekFormatter.string(from: event.startDate))
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                Text(Self.dayFormatter.string(from: event.startDate))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+            }
+            .frame(width: 36, height: 36)
+            .background(Color(uiColor: event.calendarColor))
+            .cornerRadius(6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    if event.isImportant {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.orange)
+                    }
+                }
+
+                if let timeRange = event.timeRange {
+                    let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+                    Text(startTime)
+                        .font(.system(size: 11, weight: .regular))
+                        .monospacedDigit()
+                        .foregroundColor(secondaryTextColor)
+                } else {
+                    Text("All Day")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundColor(secondaryTextColor)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(theme.cardBackground)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(theme.cardStroke, lineWidth: 1)
+        )
     }
 }
 

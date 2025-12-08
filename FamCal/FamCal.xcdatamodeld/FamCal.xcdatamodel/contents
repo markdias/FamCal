@@ -104,6 +104,14 @@
         <attribute name="hasPendingChanges" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="syncStatus" optional="YES" attributeType="String" defaultValueString="synced"/>
     </entity>
+    <entity name="AppSettings" representedClassName="AppSettings" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="userId" optional="YES" attributeType="String"/>
+        <attribute name="upcomingEventsDensityMode" optional="YES" attributeType="String"/>
+        <attribute name="compactViewStyle" optional="YES" attributeType="String"/>
+        <attribute name="calendarEventsDensityMode" optional="YES" attributeType="String"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
         <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="134"/>
@@ -116,5 +124,6 @@
         <element name="RecentSearch" positionX="576" positionY="-18" width="128" height="103"/>
         <element name="PersonalCalendar" positionX="666" positionY="-18" width="128" height="103"/>
         <element name="SyncMetadata" positionX="756" positionY="-18" width="128" height="119"/>
+        <element name="AppSettings" positionX="846" positionY="-18" width="128" height="119"/>
     </elements>
 </model>
