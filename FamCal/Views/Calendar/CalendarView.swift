@@ -307,6 +307,29 @@ struct CalendarView: View {
             if !fullScreenDay {
                 // Header with centered month/year
                 HStack {
+                    // Calendar layout mode picker (left side)
+                    if calendarDisplayMode == .month {
+                        Menu {
+                            Button(action: { appSettingsManager.calendarCellLayoutMode = "dots" }) {
+                                Label("Dots Only", systemImage: appSettingsManager.calendarCellLayoutMode == "dots" ? "checkmark" : "")
+                            }
+                            Button(action: { appSettingsManager.calendarCellLayoutMode = "option1" }) {
+                                Label("Pills with Bar", systemImage: appSettingsManager.calendarCellLayoutMode == "option1" ? "checkmark" : "")
+                            }
+                            Button(action: { appSettingsManager.calendarCellLayoutMode = "option2" }) {
+                                Label("Colored Pills", systemImage: appSettingsManager.calendarCellLayoutMode == "option2" ? "checkmark" : "")
+                            }
+                        } label: {
+                            Image(systemName: "calendar.badge.clock")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(theme.accentColor)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(theme.chromeOverlay))
+                        }
+                    } else {
+                        Spacer().frame(width: 32)
+                    }
+
                     Spacer()
 
                     VStack(spacing: 2) {
@@ -318,6 +341,9 @@ struct CalendarView: View {
                     }
 
                     Spacer()
+
+                    // Balance the layout with empty space on right
+                    Spacer().frame(width: 32)
                 }
                 .padding(.vertical, 12)
             }
@@ -990,10 +1016,40 @@ struct CalendarView: View {
         let isCurrentMonth = calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
         let isToday = calendar.isDate(date, inSameDayAs: Date())
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
-        let hasEvents = dayEvents[formatDateKey(date)] != nil && !dayEvents[formatDateKey(date)]!.isEmpty
-        let eventCount = dayEvents[formatDateKey(date)]?.count ?? 0
+        let events = dayEvents[formatDateKey(date)] ?? []
+        let eventCount = events.count
+        let now = Date()
 
-        return VStack(alignment: .center, spacing: 4) {
+        // Filter to show only all-day events or events that haven't happened yet
+        let relevantEvents = events.filter { event in
+            event.isAllDay || event.startDate > now
+        }
+
+        let layoutMode = appSettingsManager.calendarCellLayoutMode
+
+        return Group {
+            if layoutMode == "dots" {
+                // Original dots-only layout
+                dotsOnlyCell(date: date, isCurrentMonth: isCurrentMonth, isToday: isToday, isSelected: isSelected, events: events, eventCount: eventCount)
+            } else {
+                // New layouts with event titles
+                eventsWithTitlesCell(date: date, isCurrentMonth: isCurrentMonth, isToday: isToday, isSelected: isSelected, events: relevantEvents, layoutMode: layoutMode)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isCurrentMonth {
+                withAnimation(.spring()) {
+                    selectedDate = date
+                }
+            }
+        }
+        .opacity(isCurrentMonth ? 1 : 0.5)
+    }
+
+    @ViewBuilder
+    private func dotsOnlyCell(date: Date, isCurrentMonth: Bool, isToday: Bool, isSelected: Bool, events: [DayEventItem], eventCount: Int) -> some View {
+        VStack(alignment: .center, spacing: 4) {
             Text(Self.dayFormatter.string(from: date))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(
@@ -1018,10 +1074,10 @@ struct CalendarView: View {
                 )
 
             // Event indicators (dots)
-            if hasEvents {
+            if !events.isEmpty {
                 HStack(spacing: 2) {
                     ForEach(0..<min(3, eventCount), id: \.self) { index in
-                        let event = dayEvents[formatDateKey(date)]![index]
+                        let event = events[index]
                         let isPastEvent = Date() > event.endDate
                         Circle()
                             .fill(Color(uiColor: event.color))
@@ -1041,15 +1097,112 @@ struct CalendarView: View {
                     isToday && !isSelected ? theme.accentColor.opacity(0.1) : Color.clear
                 )
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isCurrentMonth {
-                withAnimation(.spring()) {
-                    selectedDate = date
+    }
+
+    @ViewBuilder
+    private func eventsWithTitlesCell(date: Date, isCurrentMonth: Bool, isToday: Bool, isSelected: Bool, events: [DayEventItem], layoutMode: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            // Day number with selection indicator
+            HStack {
+                Spacer()
+                Text(Self.dayFormatter.string(from: date))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(
+                        isSelected ? .white
+                        : !isCurrentMonth ? secondaryTextColor.opacity(0.5)
+                        : isToday ? theme.accentColor
+                        : .primary
+                    )
+                    .frame(width: 24, height: 24)
+                    .background(
+                        ZStack {
+                            if isSelected {
+                                Circle()
+                                    .fill(theme.accentFillStyle())
+                                    .matchedGeometryEffect(id: "selectedDate", in: animationNamespace)
+                            }
+                            if isToday && !isSelected {
+                                Circle()
+                                    .stroke(theme.accentColor, lineWidth: 2)
+                            }
+                        }
+                    )
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
+
+            // Events based on layout mode
+            if layoutMode == "option1" {
+                option1EventList(events: events)
+            } else if layoutMode == "option2" {
+                option2EventList(events: events)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    isToday && !isSelected ? theme.accentColor.opacity(0.1) : Color.clear
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func option1EventList(events: [DayEventItem]) -> some View {
+        let maxEvents = 2
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(events.prefix(maxEvents).enumerated()), id: \.offset) { _, event in
+                HStack(spacing: 1) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color(uiColor: event.color))
+                        .frame(width: 2)
+                    Text(event.title)
+                        .font(.system(size: 8))
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+                    Spacer(minLength: 0)
                 }
+                .frame(height: 10)
+                .padding(.horizontal, 1)
+                .background(Color(uiColor: event.color).opacity(0.12))
+                .cornerRadius(2)
+            }
+            if events.count > maxEvents {
+                Text("+\(events.count - maxEvents)")
+                    .font(.system(size: 7, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 2)
             }
         }
-        .opacity(isCurrentMonth ? 1 : 0.5)
+        .padding(.horizontal, 2)
+    }
+
+    @ViewBuilder
+    private func option2EventList(events: [DayEventItem]) -> some View {
+        let maxEvents = 2
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(events.prefix(maxEvents).enumerated()), id: \.offset) { _, event in
+                Text(event.title)
+                    .font(.system(size: 8, weight: .medium))
+                    .lineLimit(1)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 1)
+                    .background(Color(uiColor: event.color))
+                    .cornerRadius(2)
+            }
+            if events.count > maxEvents {
+                Text("+\(events.count - maxEvents)")
+                    .font(.system(size: 7, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 2)
+            }
+        }
+        .padding(.horizontal, 2)
     }
 
     private func getDaysInMonth() -> [Date] {

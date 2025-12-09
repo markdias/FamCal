@@ -111,6 +111,7 @@
         <attribute name="nextEventsDensityMode" optional="YES" attributeType="String"/>
         <attribute name="compactViewStyle" optional="YES" attributeType="String"/>
         <attribute name="calendarEventsDensityMode" optional="YES" attributeType="String"/>
+        <attribute name="calendarCellLayoutMode" optional="YES" attributeType="String"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <elements>
