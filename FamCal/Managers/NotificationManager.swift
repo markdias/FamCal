@@ -217,6 +217,11 @@ class NotificationManager: NSObject, ObservableObject {
         var skippedCount = 0
 
         for event in events {
+            // Skip events that have already ended
+            if event.endDate < Date() {
+                continue
+            }
+
             // Skip if event already has a notification scheduled
             if existingIdentifiers.contains(event.eventIdentifier ?? "") {
                 continue
