@@ -17,6 +17,7 @@ struct AddMembersSetupView: View {
 
     @State private var showAddMemberSheet = false
     @State private var errorMessage: String?
+    @State private var showProUpsell = false
 
     var canProceed: Bool {
         !familyMembers.isEmpty && familyMembers.contains { member in
@@ -100,6 +101,34 @@ struct AddMembersSetupView: View {
                     .padding(8)
                     .background(Color.orange.opacity(0.1))
                     .cornerRadius(6)
+
+                    Button(action: { showProUpsell = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Unlock FamCal Pro")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .foregroundColor(.white)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                    }
+                } else if !appSettingsManager.isProUser {
+                    Button(action: { showProUpsell = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Upgrade to FamCal Pro")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .foregroundColor(.blue)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                    }
                 }
             }
 
@@ -144,6 +173,15 @@ struct AddMembersSetupView: View {
             Button("OK") { errorMessage = nil }
         } message: { msg in
             Text(msg)
+        }
+        .sheet(isPresented: $showProUpsell) {
+            OnboardingProUpsellView(
+                currentStep: .proOffer,
+                onSelectStep: nil,
+                onFinish: { showProUpsell = false }
+            )
+            .environmentObject(appSettingsManager)
+            .environmentObject(ThemeManager())
         }
     }
 }

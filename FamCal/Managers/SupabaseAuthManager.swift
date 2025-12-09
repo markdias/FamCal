@@ -21,6 +21,7 @@ class SupabaseAuthManager: ObservableObject {
     @Published var errorMessage: String?
     @Published var userEmail: String?
     @Published var userId: String?
+    @Published var authProvider: AuthProvider = .unknown
 
     private var cancellables = Set<AnyCancellable>()
     private let supabaseURL: URL
@@ -37,6 +38,18 @@ class SupabaseAuthManager: ObservableObject {
     private let userDefaultsKeyRefreshToken = "com.famcal.auth.refreshToken"
     private let userDefaultsKeyIsAuthenticated = "com.famcal.auth.isAuthenticated"
     private let userDefaultsKeyIsGuest = "com.famcal.auth.isGuest"
+    private let userDefaultsKeyAuthProvider = "com.famcal.auth.authProvider"
+
+    enum AuthProvider: String {
+        case emailPassword
+        case google
+        case guest
+        case unknown
+    }
+
+    var isGoogleUser: Bool {
+        authProvider == .google
+    }
 
     init() {
         // Validate configuration
@@ -71,6 +84,7 @@ class SupabaseAuthManager: ObservableObject {
             await MainActor.run {
                 self.isGuest = true
                 self.isAuthenticated = false
+                self.authProvider = .guest
             }
             return
         }
@@ -88,10 +102,23 @@ class SupabaseAuthManager: ObservableObject {
             // Restore the session
             await MainActor.run {
                 self.userId = savedUserId
-                self.userEmail = savedEmail
+               self.userEmail = savedEmail
                 self.accessToken = savedAccessToken
                 self.refreshToken = savedRefreshToken
                 self.isAuthenticated = true
+                if let providerRaw = defaults.string(forKey: userDefaultsKeyAuthProvider),
+                   let provider = AuthProvider(rawValue: providerRaw) {
+                    self.authProvider = provider
+                } else {
+                    // Attempt to derive provider from JWT claims for legacy sessions
+                    if let claims = self.decodeJWTClaims(savedAccessToken),
+                       let appMeta = claims["app_metadata"] as? [String: Any],
+                       let provider = appMeta["provider"] as? String {
+                        self.authProvider = provider.lowercased() == "google" ? .google : .emailPassword
+                    } else {
+                        self.authProvider = .unknown
+                    }
+                }
 
                 print("✅ Session restored successfully")
             }
@@ -114,6 +141,7 @@ class SupabaseAuthManager: ObservableObject {
             defaults.set(true, forKey: userDefaultsKeyIsAuthenticated)
             // Ensure guest flag is cleared when saving a real session
             defaults.set(false, forKey: userDefaultsKeyIsGuest)
+            defaults.set(authProvider.rawValue, forKey: userDefaultsKeyAuthProvider)
 
             // Also save to app group for widget access
             if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
@@ -135,6 +163,7 @@ class SupabaseAuthManager: ObservableObject {
         defaults.removeObject(forKey: userDefaultsKeyRefreshToken)
         defaults.removeObject(forKey: userDefaultsKeyIsAuthenticated)
         defaults.removeObject(forKey: userDefaultsKeyIsGuest)
+        defaults.removeObject(forKey: userDefaultsKeyAuthProvider)
 
         // Also clear from app group for widget access
         if let appGroupDefaults = UserDefaults(suiteName: "group.com.markdias.famli") {
@@ -164,6 +193,7 @@ class SupabaseAuthManager: ObservableObject {
         }
         self.isAuthenticated = true
         self.isGuest = false
+        self.authProvider = .emailPassword
         saveSession()
     }
 
@@ -299,6 +329,7 @@ class SupabaseAuthManager: ObservableObject {
                     }
                     self.isAuthenticated = true
                     self.isGuest = false  // Clear guest flag when authenticating
+                    self.authProvider = .emailPassword
                     self.saveSession()  // Persist session
                     print("✅ User signed up successfully: \(email)")
                     print("ℹ️ User ID (from parsing): \(response.user.id)")
@@ -350,6 +381,7 @@ class SupabaseAuthManager: ObservableObject {
                     self.userEmail = email
                     self.isAuthenticated = true
                     self.isGuest = false  // Clear guest flag when authenticating
+                    self.authProvider = .emailPassword
                     self.saveSession()  // Persist session
                     print("✅ User signed up successfully: \(email)")
                 }
@@ -427,16 +459,17 @@ class SupabaseAuthManager: ObservableObject {
                 do {
                     let response = try JSONDecoder().decode(TokenResponse.self, from: data)
                     self.userId = response.user.id
-                    self.userEmail = response.user.email
-                    self.accessToken = response.access_token
-                    self.refreshToken = response.refresh_token
-                    self.isAuthenticated = true
-                    self.isGuest = false  // Clear guest flag when authenticating
-                    self.saveSession()  // Persist session
-                    print("✅ User signed in successfully: \(email)")
-                    print("ℹ️ User ID (from parsing): \(response.user.id)")
-                } catch let decodingError {
-                    // Fallback: try to extract userId from raw JSON
+                self.userEmail = response.user.email
+                self.accessToken = response.access_token
+                self.refreshToken = response.refresh_token
+                self.isAuthenticated = true
+                self.isGuest = false  // Clear guest flag when authenticating
+                self.authProvider = .emailPassword
+                self.saveSession()  // Persist session
+                print("✅ User signed in successfully: \(email)")
+                print("ℹ️ User ID (from parsing): \(response.user.id)")
+            } catch let decodingError {
+                // Fallback: try to extract userId from raw JSON
                     print("⚠️ Could not parse TokenResponse: \(decodingError)")
                     print("ℹ️ Attempting manual JSON extraction...")
 
@@ -486,6 +519,7 @@ class SupabaseAuthManager: ObservableObject {
                     self.userEmail = email
                     self.isAuthenticated = true
                     self.isGuest = false  // Clear guest flag when authenticating
+                    self.authProvider = .emailPassword
                     self.saveSession()  // Persist session
                     print("✅ User signed in successfully: \(email)")
                 }
@@ -596,6 +630,7 @@ class SupabaseAuthManager: ObservableObject {
                 self.refreshToken = response.refresh_token
                 self.isAuthenticated = true
                 self.isGuest = false  // Clear guest flag when authenticating
+                self.authProvider = .google
                 self.saveSession()
                 print("✅ User signed in with Google")
             } catch {
@@ -626,6 +661,7 @@ class SupabaseAuthManager: ObservableObject {
                 if self.isAuthenticated {
                     self.isGuest = false  // Clear guest flag when authenticating
                 }
+                self.authProvider = .google
                 self.saveSession()
                 print("✅ User signed in with Google (manual parse)")
             }
@@ -675,6 +711,7 @@ class SupabaseAuthManager: ObservableObject {
         self.accessToken = nil
         self.isAuthenticated = false
         self.isGuest = false
+        self.authProvider = .unknown
         self.clearSession()  // Clear persisted session
         GIDSignIn.sharedInstance.signOut()
 
@@ -743,9 +780,11 @@ class SupabaseAuthManager: ObservableObject {
         self.accessToken = nil
         self.isAuthenticated = false
         self.isGuest = true
+        self.authProvider = .guest
 
         let defaults = UserDefaults.standard
         defaults.set(true, forKey: userDefaultsKeyIsGuest)
+        defaults.set(AuthProvider.guest.rawValue, forKey: userDefaultsKeyAuthProvider)
 
         // Note: Do NOT reset settings or clear local data here
         // Guests should be able to return to their local data across sessions

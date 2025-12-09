@@ -188,6 +188,11 @@ struct SharedCalendarsSetupView: View {
         isSaving = true
 
         Task {
+            if shouldStageLocallyForSetup {
+                await saveCalendarsLocallyForSetup()
+                return
+            }
+
             do {
                 // Save each selected calendar to both CoreData and Supabase
                 for calendarId in selectedCalendarIds {
@@ -223,6 +228,13 @@ struct SharedCalendarsSetupView: View {
                     onNext()
                 }
             } catch {
+                // If we're missing family_id, fall back to staging locally so setup can continue
+                if isFamilyIdMissingError(error) {
+                    print("⚠️ Missing family_id when adding shared calendar, staging locally instead")
+                    await saveCalendarsLocallyForSetup()
+                    return
+                }
+
                 await MainActor.run {
                     isSaving = false
                     errorMessage = "Failed to save calendars: \(error.localizedDescription)"
@@ -230,6 +242,64 @@ struct SharedCalendarsSetupView: View {
                 }
             }
         }
+    }
+
+    /// During onboarding the family_id doesn't exist yet, so stage calendars locally only.
+    @MainActor
+    private func saveCalendarsLocallyForSetup() async {
+        do {
+            for calendarId in selectedCalendarIds {
+                guard let calendar = availableCalendars.first(where: { $0.id == calendarId }) else { continue }
+                try upsertLocalSharedCalendar(calendar)
+            }
+
+            // Update binding with the selected calendars only
+            let fetchRequest: NSFetchRequest<SharedCalendar> = SharedCalendar.fetchRequest()
+            if let fetchedCalendars = try? viewContext.fetch(fetchRequest) {
+                sharedCalendars = fetchedCalendars.filter { calendar in
+                    guard let id = calendar.calendarID else { return false }
+                    return selectedCalendarIds.contains(id)
+                }
+            }
+
+            try viewContext.save()
+
+            isSaving = false
+            print("✅ Shared calendars staged locally for setup: \(selectedCalendarIds.count)")
+            onNext()
+        } catch {
+            isSaving = false
+            errorMessage = "Failed to save calendars: \(error.localizedDescription)"
+            print("❌ Error staging shared calendars locally: \(error)")
+        }
+    }
+
+    /// Create or update a SharedCalendar in CoreData without needing a family_id (used before Supabase setup completes).
+    private func upsertLocalSharedCalendar(_ calendar: AvailableCalendar) throws {
+        let fetchRequest: NSFetchRequest<SharedCalendar> = SharedCalendar.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "calendarID == %@", calendar.id)
+        let existing = try viewContext.fetch(fetchRequest).first
+
+        let sharedCalendar = existing ?? SharedCalendar(context: viewContext)
+        if sharedCalendar.id == nil {
+            sharedCalendar.id = UUID()
+        }
+
+        sharedCalendar.calendarID = calendar.id
+        sharedCalendar.calendarName = calendar.title
+        sharedCalendar.calendarColorHex = calendar.color.hex()
+    }
+
+    /// True when onboarding has not produced a family_id yet, so we cannot call Supabase.
+    private var shouldStageLocallyForSetup: Bool {
+        let hasFamilyId = !(appSettingsManager.familyId ?? "").isEmpty
+        return !hasFamilyId && !dataManager.authManager.isGuest
+    }
+
+    private func isFamilyIdMissingError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == "AddSharedCalendar" { return true }
+        return nsError.localizedDescription.lowercased().contains("family_id")
     }
 }
 

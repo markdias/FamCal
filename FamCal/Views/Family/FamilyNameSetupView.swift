@@ -17,6 +17,7 @@ struct FamilyNameSetupView: View {
     @State private var showVerificationSent = false
     @State private var showSignOutConfirmation = false
     @State private var isSigningOut = false
+    @State private var baseFamilyName: String = ""
 
     var body: some View {
         VStack(spacing: 24) {
@@ -43,8 +44,8 @@ struct FamilyNameSetupView: View {
                 }
             }
 
-            // Email Verification Section (authenticated users only)
-            if !authManager.isGuest, let userEmail = authManager.userEmail {
+            // Email Verification Section (only for non-Google authenticated users)
+            if requiresEmailVerification, let userEmail = authManager.userEmail {
                 VStack(spacing: 16) {
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
@@ -75,32 +76,15 @@ struct FamilyNameSetupView: View {
                         .cornerRadius(8)
 
                         if !isEmailVerified {
-                            Text("Please check your email and click the verification link to continue setup.")
+                            Text("Please check your email and click the verification link. We’ll detect verification automatically.")
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundColor(.gray)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
 
-                    // Verification Checkbox
-                    HStack(spacing: 12) {
-                        Button(action: { isEmailVerified.toggle() }) {
-                            HStack(spacing: 10) {
-                                Image(systemName: isEmailVerified ? "checkmark.square.fill" : "square")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(isEmailVerified ? .green : .gray)
-
-                                Text("I've verified my email")
-                                    .font(.system(size: 14, weight: .regular))
-                                    .foregroundColor(.primary)
-                            }
-                        }
-
-                        Spacer()
-                    }
-
                     // Check Again Button
-                    Button(action: checkVerificationStatus) {
+                    Button(action: { checkVerificationStatus() }) {
                         HStack {
                             if isCheckingVerification {
                                 ProgressView()
@@ -131,11 +115,23 @@ struct FamilyNameSetupView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.gray)
 
-                TextField("e.g., Smith Family", text: $familyName)
-                    .font(.system(size: 16, weight: .regular))
-                    .padding(12)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                HStack {
+                    TextField("e.g., Smith", text: $baseFamilyName)
+                        .font(.system(size: 16, weight: .regular))
+                        .padding(12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        .onChange(of: baseFamilyName) { _, newValue in
+                            familyName = normalizedFamilyName(from: newValue)
+                        }
+
+                    Text("Family")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.gray)
+                        .padding(.horizontal, 8)
+                }
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
             }
 
             Spacer()
@@ -154,6 +150,7 @@ struct FamilyNameSetupView: View {
         }
         .padding(24)
         .background(Color(.systemBackground))
+        .onAppear(perform: handleInitialVerification)
         .alert("Sign Out?", isPresented: $showSignOutConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Sign Out", role: .destructive) {
@@ -165,17 +162,34 @@ struct FamilyNameSetupView: View {
     }
 
     private var isButtonDisabled: Bool {
-        let emptyName = familyName.trimmingCharacters(in: .whitespaces).isEmpty
-        // For guests, only check family name
-        // For authenticated users, also require email verification
-        if authManager.isGuest {
+        let emptyName = baseFamilyName.trimmingCharacters(in: .whitespaces).isEmpty
+        if authManager.isGuest || authManager.isGoogleUser {
             return emptyName
         } else {
             return emptyName || !isEmailVerified
         }
     }
 
-    private func checkVerificationStatus() {
+    private var requiresEmailVerification: Bool {
+        !authManager.isGuest && !authManager.isGoogleUser
+    }
+
+    private func handleInitialVerification() {
+        baseFamilyName = extractBaseFamilyName(from: familyName)
+        familyName = normalizedFamilyName(from: baseFamilyName)
+
+        if authManager.isGoogleUser {
+            isEmailVerified = true
+            return
+        }
+
+        if requiresEmailVerification && !isEmailVerified {
+            checkVerificationStatus(triggeredAutomatically: true)
+        }
+    }
+
+    private func checkVerificationStatus(triggeredAutomatically: Bool = false) {
+        guard !isCheckingVerification else { return }
         isCheckingVerification = true
 
         Task {
@@ -189,13 +203,33 @@ struct FamilyNameSetupView: View {
                         isEmailVerified = true
                     }
                     print("✅ Email verified!")
-                } else {
+                } else if !triggeredAutomatically {
                     print("ℹ️ Email not yet verified")
                 }
             } catch {
                 print("❌ Error checking email verification: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func normalizedFamilyName(from base: String) -> String {
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if trimmed.lowercased().hasSuffix(" family") {
+            return trimmed
+        }
+        return "\(trimmed) Family"
+    }
+
+    private func extractBaseFamilyName(from full: String) -> String {
+        let trimmed = full.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if lower.hasSuffix(" family") {
+            let dropCount = " Family".count
+            let base = String(trimmed.dropLast(dropCount))
+            return base.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return trimmed
     }
 
     private func performSignOut() {
