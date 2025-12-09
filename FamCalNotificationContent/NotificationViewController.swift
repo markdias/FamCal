@@ -178,6 +178,34 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     private func displayMorningBrief(userInfo: [AnyHashable: Any]) {
+        // Check if there's an attached image (the visual schedule)
+        if let attachment = notification?.request.content.attachments.first,
+           attachment.identifier == "schedule-image" {
+
+            let imageURL = attachment.url
+            // Try to load the image
+            if let imageData = try? Data(contentsOf: imageURL),
+               let image = UIImage(data: imageData) {
+
+                // Display the image in an image view
+                let imageView = UIImageView(image: image)
+                imageView.contentMode = .scaleAspectFit
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                imageView.layer.cornerRadius = 12
+                imageView.clipsToBounds = true
+
+                contentStackView.addArrangedSubview(imageView)
+
+                // Set the image height constraint
+                let imageHeight = min(image.size.height, 600)
+                imageView.heightAnchor.constraint(equalToConstant: imageHeight).isActive = true
+
+                print("✅ Morning brief image displayed successfully")
+                return
+            }
+        }
+
+        // Fallback to table view if no image attachment
         guard let eventCount = userInfo["eventCount"] as? Int, eventCount > 0 else {
             return
         }
