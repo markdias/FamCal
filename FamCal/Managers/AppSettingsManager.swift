@@ -19,6 +19,7 @@ class AppSettingsManager: ObservableObject {
     @Published var eventsPerPerson: Int = 3
     @Published var spotlightEventsPerPerson: Int = 5
     @Published var nextEventColumns: Int = 2
+    @Published var nextEventsDensityMode: String = "detailed" // "detailed" or "compact"
     @Published var eventsPastDays: Int = 90
     @Published var eventsFutureDays: Int = 180
     @Published var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
@@ -68,6 +69,7 @@ class AppSettingsManager: ObservableObject {
         "eventsPerPerson",
         "spotlightEventsPerPerson",
         "nextEventColumns",
+        "nextEventsDensityMode",
         "eventsPastDays",
         "eventsFutureDays",
         "defaultAlertOptionRawValue",
@@ -246,6 +248,9 @@ class AppSettingsManager: ObservableObject {
         if defaults.object(forKey: "nextEventColumns") != nil {
             nextEventColumns = defaults.integer(forKey: "nextEventColumns")
         }
+        if let value = defaults.string(forKey: "nextEventsDensityMode") {
+            nextEventsDensityMode = value
+        }
         if defaults.object(forKey: "eventsPastDays") != nil {
             eventsPastDays = defaults.integer(forKey: "eventsPastDays")
         }
@@ -327,6 +332,7 @@ class AppSettingsManager: ObservableObject {
         defaults.set(eventsPerPerson, forKey: "eventsPerPerson")
         defaults.set(spotlightEventsPerPerson, forKey: "spotlightEventsPerPerson")
         defaults.set(nextEventColumns, forKey: "nextEventColumns")
+        defaults.set(nextEventsDensityMode, forKey: "nextEventsDensityMode")
         defaults.set(eventsPastDays, forKey: "eventsPastDays")
         defaults.set(eventsFutureDays, forKey: "eventsFutureDays")
         defaults.set(defaultAlertOptionRawValue, forKey: "defaultAlertOptionRawValue")
@@ -451,6 +457,9 @@ class AppSettingsManager: ObservableObject {
         if case .int(let value) = dict["nextEventColumns"] {
             nextEventColumns = value
         }
+        if case .string(let value) = dict["nextEventsDensityMode"] {
+            nextEventsDensityMode = value
+        }
         if case .int(let value) = dict["eventsPastDays"] {
             eventsPastDays = value
         }
@@ -568,6 +577,7 @@ class AppSettingsManager: ObservableObject {
         eventsPerPerson = 3
         spotlightEventsPerPerson = 5
         nextEventColumns = 2
+        nextEventsDensityMode = "detailed"
         eventsPastDays = 90
         eventsFutureDays = 180
         defaultAlertOptionRawValue = AlertOption.none.rawValue
@@ -610,6 +620,7 @@ class AppSettingsManager: ObservableObject {
             "eventsPerPerson": .int(eventsPerPerson),
             "spotlightEventsPerPerson": .int(min(spotlightEventsPerPerson, currentSpotlightLimit)),
             "nextEventColumns": .int(nextEventColumns),
+            "nextEventsDensityMode": .string(nextEventsDensityMode),
             "eventsPastDays": .int(eventsPastDays),
             "eventsFutureDays": .int(eventsFutureDays),
             "defaultAlertOptionRawValue": .string(defaultAlertOptionRawValue),
@@ -680,14 +691,17 @@ class AppSettingsManager: ObservableObject {
 
             do {
                 if let cached = try context.fetch(fetchRequest).first {
-                    if let value = cached.upcomingEventsDensityMode {
-                        upcomingEventsDensityMode = value
-                    }
-                    if let value = cached.compactViewStyle {
-                        compactViewStyle = value
-                    }
-                    if let value = cached.calendarEventsDensityMode {
-                        calendarEventsDensityMode = value
+                if let value = cached.upcomingEventsDensityMode {
+                    upcomingEventsDensityMode = value
+                }
+                if let value = cached.nextEventsDensityMode {
+                    nextEventsDensityMode = value
+                }
+                if let value = cached.compactViewStyle {
+                    compactViewStyle = value
+                }
+                if let value = cached.calendarEventsDensityMode {
+                    calendarEventsDensityMode = value
                     }
                 }
             } catch {
@@ -711,6 +725,7 @@ class AppSettingsManager: ObservableObject {
                 let existing = try context.fetch(fetchRequest).first ?? AppSettings(context: context)
                 existing.userId = userId
                 existing.upcomingEventsDensityMode = self.upcomingEventsDensityMode
+                existing.nextEventsDensityMode = self.nextEventsDensityMode
                 existing.compactViewStyle = self.compactViewStyle
                 existing.calendarEventsDensityMode = self.calendarEventsDensityMode
                 existing.modifiedAt = Date()

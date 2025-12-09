@@ -108,6 +108,7 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="userId" optional="YES" attributeType="String"/>
         <attribute name="upcomingEventsDensityMode" optional="YES" attributeType="String"/>
+        <attribute name="nextEventsDensityMode" optional="YES" attributeType="String"/>
         <attribute name="compactViewStyle" optional="YES" attributeType="String"/>
         <attribute name="calendarEventsDensityMode" optional="YES" attributeType="String"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>

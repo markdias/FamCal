@@ -79,6 +79,30 @@ struct AppSettingsView: View {
         )
     }
 
+    private var nextEventsDensityBinding: Binding<String> {
+        Binding(
+            get: { appSettingsManager.nextEventsDensityMode },
+            set: {
+                appSettingsManager.nextEventsDensityMode = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var nextEventsCompactToggle: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.nextEventsDensityMode == "compact" },
+            set: {
+                appSettingsManager.nextEventsDensityMode = $0 ? "compact" : "detailed"
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
+    private var nextEventsLayoutDescription: String {
+        appSettingsManager.nextEventsDensityMode == "compact" ? "Compact" : "Detailed"
+    }
+
     private var eventsPastDaysBinding: Binding<Int> {
         Binding(
             get: { appSettingsManager.eventsPastDays },
@@ -287,6 +311,28 @@ struct AppSettingsView: View {
                                         }
                                         .pickerStyle(.segmented)
                                         .frame(width: 120)
+                                    )
+                                )
+
+                                Divider().padding(.leading, 16)
+
+                                settingCard(
+                                    title: "Next events layout",
+                                    subtitle: "Current: \(nextEventsLayoutDescription)",
+                                    picker: AnyView(
+                                        Button(action: {
+                                            nextEventsCompactToggle.wrappedValue.toggle()
+                                        }) {
+                                            Image(systemName: appSettingsManager.nextEventsDensityMode == "compact" ? "rectangle.grid.2x2" : "rectangle.grid.1x2")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundColor(theme.accentColor)
+                                                .frame(width: 36, height: 36)
+                                                .background(
+                                                    Circle()
+                                                        .fill(theme.chromeOverlay)
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
                                     )
                                 )
 

@@ -91,10 +91,11 @@ struct NextEventWidgetView: View {
         let resolvedUIColor = UIColor(hex: event.colorHex, fallback: UIColor(hex: member.colorHex))
         let barColor = Color(resolvedUIColor)
         let barWidth: CGFloat = 10
-        let (statusText, statusColor) = getEventStatus(event)
         let dayOfWeek = Self.dayOfWeekFormatter.string(from: event.startDate)
         let dateStr = Self.dateFormatter.string(from: event.startDate)
         let timeRange = timeRangeFormatter(startDate: event.startDate, endDate: event.endDate)
+        let timeLabel = timeBubble(for: event)
+        let locationLine = event.location?.split(separator: "\n").first.map(String.init)
 
         return ZStack(alignment: .topLeading) {
             // Card background - fills entire widget
@@ -132,10 +133,25 @@ struct NextEventWidgetView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.secondary)
 
-                    // Status
-                    Text(statusText)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(statusColor)
+                    if let locationLine, !locationLine.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Text(locationLine)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 6)
+
+                    if let timeLabel {
+                        Text(timeLabel.text)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(timeLabel.foreground)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(12)
@@ -143,18 +159,6 @@ struct NextEventWidgetView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottomTrailing) {
-            if let bubble = timeBubble(for: event) {
-                Text(bubble.text)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(bubble.foreground)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(bubble.background)
-                    .clipShape(Capsule())
-                    .padding(10)
-            }
-        }
         .edgesIgnoringSafeArea(.all) // Ensure it ignores safe area if needed for full bleed
     }
 
@@ -176,7 +180,7 @@ struct NextEventWidgetView: View {
         return ("Upcoming", .gray)
     }
 
-    private func timeBubble(for event: WidgetEventData) -> (text: String, background: Color, foreground: Color)? {
+    private func timeBubble(for event: WidgetEventData) -> (text: String, foreground: Color)? {
         let now = Date()
         let calendar = Calendar.current
 
@@ -184,12 +188,12 @@ struct NextEventWidgetView: View {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.startDate)
             guard let text = bubbleText(from: components) else { return nil }
             let color = Color.blue
-            return ("\(text) Till", color.opacity(0.16), color)
+            return ("Starts in \(text)", color)
         } else if now < event.endDate {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.endDate)
             guard let text = bubbleText(from: components) else { return nil }
             let color = Color.green
-            return ("\(text) Left", color.opacity(0.16), color)
+            return ("Ends in \(text)", color)
         }
 
         return nil

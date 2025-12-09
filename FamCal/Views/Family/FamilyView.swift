@@ -25,6 +25,7 @@ struct FamilyView: View {
     private var eventsPerPerson: Int { appSettingsManager.eventsPerPerson }
     private var spotlightEventsPerPerson: Int { appSettingsManager.spotlightEventsPerPerson }
     private var nextEventColumns: Int { appSettingsManager.nextEventColumns }
+    private var nextEventsDensityMode: String { appSettingsManager.nextEventsDensityMode }
     private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
     private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
 
@@ -167,6 +168,18 @@ struct FamilyView: View {
     // Use reorderedEvents during drag, otherwise use memberEvents
     private var displayedEvents: [MemberEventGroup] {
         draggedMemberName != nil && !reorderedEvents.isEmpty ? reorderedEvents : memberEvents
+    }
+
+    private var nextEventCardHeight: CGFloat {
+        if nextEventsDensityMode == "compact" {
+            if nextEventColumns >= 4 { return 92 }
+            if nextEventColumns == 3 { return 102 }
+            return 116
+        } else {
+            if nextEventColumns >= 4 { return 150 }
+            if nextEventColumns == 3 { return 162 }
+            return 178
+        }
     }
 
     private static let timeFormatter: DateFormatter = {
@@ -480,7 +493,8 @@ struct FamilyView: View {
         return VStack(alignment: .leading, spacing: 24) {
             // MARK: Next Events Section
             VStack(alignment: .leading, spacing: 16) {
-                let spacing: CGFloat = nextEventColumns <= 2 ? 16 : 8
+                let baseSpacing: CGFloat = nextEventColumns <= 2 ? 16 : 8
+                let spacing: CGFloat = nextEventsDensityMode == "compact" ? baseSpacing * 0.7 : baseSpacing
                 let columns = isLandscape
                     ? Array(repeating: GridItem(.flexible(), spacing: spacing), count: nextEventColumns + 2)
                     : Array(repeating: GridItem(.flexible(), spacing: spacing), count: nextEventColumns)
@@ -493,7 +507,7 @@ struct FamilyView: View {
                             Button(action: {
                                 spotlightMemberName = memberGroup.memberName
                             }) {
-                                nextEventCard(for: memberGroup, event: nextEvent)
+                                nextEventCardView(for: memberGroup, event: nextEvent)
                             }
                             .buttonStyle(.plain)
                             .opacity(draggedMemberName == memberGroup.memberName ? 0.5 : 1.0)
@@ -754,7 +768,7 @@ struct FamilyView: View {
                     .foregroundColor(.primary)
                     .lineLimit(2)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 6)
 
                 // Day name and date (with relative formatting)
                 Text(dateText)
@@ -797,14 +811,17 @@ struct FamilyView: View {
                                 .foregroundColor(secondaryTextColor)
                                 .lineLimit(1)
                         }
+                        }
                     }
-                }
 
-                // Time remaining/status inline (instead of bubble)
+                Spacer(minLength: 4)
+
+                // Time remaining/status pinned near the bottom
                 if let bubble = timeBubble(for: event) {
                     Text(bubble.text)
                         .font(.system(size: detailSize, weight: .semibold))
                         .foregroundColor(bubble.foreground)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -812,8 +829,7 @@ struct FamilyView: View {
         }
 
         // Dynamic layout - height adjusts to content, rows align to tallest card
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .frame(minHeight: 120)
+        .frame(maxWidth: .infinity, minHeight: nextEventCardHeight, maxHeight: nextEventCardHeight)
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(theme.cardStroke, lineWidth: 1)
@@ -1041,6 +1057,71 @@ struct FamilyView: View {
                     .background(Circle().fill(Color(groupedEvent.memberColor)))
             ) : AnyView(EmptyView()),
             alignment: .topTrailing
+        )
+    }
+
+    @ViewBuilder
+    private func nextEventCardView(for memberGroup: MemberEventGroup, event: GroupedEvent) -> some View {
+        if nextEventsDensityMode == "compact" {
+            compactNextEventCard(for: memberGroup, event: event)
+        } else {
+            nextEventCard(for: memberGroup, event: event)
+        }
+    }
+
+    private func compactNextEventCard(for memberGroup: MemberEventGroup, event: GroupedEvent) -> some View {
+        let stripeColor = Color(uiColor: event.calendarColor)
+        let badge = timeBubble(for: event)
+        let titleSize: CGFloat = nextEventColumns >= 4 ? 12.5 : (nextEventColumns == 3 ? 13.5 : 14)
+        let detailSize: CGFloat = nextEventColumns >= 4 ? 10 : 11
+        let timeLabel = badge?.text
+            ?? (event.isAllDay ? formatRelativeDate(event.startDate) : getTimeUntilEvent(event.startDate))
+
+        return HStack(alignment: .top, spacing: 10) {
+            Rectangle()
+                .fill(stripeColor)
+                .frame(width: 4)
+                .cornerRadius(2)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(memberGroup.memberName)
+                        .font(.system(size: detailSize, weight: .semibold))
+                        .foregroundColor(secondaryTextColor)
+                        .lineLimit(1)
+
+                    if event.isImportant {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: detailSize - 1, weight: .semibold))
+                            .foregroundColor(.orange)
+                    }
+                }
+
+                Text(event.title)
+                    .font(.system(size: titleSize, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+
+                Spacer(minLength: 6)
+
+                Text(timeLabel)
+                    .font(.system(size: detailSize, weight: .semibold))
+                    .foregroundColor(badge?.foreground ?? secondaryTextColor)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: nextEventCardHeight, maxHeight: nextEventCardHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(theme.cardStroke, lineWidth: 1)
         )
     }
 
@@ -1706,12 +1787,12 @@ struct FamilyView: View {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.startDate)
             guard let text = bubbleText(from: components, columns: nextEventColumns) else { return nil }
             let color = Color.blue
-            return ("\(text) Until", color)
+            return ("Starts in \(text)", color)
         } else if now < event.endDate {
             let components = calendar.dateComponents([.day, .hour, .minute], from: now, to: event.endDate)
             guard let text = bubbleText(from: components, columns: nextEventColumns) else { return nil }
             let color = Color.green
-            return ("\(text) Left", color)
+            return ("Ends in \(text)", color)
         }
 
         return nil
