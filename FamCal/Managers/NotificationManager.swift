@@ -226,9 +226,14 @@ class NotificationManager: NSObject, ObservableObject {
                 continue
             }
 
-            // Skip if event already has a notification scheduled
-            if existingIdentifiers.contains(event.eventIdentifier ?? "") {
-                print("⏭️ Skipping '\(eventTitle)' - notification already scheduled")
+            // Skip if event already has a notification scheduled for this occurrence
+            // Create the same unique identifier we use when scheduling
+            let dateFormatter = ISO8601DateFormatter()
+            let dateString = dateFormatter.string(from: event.startDate)
+            let notificationId = "\(event.eventIdentifier ?? "")_\(dateString)"
+
+            if existingIdentifiers.contains(notificationId) {
+                print("⏭️ Skipping '\(eventTitle)' on \(event.startDate.formatted(date: .abbreviated, time: .shortened)) - notification already scheduled")
                 skippedCount += 1
                 continue
             }
@@ -489,8 +494,14 @@ class NotificationManager: NSObject, ObservableObject {
             repeats: false
         )
 
+        // Create unique identifier for this occurrence
+        // For recurring events, include the start date to create a unique ID per occurrence
+        let dateFormatter = ISO8601DateFormatter()
+        let dateString = dateFormatter.string(from: event.startDate)
+        let notificationId = "\(event.eventIdentifier ?? UUID().uuidString)_\(dateString)"
+
         let request = UNNotificationRequest(
-            identifier: event.eventIdentifier ?? UUID().uuidString,
+            identifier: notificationId,
             content: content,
             trigger: trigger
         )
