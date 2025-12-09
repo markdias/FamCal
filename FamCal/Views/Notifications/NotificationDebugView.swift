@@ -372,8 +372,20 @@ struct NotificationDebugView: View {
             let delivered = await notificationManager.getDeliveredNotifications()
 
             await MainActor.run {
-                pendingNotifications = pending
-                deliveredNotifications = delivered
+                // Sort pending notifications by trigger date
+                pendingNotifications = pending.sorted { req1, req2 in
+                    guard let trigger1 = req1.trigger as? UNCalendarNotificationTrigger,
+                          let trigger2 = req2.trigger as? UNCalendarNotificationTrigger,
+                          let date1 = trigger1.nextTriggerDate(),
+                          let date2 = trigger2.nextTriggerDate() else {
+                        return false
+                    }
+                    return date1 < date2
+                }
+
+                // Sort delivered notifications by date (most recent first)
+                deliveredNotifications = delivered.sorted { $0.date > $1.date }
+
                 refreshing = false
                 print("✅ Notification debug data refreshed: \(pending.count) pending, \(delivered.count) delivered")
             }
