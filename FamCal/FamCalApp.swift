@@ -573,7 +573,8 @@ struct FamCalApp: App {
                         accessToken: accessToken,
                         refreshToken: refreshToken,
                         userId: userId,
-                        email: email
+                        email: email,
+                        linkType: linkType
                     )
                     print("✅ User automatically authenticated via deep link (invite/auth)")
 

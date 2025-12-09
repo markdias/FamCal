@@ -22,6 +22,7 @@ class SupabaseAuthManager: ObservableObject {
     @Published var userEmail: String?
     @Published var userId: String?
     @Published var authProvider: AuthProvider = .unknown
+    @Published var didConfirmEmailViaLink: Bool = false
 
     private var cancellables = Set<AnyCancellable>()
     private let supabaseURL: URL
@@ -175,7 +176,7 @@ class SupabaseAuthManager: ObservableObject {
     }
 
     /// Update auth state from a deep link session (e.g. invite or recovery)
-    func applyDeepLinkSession(accessToken: String, refreshToken: String?, userId: String?, email: String?) {
+    func applyDeepLinkSession(accessToken: String, refreshToken: String?, userId: String?, email: String?, linkType: String? = nil) {
         let claims = decodeJWTClaims(accessToken)
         if let userId {
             self.userId = userId
@@ -193,6 +194,13 @@ class SupabaseAuthManager: ObservableObject {
         }
         self.isAuthenticated = true
         self.isGuest = false
+        if let linkType, linkType.lowercased().contains("signup") || linkType.lowercased().contains("confirm") {
+            didConfirmEmailViaLink = true
+        } else if linkType == nil {
+            // If link type isn't provided but we were deep-linked with an access token,
+            // assume email confirmation link for onboarding.
+            didConfirmEmailViaLink = true
+        }
         self.authProvider = .emailPassword
         saveSession()
     }
@@ -832,36 +840,47 @@ class SupabaseAuthManager: ObservableObject {
     /// Check actual email verification status from Supabase
     /// Returns true if email_confirmed_at is set, false otherwise
     func checkEmailVerificationStatus() async throws -> Bool {
-        guard isAuthenticated, !isGuest, let accessToken = accessToken else {
+        guard isAuthenticated, !isGuest else {
             return false
         }
+
+        return try await fetchEmailVerificationStatus(allowRefresh: true)
+    }
+
+    /// Internal helper that optionally refreshes the token once on auth errors
+    private func fetchEmailVerificationStatus(allowRefresh: Bool) async throws -> Bool {
+        guard let token = accessToken else { return false }
 
         let url = supabaseURL.appendingPathComponent("auth/v1/user")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NSError(domain: "InvalidResponse", code: -1)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "InvalidResponse", code: -1)
+        }
+
+        if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+            print("⚠️ Email verification check unauthorized (HTTP \(httpResponse.statusCode)), token may be stale")
+            if allowRefresh {
+                try await refreshAccessToken()
+                return try await fetchEmailVerificationStatus(allowRefresh: false)
             }
-
-            guard httpResponse.statusCode == 200 else {
-                print("⚠️ Failed to fetch user info (HTTP \(httpResponse.statusCode))")
-                return false
-            }
-
-            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
-            let isVerified = authResponse.user.email_confirmed_at != nil
-            print("ℹ️ Email verification status: \(isVerified ? "verified" : "pending")")
-            return isVerified
-        } catch {
-            print("❌ Error checking email verification: \(error.localizedDescription)")
             return false
         }
+
+        guard httpResponse.statusCode == 200 else {
+            print("⚠️ Failed to fetch user info (HTTP \(httpResponse.statusCode))")
+            return false
+        }
+
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        let isVerified = authResponse.user.email_confirmed_at != nil
+        print("ℹ️ Email verification status: \(isVerified ? "verified" : "pending")")
+        return isVerified
     }
 
     /// Update password using current authenticated session (used after recovery deep link)

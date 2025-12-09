@@ -83,6 +83,25 @@ struct FamilyNameSetupView: View {
                         }
                     }
 
+                    if !isEmailVerified {
+                        // Manual confirmation checkbox
+                        HStack(spacing: 12) {
+                            Button(action: { isEmailVerified.toggle() }) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: isEmailVerified ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(isEmailVerified ? .green : .gray)
+
+                                    Text("I've verified my email")
+                                        .font(.system(size: 14, weight: .regular))
+                                        .foregroundColor(.primary)
+                                }
+                            }
+
+                            Spacer()
+                        }
+                    }
+
                     // Check Again Button
                     Button(action: { checkVerificationStatus() }) {
                         HStack {
@@ -175,6 +194,9 @@ struct FamilyNameSetupView: View {
     }
 
     private func handleInitialVerification() {
+        if authManager.didConfirmEmailViaLink {
+            isEmailVerified = true
+        }
         baseFamilyName = extractBaseFamilyName(from: familyName)
         familyName = normalizedFamilyName(from: baseFamilyName)
 
