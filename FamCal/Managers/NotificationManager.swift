@@ -200,14 +200,14 @@ class NotificationManager: NSObject, ObservableObject {
 
         print("ℹ️ Syncing notifications for \(trackedCalendars.count) tracked calendar(s)")
 
-        // Fetch events from now to 1 year in the future
+        // Fetch events from now to 7 days in the future (only need near-term events for notifications)
         let startDate = Date()
-        let endDate = Calendar.current.date(byAdding: .year, value: 1, to: startDate) ?? startDate.addingTimeInterval(31536000)
+        let endDate = Calendar.current.date(byAdding: .day, value: 7, to: startDate) ?? startDate.addingTimeInterval(604800)
 
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: trackedCalendars)
         let events = eventStore.events(matching: predicate)
 
-        print("ℹ️ Found \(events.count) upcoming event(s) in tracked calendars")
+        print("ℹ️ Found \(events.count) upcoming event(s) in next 7 days")
 
         // Get existing pending notifications to avoid duplicates
         let existingNotifications = await notificationCenter.pendingNotificationRequests()
