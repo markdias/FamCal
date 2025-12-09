@@ -76,8 +76,9 @@ struct PersistenceController {
                 print("❌ Persistence: App group container not found!")
             }
 
-            // Delete old store once to force recreation with new schema (includes Driver entity)
-            Self.deleteOldPersistentStoreOnce()
+            // NOTE: Store migration disabled - CoreData will perform lightweight migrations automatically
+            // Supabase is the source of truth and will resync data if needed
+            // Self.deleteOldPersistentStoreOnce()
         }
 
         container.loadPersistentStores(completionHandler: { (storeDescription, error) in

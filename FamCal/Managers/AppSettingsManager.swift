@@ -12,51 +12,53 @@ import CoreData
 class AppSettingsManager: ObservableObject {
     static let shared = AppSettingsManager()
 
-    @Published var autoRefreshInterval: Int = 5
-    @Published var defaultMapsApp: String = "Apple Maps"
-    @Published var defaultHomeScreenRawValue: String = DefaultHomeScreen.family.rawValue
+    // Initialize display settings from UserDefaults to prevent UI flashing on app launch
+    @Published var autoRefreshInterval: Int = AppGroupDefaults.shared.object(forKey: "autoRefreshInterval") as? Int ?? 5
+    @Published var defaultMapsApp: String = AppGroupDefaults.shared.string(forKey: "defaultMapsApp") ?? "Apple Maps"
+    @Published var defaultHomeScreenRawValue: String = AppGroupDefaults.shared.string(forKey: "defaultHomeScreenRawValue") ?? DefaultHomeScreen.family.rawValue
 
-    @Published var eventsPerPerson: Int = 3
-    @Published var spotlightEventsPerPerson: Int = 5
-    @Published var nextEventColumns: Int = 2
-    @Published var nextEventsDensityMode: String = "detailed" // "detailed" or "compact"
-    @Published var eventsPastDays: Int = 90
-    @Published var eventsFutureDays: Int = 180
-    @Published var defaultAlertOptionRawValue: String = AlertOption.none.rawValue
+    @Published var eventsPerPerson: Int = AppGroupDefaults.shared.object(forKey: "eventsPerPerson") as? Int ?? 3
+    @Published var spotlightEventsPerPerson: Int = AppGroupDefaults.shared.object(forKey: "spotlightEventsPerPerson") as? Int ?? 5
+    @Published var nextEventColumns: Int = AppGroupDefaults.shared.object(forKey: "nextEventColumns") as? Int ?? 2
+    @Published var nextEventsDensityMode: String = AppGroupDefaults.shared.string(forKey: "nextEventsDensityMode") ?? "detailed"
+    @Published var eventsPastDays: Int = AppGroupDefaults.shared.object(forKey: "eventsPastDays") as? Int ?? 90
+    @Published var eventsFutureDays: Int = AppGroupDefaults.shared.object(forKey: "eventsFutureDays") as? Int ?? 180
+    @Published var defaultAlertOptionRawValue: String = AppGroupDefaults.shared.string(forKey: "defaultAlertOptionRawValue") ?? AlertOption.none.rawValue
     @Published var isProUser: Bool = UserDefaults.standard.bool(forKey: "com.famcal.pro.enabled")
 
     // Upcoming Events Display Settings
-    @Published var upcomingEventsDensityMode: String = "detailed" // "detailed" or "compact"
-    @Published var compactViewStyle: String = "option1" // "option1", "option3", or "option4"
+    // Initialize from UserDefaults to prevent flash of wrong view mode on app launch
+    @Published var upcomingEventsDensityMode: String = AppGroupDefaults.shared.string(forKey: "upcomingEventsDensityMode") ?? "detailed"
+    @Published var compactViewStyle: String = AppGroupDefaults.shared.string(forKey: "compactViewStyle") ?? "option1"
 
     // Calendar View Display Settings
-    @Published var calendarEventsDensityMode: String = "detailed" // "detailed" or "compact"
+    @Published var calendarEventsDensityMode: String = AppGroupDefaults.shared.string(forKey: "calendarEventsDensityMode") ?? "detailed"
 
-    // Notification Settings
-    @Published var notificationsEnabled: Bool = false
-    @Published var morningBriefEnabled: Bool = false
-    @Published var morningBriefTimeHour: Int = 8
-    @Published var morningBriefTimeMinute: Int = 0
-    @Published var morningBriefWeekdaysOnly: Bool = false
-    @Published var morningBriefSelectedMembers: [String]? // Array of member UUIDs to include (nil = all members)
-    @Published var morningBriefNotificationSound: String = "default" // "default", "none", custom sound
-    @Published var notificationHistoryEnabled: Bool = true
+    // Notification Settings - Initialize from UserDefaults
+    @Published var notificationsEnabled: Bool = AppGroupDefaults.shared.object(forKey: "notificationsEnabled") as? Bool ?? false
+    @Published var morningBriefEnabled: Bool = AppGroupDefaults.shared.object(forKey: "morningBriefEnabled") as? Bool ?? false
+    @Published var morningBriefTimeHour: Int = AppGroupDefaults.shared.object(forKey: "morningBriefTimeHour") as? Int ?? 8
+    @Published var morningBriefTimeMinute: Int = AppGroupDefaults.shared.object(forKey: "morningBriefTimeMinute") as? Int ?? 0
+    @Published var morningBriefWeekdaysOnly: Bool = AppGroupDefaults.shared.object(forKey: "morningBriefWeekdaysOnly") as? Bool ?? false
+    @Published var morningBriefSelectedMembers: [String]? = AppGroupDefaults.shared.array(forKey: "morningBriefSelectedMembers") as? [String]
+    @Published var morningBriefNotificationSound: String = AppGroupDefaults.shared.string(forKey: "morningBriefNotificationSound") ?? "default"
+    @Published var notificationHistoryEnabled: Bool = AppGroupDefaults.shared.object(forKey: "notificationHistoryEnabled") as? Bool ?? true
 
-    // Widget Settings
-    @Published var widgetShowEventsCount: Int = 3
-    @Published var widgetShowOwnCalendarsOnly: Bool = false
-    @Published var widgetShowTime: Bool = true
-    @Published var widgetShowLocation: Bool = true
-    @Published var widgetShowAttendees: Bool = true
+    // Widget Settings - Initialize from UserDefaults
+    @Published var widgetShowEventsCount: Int = AppGroupDefaults.shared.object(forKey: "widgetShowEventsCount") as? Int ?? 3
+    @Published var widgetShowOwnCalendarsOnly: Bool = AppGroupDefaults.shared.object(forKey: "widgetShowOwnCalendarsOnly") as? Bool ?? false
+    @Published var widgetShowTime: Bool = AppGroupDefaults.shared.object(forKey: "widgetShowTime") as? Bool ?? true
+    @Published var widgetShowLocation: Bool = AppGroupDefaults.shared.object(forKey: "widgetShowLocation") as? Bool ?? true
+    @Published var widgetShowAttendees: Bool = AppGroupDefaults.shared.object(forKey: "widgetShowAttendees") as? Bool ?? true
 
-    // Account Link
-    @Published var linkedFamilyMemberId: String?
+    // Account Link - Initialize from UserDefaults
+    @Published var linkedFamilyMemberId: String? = AppGroupDefaults.shared.string(forKey: "linkedFamilyMemberId")
 
-    // Family Member Order
-    @Published var familyMemberOrder: [String] = []
+    // Family Member Order - Initialize from UserDefaults
+    @Published var familyMemberOrder: [String] = AppGroupDefaults.shared.array(forKey: "familyMemberOrder") as? [String] ?? []
 
-    // Family Setup
-    @Published var familyName: String = ""
+    // Family Setup - Initialize from UserDefaults
+    @Published var familyName: String = AppGroupDefaults.shared.string(forKey: "familyName") ?? ""
     @Published var hasCompletedFamilySetup: Bool = UserDefaults.standard.bool(forKey: "hasCompletedFamilySetup")
     @Published var familyId: String? = UserDefaults.standard.string(forKey: "com.famcal.familyId")
 

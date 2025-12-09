@@ -66,8 +66,12 @@ class SupabaseDataSync {
                         member.avatarInitials = getInitials(from: supabaseDTO.name)
                     } else if member.name == nil || member.name?.isEmpty == true {
                         // If existing name is also empty, set a fallback
+                        print("⚠️ DATA QUALITY ISSUE: Supabase member \(supabaseDTO.id) has empty name - setting to 'Unknown'")
                         member.name = "Unknown"
                         member.avatarInitials = "?"
+                    } else {
+                        // Preserve existing non-empty name when Supabase has empty name
+                        print("ℹ️ Preserving existing name '\(member.name ?? "")' for member \(supabaseDTO.id) - Supabase returned empty name")
                     }
                     member.colorHex = supabaseDTO.color_hex
                     member.isDriver = supabaseDTO.is_driver ?? false
@@ -78,6 +82,9 @@ class SupabaseDataSync {
                     member.id = UUID(uuidString: supabaseDTO.id) ?? UUID()
                     // Ensure name is never empty
                     let name = supabaseDTO.name.trimmingCharacters(in: .whitespaces).isEmpty ? "Unknown" : supabaseDTO.name
+                    if name == "Unknown" {
+                        print("⚠️ DATA QUALITY ISSUE: Creating new member \(supabaseDTO.id) with empty name from Supabase - setting to 'Unknown'")
+                    }
                     member.name = name
                     member.colorHex = supabaseDTO.color_hex
                     member.avatarInitials = getInitials(from: name)

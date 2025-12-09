@@ -31,7 +31,16 @@ class SupabaseDataManager: ObservableObject {
     private var managedObjectContext: NSManagedObjectContext?
     private var networkMonitor: NWPathMonitor?
     private var wasOffline = false
-    private var lastAuthenticatedUserId: String?
+
+    // Persist last authenticated user ID to prevent false "different user" detection on app restart
+    private var lastAuthenticatedUserId: String? {
+        get {
+            UserDefaults.standard.string(forKey: "lastAuthenticatedUserId")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "lastAuthenticatedUserId")
+        }
+    }
 
     init() {
         self.supabaseManager = SupabaseManager.shared
