@@ -644,6 +644,109 @@ class NotificationManager: NSObject, ObservableObject {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiersToRemove)
     }
 
+    // MARK: - Morning Brief Image Generation
+
+    private func generateMorningBriefImage(events: [MorningBriefEvent]) -> UIImage? {
+        // Image dimensions
+        let width: CGFloat = 600
+        let rowHeight: CGFloat = 70
+        let headerHeight: CGFloat = 80
+        let padding: CGFloat = 20
+        let totalHeight = headerHeight + (CGFloat(events.count) * rowHeight) + padding * 2
+
+        let size = CGSize(width: width, height: totalHeight)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        let image = renderer.image { context in
+            let ctx = context.cgContext
+
+            // Background gradient
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let colors = [
+                UIColor(red: 0.95, green: 0.97, blue: 1.0, alpha: 1.0).cgColor,
+                UIColor(red: 0.90, green: 0.93, blue: 0.98, alpha: 1.0).cgColor
+            ]
+            let gradient = CGGradient(colorsSpace: colorSpace, colors: colors as CFArray, locations: [0, 1])!
+            ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: totalHeight), options: [])
+
+            // Header
+            let headerText = "Today's Schedule"
+            let headerAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 32, weight: .bold),
+                .foregroundColor: UIColor(red: 0.2, green: 0.2, blue: 0.3, alpha: 1.0)
+            ]
+            headerText.draw(at: CGPoint(x: padding, y: padding + 10), withAttributes: headerAttrs)
+
+            let dateText = formatDate(Date())
+            let dateAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 16, weight: .regular),
+                .foregroundColor: UIColor(red: 0.4, green: 0.4, blue: 0.5, alpha: 1.0)
+            ]
+            dateText.draw(at: CGPoint(x: padding, y: padding + 45), withAttributes: dateAttrs)
+
+            // Events
+            var yPos = headerHeight + padding
+
+            for event in events {
+                let rowRect = CGRect(x: padding, y: yPos, width: width - padding * 2, height: rowHeight - 10)
+
+                // Row background
+                let rowBg = UIBezierPath(roundedRect: rowRect, cornerRadius: 12)
+                UIColor.white.withAlphaComponent(0.8).setFill()
+                rowBg.fill()
+
+                // Add subtle shadow
+                ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 4, color: UIColor.black.withAlphaComponent(0.1).cgColor)
+
+                // Time
+                let timeStr = event.isAllDay ? "All day" : Self.briefTimeFormatter.string(from: event.startTime)
+                let timeAttrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 16, weight: .semibold),
+                    .foregroundColor: UIColor.systemBlue
+                ]
+                timeStr.draw(at: CGPoint(x: padding + 15, y: yPos + 12), withAttributes: timeAttrs)
+
+                // Event title
+                let titleAttrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 18, weight: .medium),
+                    .foregroundColor: UIColor(red: 0.2, green: 0.2, blue: 0.3, alpha: 1.0)
+                ]
+                let truncatedTitle = event.title.count > 30 ? String(event.title.prefix(27)) + "..." : event.title
+                truncatedTitle.draw(at: CGPoint(x: padding + 120, y: yPos + 10), withAttributes: titleAttrs)
+
+                // Member name
+                let member = event.attendees.first ?? "Family"
+                let memberAttrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: UIColor(red: 0.5, green: 0.5, blue: 0.6, alpha: 1.0)
+                ]
+                let memberText = "👤 \(member)"
+                memberText.draw(at: CGPoint(x: padding + 120, y: yPos + 35), withAttributes: memberAttrs)
+
+                // Location (if available)
+                if let location = event.location, !location.isEmpty {
+                    let locationAttrs: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.systemFont(ofSize: 13, weight: .regular),
+                        .foregroundColor: UIColor(red: 0.6, green: 0.6, blue: 0.7, alpha: 1.0)
+                    ]
+                    let truncatedLocation = location.count > 25 ? String(location.prefix(22)) + "..." : location
+                    let locationText = "📍 \(truncatedLocation)"
+                    locationText.draw(at: CGPoint(x: padding + 320, y: yPos + 35), withAttributes: locationAttrs)
+                }
+
+                yPos += rowHeight
+            }
+        }
+
+        return image
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter.string(from: date)
+    }
+
     // MARK: - Morning Brief
 
     func scheduleMorningBrief(withEvents events: [MorningBriefEvent] = []) {
@@ -687,20 +790,34 @@ class NotificationManager: NSObject, ObservableObject {
             if briefEvents.isEmpty {
                 content.body = "No events scheduled for today. Open FamCal to add one."
             } else {
-                var bodyLines = ["\(briefEvents.count) event\(briefEvents.count == 1 ? "" : "s") today:"]
+                // Create summary text for collapsed notification
+                let memberCounts = Dictionary(grouping: briefEvents, by: { $0.attendees.first ?? "Family" })
+                    .mapValues { $0.count }
+                    .sorted { $0.value > $1.value }
 
-                for (index, event) in briefEvents.prefix(5).enumerated() {
-                    let timeStr = event.isAllDay ? "All day" : Self.briefTimeFormatter.string(from: event.startTime)
-                    let member = event.attendees.first ?? "Family"
-                    let locationText = (event.location?.isEmpty ?? true) ? "" : " @ \(event.location!)"
-                    bodyLines.append("\(index + 1). \(event.title) — \(member) · \(timeStr)\(locationText)")
+                var summaryParts: [String] = []
+                for (member, count) in memberCounts.prefix(3) {
+                    summaryParts.append("\(count) for \(member)")
                 }
 
-                if briefEvents.count > 5 {
-                    bodyLines.append("...and \(briefEvents.count - 5) more")
-                }
+                let summary = summaryParts.joined(separator: ", ")
+                content.body = "\(briefEvents.count) event\(briefEvents.count == 1 ? "" : "s") today - \(summary)\nTap to view full schedule"
 
-                content.body = bodyLines.joined(separator: "\n")
+                // Generate and attach image with all events
+                if let image = generateMorningBriefImage(events: briefEvents),
+                   let imageData = image.pngData() {
+                    let tempDir = FileManager.default.temporaryDirectory
+                    let imageURL = tempDir.appendingPathComponent("morning-brief-\(UUID().uuidString).png")
+
+                    do {
+                        try imageData.write(to: imageURL)
+                        let attachment = try UNNotificationAttachment(identifier: "schedule-image", url: imageURL, options: nil)
+                        content.attachments = [attachment]
+                        print("✅ Morning brief image attached successfully")
+                    } catch {
+                        print("⚠️ Failed to attach morning brief image: \(error)")
+                    }
+                }
             }
 
             // Set notification sound based on settings
