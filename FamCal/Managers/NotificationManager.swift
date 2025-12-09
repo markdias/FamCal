@@ -36,6 +36,7 @@ class NotificationManager: NSObject, ObservableObject {
 
     private let userDefaults = UserDefaults.standard
     private let notificationCenter = UNUserNotificationCenter.current()
+    private let eventStore = EKEventStore()
 
     // UserDefaults keys
     private let enabledKey = "notificationsEnabled"
@@ -48,9 +49,24 @@ class NotificationManager: NSObject, ObservableObject {
         super.init()
         loadSettings()
         notificationCenter.delegate = self
+
+        // Observe calendar changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(calendarDatabaseChanged),
+            name: .EKEventStoreChanged,
+            object: eventStore
+        )
+
         Task {
             await syncNotificationPermission()
+            // Sync existing calendar events on init
+            await syncCalendarNotifications()
         }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: .EKEventStoreChanged, object: eventStore)
     }
 
     // MARK: - Permission Handling
@@ -131,6 +147,143 @@ class NotificationManager: NSObject, ObservableObject {
         let calendars = Array(selectedCalendarsForNotifications)
         if let encoded = try? JSONEncoder().encode(calendars) {
             userDefaults.set(encoded, forKey: selectedCalendarsKey)
+        }
+    }
+
+    // MARK: - Calendar Change Monitoring
+
+    @objc private func calendarDatabaseChanged() {
+        print("📅 Calendar database changed - syncing notifications...")
+        Task {
+            await syncCalendarNotifications()
+        }
+    }
+
+    /// Sync notifications for all calendar events that have alerts
+    func syncCalendarNotifications() async {
+        guard await ensureNotificationPermission() else {
+            print("⚠️ Cannot sync calendar notifications - no permission")
+            return
+        }
+
+        print("🔄 Syncing calendar notifications...")
+
+        // Get calendar owner lookup
+        let calendarLookup = fetchCalendarOwners()
+        guard !calendarLookup.isEmpty else {
+            print("⚠️ No calendar mappings found - skipping sync")
+            return
+        }
+
+        // Check calendar access
+        let calendarStatus = EKEventStore.authorizationStatus(for: .event)
+        let hasReadAccess: Bool
+        if #available(iOS 17.0, *) {
+            hasReadAccess = (calendarStatus == .fullAccess) || (calendarStatus == .writeOnly)
+        } else {
+            hasReadAccess = (calendarStatus == .authorized)
+        }
+
+        guard hasReadAccess else {
+            print("⚠️ Calendar access not authorized - skipping sync")
+            return
+        }
+
+        // Get all calendars we're tracking
+        let allCalendars = eventStore.calendars(for: .event)
+        let trackedCalendars = allCalendars.filter { calendarLookup[$0.calendarIdentifier] != nil }
+
+        guard !trackedCalendars.isEmpty else {
+            print("⚠️ No tracked calendars found - skipping sync")
+            return
+        }
+
+        print("ℹ️ Syncing notifications for \(trackedCalendars.count) tracked calendar(s)")
+
+        // Fetch events from now to 1 year in the future
+        let startDate = Date()
+        let endDate = Calendar.current.date(byAdding: .year, value: 1, to: startDate) ?? startDate.addingTimeInterval(31536000)
+
+        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: trackedCalendars)
+        let events = eventStore.events(matching: predicate)
+
+        print("ℹ️ Found \(events.count) upcoming event(s) in tracked calendars")
+
+        // Get existing pending notifications to avoid duplicates
+        let existingNotifications = await notificationCenter.pendingNotificationRequests()
+        let existingIdentifiers = Set(existingNotifications.map { $0.identifier })
+
+        var scheduledCount = 0
+        var skippedCount = 0
+
+        for event in events {
+            // Skip if event already has a notification scheduled
+            if existingIdentifiers.contains(event.eventIdentifier ?? "") {
+                continue
+            }
+
+            // Only schedule if event has alarms
+            guard let alarms = event.alarms, !alarms.isEmpty else {
+                continue
+            }
+
+            // Get the first alarm to determine alert option
+            guard let firstAlarm = alarms.first else { continue }
+
+            let alertOption = alertOptionFromAlarm(firstAlarm, eventStartDate: event.startDate)
+
+            // Skip if alert is in the past
+            if alertOption == .none {
+                continue
+            }
+
+            // Get calendar owner info
+            guard let owner = calendarLookup[event.calendar.calendarIdentifier] else { continue }
+
+            // Check if we should notify for this event
+            let memberIds = owner.memberId.map { [$0] } ?? []
+            if !shouldNotifyForEvent(calendarId: event.calendar.calendarIdentifier, memberIds: memberIds) {
+                skippedCount += 1
+                continue
+            }
+
+            // Schedule the notification
+            let familyMembers = owner.memberId != nil ? [owner.displayName] : []
+            let isSharedEvent = owner.memberId == nil
+
+            scheduleEventNotificationNow(
+                event: event,
+                alertOption: alertOption,
+                familyMembers: familyMembers,
+                drivers: nil,
+                location: event.location,
+                isSharedCalendarEvent: isSharedEvent
+            )
+
+            scheduledCount += 1
+        }
+
+        print("✅ Calendar sync complete: scheduled \(scheduledCount), skipped \(skippedCount)")
+    }
+
+    /// Convert EKAlarm to AlertOption
+    private func alertOptionFromAlarm(_ alarm: EKAlarm, eventStartDate: Date) -> AlertOption {
+        // relativeOffset is negative for alarms before the event
+        let relativeOffset = alarm.relativeOffset
+        let offsetMinutes = Int(abs(relativeOffset) / 60)
+
+        switch offsetMinutes {
+        case 0:
+            return .atTime
+        case 15:
+            return .fifteenMinsBefore
+        case 60:
+            return .oneHourBefore
+        case 1440: // 24 hours
+            return .oneDayBefore
+        default:
+            // For other times, use the closest match or atTime
+            return .atTime
         }
     }
 
@@ -222,16 +375,30 @@ class NotificationManager: NSObject, ObservableObject {
         }
 
         // Build notification content
-        let title = event.title ?? "Event"
+        let eventTitle = event.title ?? "Event"
 
+        // Determine the primary family member for this event
+        let primaryMember = familyMembers.first ?? "Family"
+
+        // Set title to event name and subtitle to family member
+        let content = UNMutableNotificationContent()
+        content.title = eventTitle
+
+        // Use subtitle to show the family member
+        if !familyMembers.isEmpty {
+            content.subtitle = primaryMember
+        }
+
+        // Build body with time, additional members, driver, and location
         var body = ""
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "h:mm a"
         body = timeFormatter.string(from: event.startDate)
 
-        // Add family members to body - only show if shared calendar event or multiple members
-        if !familyMembers.isEmpty && (isSharedCalendarEvent || familyMembers.count > 1) {
-            body += "\nWith: \(familyMembers.joined(separator: ", "))"
+        // Add additional family members to body if there are multiple
+        if familyMembers.count > 1 {
+            let additionalMembers = familyMembers.dropFirst().joined(separator: ", ")
+            body += "\nAlso with: \(additionalMembers)"
         }
 
         if let drivers = drivers, !drivers.isEmpty {
@@ -242,8 +409,6 @@ class NotificationManager: NSObject, ObservableObject {
             body += "\n📍 \(location)"
         }
 
-        let content = UNMutableNotificationContent()
-        content.title = title
         content.body = body
         content.sound = .default
 
@@ -308,7 +473,7 @@ class NotificationManager: NSObject, ObservableObject {
             if let error = error {
                 print("Error scheduling notification: \(error)")
             } else {
-                print("✅ Event notification scheduled for '\(title)' at \(triggerDate)")
+                print("✅ Event notification scheduled for '\(eventTitle)' at \(triggerDate)")
             }
         }
     }

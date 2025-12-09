@@ -161,6 +161,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         titleLabel.text = content.title
         contentStackView.addArrangedSubview(titleLabel)
 
+        // Add subtitle (family member) if present
+        if !content.subtitle.isEmpty, !isMorningBrief {
+            let subtitleLabel = UILabel()
+            subtitleLabel.text = "👤 \(content.subtitle)"
+            subtitleLabel.font = UIFont.systemFont(ofSize: 15, weight: .medium)
+            subtitleLabel.textColor = .systemBlue
+            contentStackView.addArrangedSubview(subtitleLabel)
+        }
+
         if isMorningBrief {
             displayMorningBrief(userInfo: userInfo)
         } else {

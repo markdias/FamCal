@@ -316,6 +316,11 @@ struct FamCalApp: App {
                     // 2. Manual pull-to-refresh in calendar views
                     // 3. Initial app load and after user actions (adding/editing calendars)
                     // This avoids unnecessary Supabase fetches on every app resume.
+
+                    // Sync calendar notifications when app becomes active
+                    Task {
+                        await NotificationManager.shared.syncCalendarNotifications()
+                    }
                 }
             }
             .onChange(of: authManager.isAuthenticated) { oldValue, newValue in
@@ -363,6 +368,11 @@ struct FamCalApp: App {
 
                 // Ensure morning brief is scheduled on app launch
                 NotificationManager.shared.ensureMorningBriefScheduled()
+
+                // Sync calendar notifications on app launch
+                Task {
+                    await NotificationManager.shared.syncCalendarNotifications()
+                }
 
                 // Validate session on app launch if user is authenticated
                 if authManager.isAuthenticated && !authManager.isGuest {
