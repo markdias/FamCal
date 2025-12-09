@@ -806,16 +806,34 @@ class NotificationManager: NSObject, ObservableObject {
                 // Generate and attach image with all events
                 if let image = generateMorningBriefImage(events: briefEvents),
                    let imageData = image.pngData() {
-                    let tempDir = FileManager.default.temporaryDirectory
-                    let imageURL = tempDir.appendingPathComponent("morning-brief-\(UUID().uuidString).png")
+
+                    // Use Caches directory which is accessible to notification extensions
+                    guard let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+                        print("⚠️ Failed to access caches directory")
+                        return
+                    }
+
+                    let imageURL = cachesDir.appendingPathComponent("morning-brief-\(UUID().uuidString).png")
+                    print("📁 Saving morning brief image to: \(imageURL.path)")
 
                     do {
                         try imageData.write(to: imageURL)
-                        let attachment = try UNNotificationAttachment(identifier: "schedule-image", url: imageURL, options: nil)
+                        print("✅ Image file written successfully, size: \(imageData.count) bytes")
+
+                        // Create attachment with explicit options
+                        let options: [String: Any] = [
+                            UNNotificationAttachmentOptionsTypeHintKey: "public.png"
+                        ]
+                        let attachment = try UNNotificationAttachment(
+                            identifier: "schedule-image",
+                            url: imageURL,
+                            options: options
+                        )
                         content.attachments = [attachment]
-                        print("✅ Morning brief image attached successfully")
+                        print("✅ Morning brief image attached successfully to notification")
                     } catch {
                         print("⚠️ Failed to attach morning brief image: \(error)")
+                        print("   Error details: \(error.localizedDescription)")
                     }
                 }
             }
