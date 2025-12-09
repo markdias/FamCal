@@ -217,37 +217,56 @@ class NotificationManager: NSObject, ObservableObject {
         var skippedCount = 0
 
         for event in events {
+            let eventTitle = event.title ?? "Untitled"
+
             // Skip events that have already ended
             if event.endDate < Date() {
+                print("⏭️ Skipping '\(eventTitle)' - event already ended")
+                skippedCount += 1
                 continue
             }
 
             // Skip if event already has a notification scheduled
             if existingIdentifiers.contains(event.eventIdentifier ?? "") {
+                print("⏭️ Skipping '\(eventTitle)' - notification already scheduled")
+                skippedCount += 1
                 continue
             }
 
             // Only schedule if event has alarms
             guard let alarms = event.alarms, !alarms.isEmpty else {
+                print("⏭️ Skipping '\(eventTitle)' - no alarms set")
+                skippedCount += 1
                 continue
             }
 
             // Get the first alarm to determine alert option
-            guard let firstAlarm = alarms.first else { continue }
+            guard let firstAlarm = alarms.first else {
+                print("⏭️ Skipping '\(eventTitle)' - no valid alarm")
+                skippedCount += 1
+                continue
+            }
 
             let alertOption = alertOptionFromAlarm(firstAlarm, eventStartDate: event.startDate)
 
             // Skip if alert is in the past
             if alertOption == .none {
+                print("⏭️ Skipping '\(eventTitle)' - alert time in the past")
+                skippedCount += 1
                 continue
             }
 
             // Get calendar owner info
-            guard let owner = calendarLookup[event.calendar.calendarIdentifier] else { continue }
+            guard let owner = calendarLookup[event.calendar.calendarIdentifier] else {
+                print("⏭️ Skipping '\(eventTitle)' - calendar not tracked (ID: \(event.calendar.calendarIdentifier))")
+                skippedCount += 1
+                continue
+            }
 
             // Check if we should notify for this event
             let memberIds = owner.memberId.map { [$0] } ?? []
             if !shouldNotifyForEvent(calendarId: event.calendar.calendarIdentifier, memberIds: memberIds) {
+                print("⏭️ Skipping '\(eventTitle)' - filtered by notification settings")
                 skippedCount += 1
                 continue
             }
@@ -255,6 +274,8 @@ class NotificationManager: NSObject, ObservableObject {
             // Schedule the notification
             let familyMembers = owner.memberId != nil ? [owner.displayName] : []
             let isSharedEvent = owner.memberId == nil
+
+            print("✅ Scheduling notification for '\(eventTitle)' on \(event.startDate.formatted(date: .abbreviated, time: .shortened))")
 
             scheduleEventNotificationNow(
                 event: event,
