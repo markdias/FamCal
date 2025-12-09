@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreData
+import EventKit
 
 struct MainTabView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -35,6 +36,8 @@ struct MainTabView: View {
     @State private var calendarSelectedDate: Date = Date()
     @State private var calendarDisplayMode: CalendarView.CalendarDisplayMode = .month
     @State private var calendarTodayTrigger = UUID()
+    @State private var showingEventDetail = false
+    @State private var eventToShow: UpcomingCalendarEvent?
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject private var themeManager: ThemeManager
 
@@ -94,6 +97,15 @@ struct MainTabView: View {
         .sheet(isPresented: $showingAddEvent) {
             AddEventView(initialDate: addEventInitialDate)
                 .environment(\.managedObjectContext, viewContext)
+        }
+        .sheet(isPresented: $showingEventDetail) {
+            if let event = eventToShow {
+                EventDetailView(event: event)
+                    .environment(\.managedObjectContext, viewContext)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("openEventDetail"))) { notification in
+            handleOpenEventDetail(notification)
         }
         .onChange(of: appSettingsManager.defaultHomeScreenRawValue) { _, newValue in
             let screen = DefaultHomeScreen(rawValue: newValue) ?? .family
@@ -250,6 +262,42 @@ struct MainTabView: View {
         withAnimation(.easeInOut) {
             calendarDisplayMode = calendarDisplayMode == .month ? .day : .month
         }
+    }
+
+    private func handleOpenEventDetail(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let eventIdentifier = userInfo["eventIdentifier"] as? String else {
+            print("⚠️ Could not extract event identifier from notification")
+            return
+        }
+
+        print("📅 Opening event detail for identifier: \(eventIdentifier)")
+
+        // Fetch the event from EventKit
+        guard let ekEvent = CalendarManager.shared.getEvent(withIdentifier: eventIdentifier) else {
+            print("⚠️ Could not find event with identifier: \(eventIdentifier)")
+            return
+        }
+
+        // Convert to UpcomingCalendarEvent
+        let upcomingEvent = UpcomingCalendarEvent(
+            id: ekEvent.eventIdentifier ?? "",
+            title: ekEvent.title ?? "Event",
+            location: ekEvent.location,
+            meetingLink: ekEvent.url?.absoluteString,
+            startDate: ekEvent.startDate,
+            endDate: ekEvent.endDate,
+            calendarID: ekEvent.calendar.calendarIdentifier,
+            calendarColor: UIColor(cgColor: ekEvent.calendar.cgColor),
+            calendarTitle: ekEvent.calendar.title,
+            hasRecurrence: ekEvent.hasRecurrenceRules,
+            recurrenceRule: ekEvent.recurrenceRules?.first,
+            isAllDay: ekEvent.isAllDay
+        )
+
+        // Show the event detail
+        eventToShow = upcomingEvent
+        showingEventDetail = true
     }
 }
 
