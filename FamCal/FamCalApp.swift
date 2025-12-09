@@ -582,20 +582,25 @@ struct FamCalApp: App {
                     if let inviteToken {
                         do {
                             try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
-                            await SupabaseDataManager.shared.fetchUserDataIfNeeded()
-                            print("✅ Invitation accepted and data refreshed")
                         } catch {
                             print("❌ Failed to accept invitation: \(error)")
                         }
                     } else if linkType == "invite" {
                         // Fallback: accept by current user's email via service-role function when token is missing
-                        do {
-                            try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
-                            await SupabaseDataManager.shared.fetchUserDataIfNeeded()
-                            print("✅ Invitation accepted via email fallback and data refreshed")
-                        } catch {
-                            print("❌ Failed to accept invitation via email fallback: \(error)")
+                        print("ℹ️ Invite link without token - will accept via email")
+                    }
+
+                    // Ensure invited users are linked via email-based acceptance (covers both token and tokenless links)
+                    do {
+                        try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
+                        if let userId = authManager.userId,
+                           let familyId = try? await SupabaseManager.shared.getFamilyIdForUser(userId: userId) {
+                            completeFamilySetupForInvitedUser(familyId: familyId)
                         }
+                        await SupabaseDataManager.shared.fetchUserDataIfNeeded()
+                        print("✅ Invitation accepted via email and data refreshed")
+                    } catch {
+                        print("❌ Failed to accept invitation via email: \(error)")
                     }
 
                     checkFamilySetupNeeded()
@@ -611,13 +616,23 @@ struct FamCalApp: App {
                 Task { @MainActor in
                     do {
                         try await SupabaseManager.shared.acceptInvitation(token: inviteToken)
-                        await SupabaseDataManager.shared.fetchUserDataIfNeeded()
-                        print("✅ Invitation accepted and data refreshed")
-
-                        checkFamilySetupNeeded()
                     } catch {
                         print("❌ Failed to accept invitation: \(error)")
                     }
+
+                    do {
+                        try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
+                        if let userId = authManager.userId,
+                           let familyId = try? await SupabaseManager.shared.getFamilyIdForUser(userId: userId) {
+                            completeFamilySetupForInvitedUser(familyId: familyId)
+                        }
+                        await SupabaseDataManager.shared.fetchUserDataIfNeeded()
+                        print("✅ Invitation accepted via email and data refreshed")
+                    } catch {
+                        print("❌ Failed to accept invitation via email: \(error)")
+                    }
+
+                    checkFamilySetupNeeded()
                 }
             }
         }
@@ -634,6 +649,17 @@ struct FamCalApp: App {
             }
         }
         return dict
+    }
+
+    @MainActor
+    private func completeFamilySetupForInvitedUser(familyId: String?) {
+        if let familyId {
+            appSettingsManager.familyId = familyId
+            UserDefaults.standard.set(familyId, forKey: "com.famcal.familyId")
+        }
+        appSettingsManager.hasCompletedFamilySetup = true
+        UserDefaults.standard.set(true, forKey: "hasCompletedFamilySetup")
+        print("✅ Invited user linked to family \(familyId ?? "unknown") and setup marked complete")
     }
 
     private func decodeSubFromJWT(_ jwt: String) -> String? {

@@ -61,7 +61,12 @@
   <p>You have been invited to create a user on FamCal. Accept this invite to join and start managing your family calendar.</p>
 
   <p>
-    <a class="button" href="{{ .ConfirmationURL }}">Accept the invite</a>
+    <a class="button" href="{{if .ActionLink}}{{ .ActionLink }}{{else}}{{ .ConfirmationURL }}{{end}}">Accept the invite</a>
+  </p>
+
+  <p style="font-size: 12px; color: #777; margin-top: 16px;">
+    If the button doesn't work, copy and paste this link into your browser:<br>
+    {{if .ActionLink}}{{ .ActionLink }}{{else}}{{ .ConfirmationURL }}{{end}}
   </p>
 
   <div class="footer">

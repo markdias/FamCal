@@ -114,6 +114,30 @@
         <attribute name="calendarCellLayoutMode" optional="YES" attributeType="String"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
+    <entity name="Checklist" representedClassName="Checklist" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="eventIdentifier" optional="YES" attributeType="String"/>
+        <attribute name="eventGroupId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletionReason" optional="YES" attributeType="String"/>
+        <relationship name="items" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ChecklistItem" inverseName="checklist" inverseEntity="ChecklistItem"/>
+    </entity>
+    <entity name="ChecklistItem" representedClassName="ChecklistItem" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="dueDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="completed" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
+        <attribute name="completedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="completedBy" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="sortOrder" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="notificationId" optional="YES" attributeType="String"/>
+        <relationship name="checklist" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Checklist" inverseName="items" inverseEntity="Checklist"/>
+    </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
         <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="134"/>
@@ -127,5 +151,7 @@
         <element name="PersonalCalendar" positionX="666" positionY="-18" width="128" height="103"/>
         <element name="SyncMetadata" positionX="756" positionY="-18" width="128" height="119"/>
         <element name="AppSettings" positionX="846" positionY="-18" width="128" height="119"/>
+        <element name="Checklist" positionX="936" positionY="-18" width="128" height="149"/>
+        <element name="ChecklistItem" positionX="1026" positionY="-18" width="128" height="209"/>
     </elements>
 </model>

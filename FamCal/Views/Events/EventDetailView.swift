@@ -70,6 +70,22 @@ struct EventDetailView: View {
     )
     private var savedAddresses: FetchedResults<SavedAddress>
 
+    @FetchRequest(
+        entity: Checklist.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: true)]
+    )
+    private var allChecklists: FetchedResults<Checklist>
+
+    private var eventChecklist: Checklist? {
+        let eventId = event.id
+        for checklist in allChecklists {
+            if checklist.eventIdentifier == eventId && checklist.deletedAt == nil {
+                return checklist
+            }
+        }
+        return nil
+    }
+
     private var driverFamilyMembers: [FamilyMember] {
         familyMembers.filter { $0.isDriver }
     }
@@ -452,6 +468,16 @@ struct EventDetailView: View {
                         }
                         .padding(.horizontal, 20)
                     }
+
+                    // Checklist section - positioned before driver/alerts
+                    ChecklistSectionView(
+                        checklist: eventChecklist,
+                        eventIdentifier: event.id,
+                        eventGroupId: nil,
+                        eventTitle: event.title,
+                        eventStartDate: event.startDate,
+                        eventEndDate: event.endDate
+                    )
 
                     driverSection
 
