@@ -59,9 +59,15 @@ struct FamilyEventsWidgetView: View {
                             .fill(Color(UIColor(hex: event.calendarColorHex)))
                             .frame(width: 4, height: 4)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(event.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .lineLimit(1)
+                            HStack(spacing: 4) {
+                                let timeOfDay = timeOfDaySymbol(for: event.startDate)
+                                Image(systemName: timeOfDay.symbol)
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundColor(timeOfDay.color)
+                                Text(event.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
+                            }
 
                             // Conditional time display
                             if showTime {
@@ -149,6 +155,11 @@ struct FamilyEventsWidgetView: View {
             // Event details
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    let timeOfDay = timeOfDaySymbol(for: event.startDate)
+                    Image(systemName: timeOfDay.symbol)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(timeOfDay.color)
+                    
                     Text(event.title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.primary)
@@ -237,6 +248,19 @@ struct FamilyEventsWidgetView: View {
         formatter.dateFormat = "LLLL"
         return formatter
     }()
+
+    private func timeOfDaySymbol(for date: Date) -> (symbol: String, color: Color) {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        
+        if hour >= 5 && hour < 12 {
+            return ("sunrise.fill", .orange)
+        } else if hour >= 12 && hour < 18 {
+            return ("sun.max.fill", .yellow)
+        } else {
+            return ("moon.stars.fill", .indigo)
+        }
+    }
 
     private var baseBackground: Color {
         if #available(iOS 17.0, *), family == .accessoryRectangular {

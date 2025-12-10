@@ -61,6 +61,19 @@ struct SpotlightView: View {
         return formatter
     }()
 
+    private func timeOfDaySymbol(for date: Date) -> (symbol: String, color: Color) {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        
+        if hour >= 5 && hour < 12 {
+            return ("sunrise.fill", .orange)
+        } else if hour >= 12 && hour < 18 {
+            return ("sun.max.fill", .yellow)
+        } else {
+            return ("moon.stars.fill", .indigo)
+        }
+    }
+
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
@@ -239,10 +252,18 @@ struct SpotlightView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .top, spacing: 8) {
-                        Text(event.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
+                        HStack(spacing: 4) {
+                            if !event.isAllDay {
+                                let timeOfDay = timeOfDaySymbol(for: event.startDate)
+                                Image(systemName: timeOfDay.symbol)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(timeOfDay.color)
+                            }
+                            Text(event.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                        }
 
                         Spacer(minLength: 0)
 

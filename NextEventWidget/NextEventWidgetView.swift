@@ -127,10 +127,16 @@ struct NextEventWidgetView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.secondary)
 
-                    // Time on its own line
-                    Text(timeRange)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary)
+                    // Time on its own line with time of day indicator
+                    HStack(spacing: 4) {
+                        let timeOfDay = timeOfDaySymbol(for: event.startDate)
+                        Image(systemName: timeOfDay.symbol)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(timeOfDay.color)
+                        Text(timeRange)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
 
                     // Status
                     Text(statusText)
@@ -217,6 +223,19 @@ struct NextEventWidgetView: View {
         let start = timeFormatter.string(from: startDate)
         let end = timeFormatter.string(from: endDate)
         return "\(start) – \(end)"
+    }
+
+    private func timeOfDaySymbol(for date: Date) -> (symbol: String, color: Color) {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        
+        if hour >= 5 && hour < 12 {
+            return ("sunrise.fill", .orange)
+        } else if hour >= 12 && hour < 18 {
+            return ("sun.max.fill", .yellow)
+        } else {
+            return ("moon.stars.fill", .indigo)
+        }
     }
 
     /// Generate deep link to event (to be handled by main app)

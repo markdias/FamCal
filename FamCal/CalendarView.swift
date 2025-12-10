@@ -134,6 +134,19 @@ struct CalendarView: View {
         return formatter
     }()
 
+    private func timeOfDaySymbol(for date: Date) -> (symbol: String, color: Color) {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        
+        if hour >= 5 && hour < 12 {
+            return ("sunrise.fill", .orange)
+        } else if hour >= 12 && hour < 18 {
+            return ("sun.max.fill", .yellow)
+        } else {
+            return ("moon.stars.fill", .indigo)
+        }
+    }
+
     init(startInDayMode: Bool = false, selectedDateBinding: Binding<Date>, displayMode: Binding<CalendarDisplayMode>? = nil, todayTrigger: Binding<UUID>? = nil, onAddEventRequested: ((Date) -> Void)? = nil) {
         _calendarDisplayMode = State(initialValue: displayMode?.wrappedValue ?? (startInDayMode ? .day : .month))
         self.externalDisplayMode = displayMode
@@ -476,12 +489,21 @@ struct CalendarView: View {
                         .frame(maxHeight: .infinity)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        // Title
-                        Text(groupedEvent.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                            .opacity(isPast ? 0.5 : 1.0)
+                        // Title with time of day indicator
+                        HStack(spacing: 4) {
+                            if !groupedEvent.isAllDay {
+                                let timeOfDay = timeOfDaySymbol(for: groupedEvent.startDate)
+                                Image(systemName: timeOfDay.symbol)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(timeOfDay.color)
+                                    .opacity(isPast ? 0.5 : 1.0)
+                            }
+                            Text(groupedEvent.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                                .opacity(isPast ? 0.5 : 1.0)
+                        }
 
                         // Family members (if more than 1)
                         if groupedEvent.memberNames.count > 1 {
