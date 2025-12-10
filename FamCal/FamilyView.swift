@@ -125,6 +125,19 @@ struct FamilyView: View {
         return formatter
     }()
 
+    private func timeOfDaySymbol(for date: Date) -> (symbol: String, color: Color) {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        
+        if hour >= 5 && hour < 12 {
+            return ("sunrise.fill", .orange)
+        } else if hour >= 12 && hour < 18 {
+            return ("sun.max.fill", .yellow)
+        } else {
+            return ("moon.stars.fill", .indigo)
+        }
+    }
+
     var body: some View {
         NavigationView {
             ZStack(alignment: .bottomLeading) {
@@ -650,12 +663,18 @@ struct FamilyView: View {
                     .font(.system(size: detailSize, weight: .semibold))
                     .foregroundColor(secondaryTextColor)
 
-                // Time on its own line to avoid truncation
+                // Time on its own line to avoid truncation with time of day indicator
                 if let timeRange = event.timeRange {
-                    Text(timeRange)
-                        .font(.system(size: detailSize, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundColor(secondaryTextColor)
+                    HStack(spacing: 4) {
+                        let timeOfDay = timeOfDaySymbol(for: event.startDate)
+                        Image(systemName: timeOfDay.symbol)
+                            .font(.system(size: detailSize - 1, weight: .semibold))
+                            .foregroundColor(timeOfDay.color)
+                        Text(timeRange)
+                            .font(.system(size: detailSize, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundColor(secondaryTextColor)
+                    }
                 }
                 
                 // Location (only in 2-column view)
