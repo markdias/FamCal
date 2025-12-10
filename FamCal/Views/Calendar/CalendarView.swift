@@ -56,6 +56,12 @@ struct CalendarView: View {
     )
     private var familyEvents: FetchedResults<FamilyEvent>
 
+    @FetchRequest(
+        entity: Checklist.entity(),
+        sortDescriptors: []
+    )
+    private var checklists: FetchedResults<Checklist>
+
     @State private var currentMonth: Date = Date()
     @State private var dayEvents: [String: [DayEventItem]] = [:]
     @State private var isLoadingEvents = false
@@ -596,6 +602,17 @@ struct CalendarView: View {
 
                 Spacer(minLength: 0)
 
+                if groupedEvent.hasChecklist, let progress = groupedEvent.checklistProgress {
+                    HStack(spacing: 2) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 10))
+                        Text(progress.displayString)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                }
+
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 20))
@@ -779,6 +796,20 @@ struct CalendarView: View {
                                             .lineLimit(1)
                                     }
                                 }
+                            }
+                            .opacity(isPast ? 0.5 : 1.0)
+                        }
+
+                        // Checklist (if available)
+                        if groupedEvent.hasChecklist, let progress = groupedEvent.checklistProgress {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.square")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(secondaryTextColor)
+                                Text(progress.displayString)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(secondaryTextColor)
+                                    .lineLimit(1)
                             }
                             .opacity(isPast ? 0.5 : 1.0)
                         }
@@ -990,7 +1021,9 @@ struct CalendarView: View {
                     endDate: event.endDate,
                     hasRecurrence: event.hasRecurrence,
                     isAllDay: event.isAllDay,
-                    driverName: event.driverName
+                    driverName: event.driverName,
+                    hasChecklist: event.hasChecklist,
+                    checklistProgress: event.checklistProgress
                 )
             }
         }
@@ -1442,6 +1475,12 @@ struct CalendarView: View {
 
                     let driverName = fetchDriverForEvent(event.id)
                     let driverPhone = fetchDriverPhoneForEvent(event.id)
+
+                    // Fetch checklist data
+                    let checklist = checklists.first { $0.eventIdentifier == event.id && $0.deletedAt == nil }
+                    let hasChecklist = checklist != nil
+                    let checklistProgress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+
                     let dayEvent = DayEventItem(
                         id: UUID(),
                         title: event.title,
@@ -1462,7 +1501,9 @@ struct CalendarView: View {
                         hasRecurrence: event.hasRecurrence,
                         isAllDay: event.isAllDay,
                         driverName: driverName,
-                        driverPhone: driverPhone
+                        driverPhone: driverPhone,
+                        hasChecklist: hasChecklist,
+                        checklistProgress: checklistProgress
                     )
 
                     if tempEventsDict[dateKey] == nil {
@@ -1942,6 +1983,8 @@ struct DayEventItem: Identifiable {
     let isAllDay: Bool
     let driverName: String?
     let driverPhone: String?
+    let hasChecklist: Bool
+    let checklistProgress: ChecklistProgress?
 
     var startTime: String? {
         guard let timeRange = timeRange else { return nil }
@@ -1969,6 +2012,8 @@ struct GroupedDayEvent: Identifiable {
     let hasRecurrence: Bool
     let isAllDay: Bool
     let driverName: String?
+    let hasChecklist: Bool
+    let checklistProgress: ChecklistProgress?
 
     var startTime: String? {
         guard let timeRange = timeRange else { return nil }

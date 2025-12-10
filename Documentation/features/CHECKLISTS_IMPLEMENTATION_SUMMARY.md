@@ -455,20 +455,23 @@ notification_id    TEXT
 - Core Data schema with Checklist and ChecklistItem entities
 - ChecklistManager with full local CRUD operations
 - Beautiful SwiftUI checklist UI components
-- Integration with EventDetailView
+- Integration with EventDetailView (compact design)
 - Progress tracking and display
 - Supabase database schema ready to deploy
 - Comprehensive deployment documentation
-- Deploy Supabase migration SQL
+- **NotificationManager integration** - Checklist items in notifications
+- **CalendarView integration** - Checklist indicators (☑️ + "3/5") in both compact and detailed month view cards
+- **DailyEventsView integration** - Checklist badges in both all-day and timed event cells
+- **FamilyView integration** - Checklist indicators in upcoming events, spotlight events, and next events sections
+- **EventDetailView enhancements** - Event information in add checklist sheet + recurring event scope dialog + delete items with swipe or button
+- **AddEventView cleanup** - Removed checklist creation during event creation (checklists now only managed in EventDetailView)
+- **EditEventView cleanup** - Removed checklist editing from event editing flow (checklists now only managed in EventDetailView)
 
 ### What's Next 🔄
-2. Implement Supabase API endpoints
-3. Implement sync methods
-4. Add checklist to event creation flow
-5. Add calendar view indicators
-6. Integrate with notification system
-7. Test end-to-end with multiple devices
-8. Polish and optimize
+1. Implement Supabase API endpoints (SupabaseManager.swift)
+2. Implement bidirectional sync methods (SupabaseDataManager.swift)
+3. Test end-to-end with multiple devices
+4. Polish and optimize
 
 ### Estimated Completion
 - **Phase 1 (Foundation):** ✅ DONE

@@ -478,6 +478,17 @@ struct DailyEventsView: View {
                             }
                             .opacity(isPast ? 0.7 : 1.0)
                         }
+
+                        if event.hasChecklist, let progress = event.checklistProgress {
+                            HStack(spacing: 2) {
+                                Image(systemName: "checkmark.square")
+                                    .font(.system(size: 10))
+                                Text(progress.displayString)
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(theme.mutedTagColor)
+                            .opacity(isPast ? 0.7 : 1.0)
+                        }
                     }
                 }
 
@@ -571,6 +582,16 @@ struct DailyEventsView: View {
                                 }
                                 .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
                             }
+                        }
+
+                        if event.hasChecklist, let progress = event.checklistProgress {
+                            HStack(spacing: 2) {
+                                Image(systemName: "checkmark.square")
+                                    .font(.system(size: 8))
+                                Text(progress.displayString)
+                                    .font(.system(size: 9, weight: .medium))
+                            }
+                            .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
                         }
                     }
                 }

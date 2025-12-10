@@ -406,7 +406,25 @@ class NotificationManager: NSObject, ObservableObject {
         }
 
         // Build notification content
-        let eventTitle = event.title ?? "Event"
+        var eventTitle = event.title ?? "Event"
+
+        // Fetch checklist for this event
+        var checklistProgress: ChecklistProgress?
+        var checklistItems: [ChecklistItem] = []
+        if let eventId = event.eventIdentifier,
+           let checklist = ChecklistManager.shared.fetchChecklist(for: eventId) {
+            checklistProgress = ChecklistManager.shared.getProgress(for: checklist)
+            if let items = checklist.items as? Set<ChecklistItem> {
+                checklistItems = items
+                    .filter { $0.deletedAt == nil }
+                    .sorted { $0.sortOrder < $1.sortOrder }
+            }
+        }
+
+        // Add checklist progress to title if exists
+        if let progress = checklistProgress, progress.total > 0 {
+            eventTitle = "\(eventTitle) - \(progress.displayString) tasks"
+        }
 
         // Determine the primary family member for this event
         let primaryMember = familyMembers.first ?? "Family"
@@ -438,6 +456,27 @@ class NotificationManager: NSObject, ObservableObject {
 
         if let location = location, !location.isEmpty {
             body += "\n📍 \(location)"
+        }
+
+        // Add checklist items to body
+        if !checklistItems.isEmpty {
+            body += "\n\nChecklist:"
+            let dueDateFormatter = DateFormatter()
+            dueDateFormatter.dateStyle = .short
+            dueDateFormatter.timeStyle = .short
+
+            for item in checklistItems {
+                let checkbox = item.completed ? "☑" : "☐"
+                var itemLine = "\n\(checkbox) \(item.title ?? "")"
+
+                // Show due date if it's different from event date
+                if let dueDate = item.dueDate,
+                   !Calendar.current.isDate(dueDate, inSameDayAs: event.startDate) {
+                    itemLine += " (Due: \(dueDateFormatter.string(from: dueDate)))"
+                }
+
+                body += itemLine
+            }
         }
 
         content.body = body

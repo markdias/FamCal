@@ -45,6 +45,13 @@ struct EventDetailView: View {
     @State private var selectedAlertMinutes: Int = 15
     @State private var showingCreateEventForDriverAlert = false
     @State private var driverToCreateEventFor: DriverWrapper?
+    @State private var checklistRefresh = false
+    @State private var showingAddChecklistItem = false
+    @State private var newChecklistTitle: String = ""
+    @State private var newChecklistHasDueDate = false
+    @State private var newChecklistDueDate = Date()
+    @State private var showingChecklistRecurringDialog = false
+    @State private var pendingChecklistItem: (title: String, dueDate: Date?)? = nil
 
     @FetchRequest(
         entity: Driver.entity(),
@@ -215,54 +222,514 @@ struct EventDetailView: View {
         return linkedCalendars.isEmpty ? nil : linkedCalendars
     }
 
-    private var recurringEventSection: some View {
-        Group {
+    // MARK: - Compact Layout Pieces
+
+    private var titleCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(event.title)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.primary)
+
+            HStack(spacing: 16) {
+                Label {
+                    Text(Self.fullDateFormatter.string(from: event.startDate))
+                } icon: {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.blue)
+                }
+
+                Label {
+                    Text("\(Self.timeFormatter.string(from: event.startDate)) – \(Self.timeFormatter.string(from: event.endDate))")
+                } icon: {
+                    Image(systemName: "clock")
+                        .foregroundColor(.blue)
+                }
+            }
+            .font(.subheadline)
+
+            if let location = event.location, !location.isEmpty {
+                Label {
+                    Text(location)
+                        .lineLimit(2)
+                } icon: {
+                    Image(systemName: "location.fill")
+                        .foregroundColor(.red)
+                }
+                .font(.subheadline)
+                .onTapGesture {
+                    MapsUtility.openLocation(location, in: defaultMapsApp)
+                }
+            }
+
             if event.hasRecurrence {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "repeat.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+                Label {
+                    Text(event.recurrenceRule.map { formatRecurrenceRule($0) } ?? "Repeats")
+                } icon: {
+                    Image(systemName: "repeat")
+                        .foregroundColor(.purple)
+                }
+                .font(.subheadline)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .contextMenu {
+            Button(action: { duplicateEvent(event) }) {
+                Label("Duplicate", systemImage: "doc.on.doc")
+            }
 
-                        Text("Recurring Event")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.gray)
-                    }
-
-                    if let recurrenceRule = event.recurrenceRule {
-                        Text(formatRecurrenceRule(recurrenceRule))
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray)
-                            .padding(.leading, 28)
+            Menu {
+                ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                    Button(action: {
+                        moveEventToCalendar(event, calendarID: calendar.calendarIdentifier)
+                    }) {
+                        HStack {
+                            Text(calendar.title)
+                            if calendar.calendarIdentifier == event.calendarID {
+                                Image(systemName: "checkmark")
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal, 20)
+            } label: {
+                Label("Move to Calendar", systemImage: "calendar.badge.plus")
+            }
+
+            Divider()
+
+            if event.hasRecurrence {
+                Menu {
+                    Button(action: { deleteEvent(event, span: .thisEvent) }) {
+                        Label("Delete This Event", systemImage: "trash")
+                    }
+                    Button(role: .destructive, action: { deleteEvent(event, span: .futureEvents) }) {
+                        Label("Delete This & Future Events", systemImage: "trash")
+                    }
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } else {
+                Button(role: .destructive, action: { deleteEvent(event) }) {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
     }
 
-    private var linkedCalendarsSection: some View {
-        Group {
-            if let linkedCalendars = getLinkedCalendars(for: event), !linkedCalendars.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "calendar.badge.plus")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
+    private var quickActionsCard: some View {
+        VStack(spacing: 0) {
+            calendarRow
+            Divider().padding(.leading, 44)
+            driverRow
+            Divider().padding(.leading, 44)
+            alertRow
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+    }
 
-                        Text("Linked Calendars")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.gray)
-                    }
-
-                    ForEach(linkedCalendars, id: \.self) { calendarName in
-                        Text("• \(calendarName)")
-                            .font(.system(size: 12))
-                            .foregroundColor(.gray)
-                            .padding(.leading, 28)
+    private var calendarRow: some View {
+        quickRow(icon: "calendar.badge.clock", title: "Calendar", showsChevron: false) {
+            Menu {
+                ForEach(relevantCalendars, id: \.calendarIdentifier) { calendar in
+                    Button(action: {
+                        selectedCalendarID = calendar.calendarIdentifier
+                        moveEventToCalendar(event, calendarID: calendar.calendarIdentifier)
+                    }) {
+                        HStack {
+                            Text(calendar.title)
+                            if calendar.calendarIdentifier == event.calendarID {
+                                Image(systemName: "checkmark")
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal, 20)
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color(uiColor: event.calendarColor))
+                        .frame(width: 10, height: 10)
+                    Text(event.calendarTitle)
+                        .foregroundColor(.primary)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+    }
+
+    private var driverRow: some View {
+        quickRow(icon: "car.fill", title: "Driver", showsChevron: false) {
+            Menu {
+                Button(action: { selectedDriver = nil }) {
+                    HStack {
+                        Text("None")
+                        if selectedDriver == nil { Image(systemName: "checkmark") }
+                    }
+                }
+
+                if !allAvailableDrivers.isEmpty {
+                    Divider()
+                    ForEach(allAvailableDrivers, id: \.id) { driverWrapper in
+                        Button(action: {
+                            selectedDriver = driverWrapper
+                            if case .familyMember(_) = driverWrapper {
+                                driverToCreateEventFor = driverWrapper
+                                showingCreateEventForDriverAlert = true
+                            }
+                        }) {
+                            HStack {
+                                Text(driverWrapper.name)
+                                if selectedDriver?.id == driverWrapper.id { Image(systemName: "checkmark") }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(selectedDriver?.name ?? "None")
+                        .foregroundColor(.primary)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .onChange(of: selectedDriver) { _, _ in
+            saveDriver()
+        }
+    }
+
+    private var alertRow: some View {
+        quickRow(icon: "bell.fill", title: "Alert", showsChevron: false, verticalPadding: 8) {
+            AlertMenuButton(
+                currentAlert: alerts.first,
+                onSelect: { updateAlert(minutes: $0) }
+            )
+        }
+    }
+
+    private func quickRow<Content: View>(
+        icon: String,
+        title: String,
+        showsChevron: Bool = true,
+        verticalPadding: CGFloat = 12,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.blue)
+                .frame(width: 20)
+
+            Text(title)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            content()
+                .font(.subheadline)
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.gray.opacity(0.5))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, verticalPadding)
+        .contentShape(Rectangle())
+    }
+
+    private var checklistSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Checklist")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if checklistProgress.total > 0 {
+                    Text("\(checklistProgress.completed)/\(checklistProgress.total)")
+                        .font(.caption2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.2))
+                        .foregroundColor(.orange)
+                        .cornerRadius(8)
+                }
+            }
+
+            if checklistItems.isEmpty {
+                Text("No checklist items yet")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(checklistItems, id: \.objectID) { item in
+                        HStack(spacing: 10) {
+                            Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(item.completed ? .green : .gray)
+                                .onTapGesture {
+                                    toggleChecklistItem(item)
+                                }
+                            Text(item.title ?? "")
+                                .strikethrough(item.completed)
+                                .foregroundColor(item.completed ? .secondary : .primary)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Spacer()
+                            if let due = item.dueDate {
+                                Text(dueDateFormatter.string(from: due))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Button(action: {
+                                deleteChecklistItem(item)
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 16))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            toggleChecklistItem(item)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deleteChecklistItem(item)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(action: { showingAddChecklistItem = true }) {
+                Label("Add Item", systemImage: "plus.circle.fill")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .id(checklistRefresh)
+    }
+
+    private var linkedCalendarsCompact: some View {
+        Group {
+            if let calendars = getLinkedCalendars(for: event), calendars.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Linked calendars")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Copies on other family calendars")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(calendars, id: \.self) { name in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.blue.opacity(0.6))
+                                    .frame(width: 10, height: 10)
+                                Text(name)
+                                    .font(.subheadline)
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    private var mapSection: some View {
+        Group {
+            if locationCoordinates != nil || isLoadingLocation {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Location Preview")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 12)
+
+                    if locationCoordinates != nil {
+                        Map(position: .constant(.region(mapRegion)))
+                            .frame(height: 150)
+                            .cornerRadius(12)
+                    } else if isLoadingLocation {
+                        HStack {
+                            ProgressView()
+                                .tint(Color(red: 0.33, green: 0.33, blue: 0.33))
+                            Text("Loading map...")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                        }
+                        .frame(height: 150)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private var deleteButton: some View {
+        Button(action: handleDeleteTap) {
+            Text("Delete Event")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.red)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color(.systemBackground))
+                .cornerRadius(10)
+        }
+    }
+
+    private var checklistItems: [ChecklistItem] {
+        guard let checklist = eventChecklist,
+              let items = checklist.items as? Set<ChecklistItem> else { return [] }
+        return items
+            .filter { $0.deletedAt == nil }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    private var checklistProgress: (completed: Int, total: Int) {
+        let total = checklistItems.count
+        let completed = checklistItems.filter { $0.completed }.count
+        return (completed, total)
+    }
+
+    private func toggleChecklistItem(_ item: ChecklistItem) {
+        do {
+            try ChecklistManager.shared.toggleItemCompletion(item, completedBy: UUID())
+            checklistRefresh.toggle()
+        } catch {
+            print("❌ Error toggling checklist item: \(error)")
+        }
+    }
+
+    private func deleteChecklistItem(_ item: ChecklistItem) {
+        ChecklistManager.shared.deleteItem(item)
+        checklistRefresh.toggle()
+    }
+
+    private func addChecklistItem() {
+        let trimmed = newChecklistTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let dueDate: Date? = newChecklistHasDueDate ? newChecklistDueDate : nil
+
+        // Check if this is a recurring event
+        if event.hasRecurrence {
+            // Store pending item and show dialog
+            pendingChecklistItem = (title: trimmed, dueDate: dueDate)
+            showingChecklistRecurringDialog = true
+        } else {
+            // Single event - add directly
+            performAddChecklistItem(title: trimmed, dueDate: dueDate, toAllFuture: false)
+        }
+    }
+
+    private func performAddChecklistItem(title: String, dueDate: Date?, toAllFuture: Bool) {
+        do {
+            // Ensure checklist exists
+            let targetChecklist: Checklist
+            if let existing = eventChecklist {
+                targetChecklist = existing
+            } else {
+                // Get eventGroupId if it's a recurring event
+                let groupId = event.hasRecurrence ? UUID() : nil
+                targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(for: event.id, eventGroupId: groupId)
+            }
+
+            let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
+
+            _ = try ChecklistManager.shared.addItem(
+                to: targetChecklist,
+                title: title,
+                dueDate: dueDate,
+                sortOrder: nextSortOrder
+            )
+
+            newChecklistTitle = ""
+            newChecklistHasDueDate = false
+            checklistRefresh.toggle()
+
+            // TODO: If toAllFuture is true, apply to all future occurrences
+            if toAllFuture {
+                print("ℹ️ TODO: Apply checklist item to all future occurrences")
+            }
+        } catch {
+            print("❌ Error adding checklist item: \(error)")
+        }
+    }
+
+    private var dueDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }
+
+    private var addChecklistSheet: some View {
+        NavigationView {
+            Form {
+                // Event information section
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(event.title)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(dueDateFormatter.string(from: event.startDate))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section(header: Text("Item Details")) {
+                    TextField("Title", text: $newChecklistTitle)
+                    Toggle("Set due date", isOn: $newChecklistHasDueDate)
+                    if newChecklistHasDueDate {
+                        DatePicker("Due", selection: $newChecklistDueDate, displayedComponents: [.date, .hourAndMinute])
+                    }
+                }
+            }
+            .navigationTitle("Add Checklist Item")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingAddChecklistItem = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        addChecklistItem()
+                        showingAddChecklistItem = false
+                    }
+                    .disabled(newChecklistTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
             }
         }
     }
@@ -270,291 +737,15 @@ struct EventDetailView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Title
-                    Text(event.title)
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .contextMenu {
-                            Button(action: { duplicateEvent(event) }) {
-                                Label("Duplicate", systemImage: "doc.on.doc")
-                            }
-
-                            // Move to calendar
-                            Menu {
-                                ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
-                                    Button(action: {
-                                        moveEventToCalendar(event, calendarID: calendar.calendarIdentifier)
-                                    }) {
-                                        HStack {
-                                            Text(calendar.title)
-                                            if calendar.calendarIdentifier == event.calendarID {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Label("Move to Calendar", systemImage: "calendar.badge.plus")
-                            }
-
-                            Divider()
-
-                            // Delete action
-                            if event.hasRecurrence {
-                                Menu {
-                                    Button(action: { deleteEvent(event, span: .thisEvent) }) {
-                                        Label("Delete This Event", systemImage: "trash")
-                                    }
-                                    Button(role: .destructive, action: { deleteEvent(event, span: .futureEvents) }) {
-                                        Label("Delete This & Future Events", systemImage: "trash")
-                                    }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            } else {
-                                Button(role: .destructive, action: { deleteEvent(event) }) {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                        }
-
-                    // Location - tappable to open maps
-                    if let location = event.location, !location.isEmpty {
-                        Button(action: { MapsUtility.openLocation(location, in: defaultMapsApp) }) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "location.fill")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-                                        .frame(width: 20)
-
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("Location")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.gray)
-                                        Text(location)
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundColor(.primary)
-                                            .lineLimit(2)
-                                    }
-
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemBackground))
-                            .cornerRadius(10)
-                            .padding(.horizontal, 20)
-                        }
-                    }
-
-                    if let meetingLink = event.meetingLink,
-                       let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
-                        Link(destination: destination) {
-                            HStack(spacing: 10) {
-                                Image(systemName: "video.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-                                    .frame(width: 20)
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Meeting Link")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundColor(.gray)
-                                    Text(MeetingLinkHelper.displayLabel(for: meetingLink))
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(1)
-                                }
-                                Spacer()
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemBackground))
-                            .cornerRadius(10)
-                            .padding(.horizontal, 20)
-                        }
-                    }
-
-                    // Date and Time section with icons
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-                                .frame(width: 20)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Date")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.gray)
-                                Text(Self.fullDateFormatter.string(from: event.startDate))
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.primary)
-                            }
-
-                            Spacer()
-                        }
-
-                        HStack(spacing: 12) {
-                            Image(systemName: "clock.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-                                .frame(width: 20)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Time")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.gray)
-                                Text("\(Self.timeFormatter.string(from: event.startDate)) – \(Self.timeFormatter.string(from: event.endDate))")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.primary)
-                            }
-
-                            Spacer()
-                        }
-                    }
-                    .padding(.horizontal, 20)
-
-                    // Calendar selector
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Calendar")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 20)
-
-                        HStack(spacing: 12) {
-                            Menu {
-                                ForEach(relevantCalendars, id: \.calendarIdentifier) { calendar in
-                                    Button(action: {
-                                        selectedCalendarID = calendar.calendarIdentifier
-                                        moveEventToCalendar(event, calendarID: calendar.calendarIdentifier)
-                                    }) {
-                                        HStack {
-                                            Text(calendar.title)
-                                            if calendar.calendarIdentifier == event.calendarID {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(Color(uiColor: event.calendarColor))
-                                        .frame(width: 12, height: 12)
-
-                                    Text(event.calendarTitle)
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(.primary)
-
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(10)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                    }
-
-                    // Checklist section - positioned before driver/alerts
-                    ChecklistSectionView(
-                        checklist: eventChecklist,
-                        eventIdentifier: event.id,
-                        eventGroupId: nil,
-                        eventTitle: event.title,
-                        eventStartDate: event.startDate,
-                        eventEndDate: event.endDate
-                    )
-
-                    driverSection
-
-                    // Alert section
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Alert")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.gray)
-                            .padding(.horizontal, 20)
-
-                        HStack(spacing: 12) {
-                            AlertMenuButton(
-                                currentAlert: alerts.first,
-                                onSelect: { updateAlert(minutes: $0) }
-                            )
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                    }
-
-                    // Map section with location header
-                    if locationCoordinates != nil || isLoadingLocation {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "map.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-
-                                Text("Location Preview")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.gray)
-
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-
-                            if locationCoordinates != nil {
-                                Map(position: .constant(.region(mapRegion)))
-                                    .frame(height: 280)
-                                    .cornerRadius(12)
-                                    .padding(.horizontal, 20)
-                            } else if isLoadingLocation {
-                                HStack {
-                                    ProgressView()
-                                        .tint(Color(red: 0.33, green: 0.33, blue: 0.33))
-                                    Text("Loading map...")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.gray)
-                                }
-                                .frame(height: 280)
-                                .frame(maxWidth: .infinity)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(12)
-                                .padding(.horizontal, 20)
-                            }
-                        }
-                    }
-
-                    recurringEventSection
-                    linkedCalendarsSection
-
-                    // Delete button
-                    Button(action: handleDeleteTap) {
-                        Text("Delete Event")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.red)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemBackground))
-                            .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-
-                    Spacer(minLength: 20)
+                VStack(spacing: 14) {
+                    titleCard
+                    quickActionsCard
+                    checklistSection
+                    linkedCalendarsCompact
+                    mapSection
+                    deleteButton
                 }
+                .padding(.horizontal, 14)
                 .padding(.vertical, 12)
             }
             .background(Color(.systemGroupedBackground))
@@ -580,7 +771,6 @@ struct EventDetailView: View {
                 EditEventView(upcomingEvent: event)
             }
             .onChange(of: isEditing) { _, newValue in
-                // When the edit sheet closes, refresh alerts from the updated event
                 if newValue == false {
                     fetchEventDetails()
                 }
@@ -659,18 +849,13 @@ struct EventDetailView: View {
                 }
             }
             .onAppear {
-                // Load available calendars for context menu
                 loadAvailableCalendars()
-
-                // Try to fetch event details, but don't fail if we can't
                 fetchEventDetails()
 
-                // Load location map regardless of event details
                 if let location = event.location, !location.isEmpty {
-                    geocodeLocation(location, zoom: 0.002) // Much tighter zoom
+                    geocodeLocation(location, zoom: 0.002)
                 }
 
-                // Fetch driver information
                 fetchDriver()
             }
             .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
@@ -678,6 +863,28 @@ struct EventDetailView: View {
             }
             .onDisappear {
                 geocodeTask?.cancel()
+            }
+            .confirmationDialog("Add Checklist Item", isPresented: $showingChecklistRecurringDialog, titleVisibility: .visible) {
+                Button("This Event Only") {
+                    if let item = pendingChecklistItem {
+                        performAddChecklistItem(title: item.title, dueDate: item.dueDate, toAllFuture: false)
+                        pendingChecklistItem = nil
+                    }
+                }
+                Button("All Future Events") {
+                    if let item = pendingChecklistItem {
+                        performAddChecklistItem(title: item.title, dueDate: item.dueDate, toAllFuture: true)
+                        pendingChecklistItem = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingChecklistItem = nil
+                }
+            } message: {
+                Text("Would you like to add this checklist item to just this event or all future occurrences?")
+            }
+            .sheet(isPresented: $showingAddChecklistItem) {
+                addChecklistSheet
             }
         }
     }
@@ -1358,23 +1565,23 @@ private struct AlertMenuButton: View {
             MenuItemFor60Minutes()
             MenuItemFor1440Minutes()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-
+            HStack(spacing: 6) {
                 Text(currentAlertText)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.subheadline)
                     .foregroundColor(.primary)
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.caption)
                     .foregroundColor(.gray)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.systemGray6))
-            .cornerRadius(10)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color(.systemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(.systemGray4), lineWidth: 1)
+            )
+            .cornerRadius(8)
         }
     }
 

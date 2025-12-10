@@ -62,6 +62,12 @@ struct FamilyView: View {
     )
     private var familyEvents: FetchedResults<FamilyEvent>
 
+    @FetchRequest(
+        entity: Checklist.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: true)]
+    )
+    private var checklists: FetchedResults<Checklist>
+
     @State private var isLoadingEvents = false
     @State private var memberEvents: [MemberEventGroup] = {
         // Try to load cached events synchronously for instant display
@@ -93,7 +99,9 @@ struct FamilyView: View {
                             hasRecurrence: eventDTO.hasRecurrence,
                             isAllDay: eventDTO.isAllDay,
                             driverName: eventDTO.driverName,
-                            isImportant: eventDTO.isImportant
+                            isImportant: eventDTO.isImportant,
+                            hasChecklist: false,
+                            checklistProgress: nil
                         )
                     }
 
@@ -116,7 +124,9 @@ struct FamilyView: View {
                             hasRecurrence: eventDTO.hasRecurrence,
                             isAllDay: eventDTO.isAllDay,
                             driverName: eventDTO.driverName,
-                            isImportant: eventDTO.isImportant
+                            isImportant: eventDTO.isImportant,
+                            hasChecklist: false,
+                            checklistProgress: nil
                         )
                     }
 
@@ -228,12 +238,6 @@ struct FamilyView: View {
         .navigationViewStyle(.stack)
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
-        }
-        .onChange(of: selectedEvent) { oldValue, newValue in
-            // When EventDetailView sheet closes (newValue becomes nil), reload events
-            if oldValue != nil && newValue == nil {
-                loadNextEvents()
-            }
         }
         .sheet(isPresented: Binding(
             get: { spotlightMemberName != nil },
@@ -814,6 +818,19 @@ struct FamilyView: View {
                         }
                     }
 
+                // Checklist indicator (only in 2-column view)
+                if nextEventColumns <= 2, event.hasChecklist, let progress = event.checklistProgress {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: detailSize - 1, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                        Text(progress.displayString)
+                            .font(.system(size: detailSize, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                            .lineLimit(1)
+                    }
+                }
+
                 Spacer(minLength: 4)
 
                 // Time remaining/status pinned near the bottom
@@ -1023,6 +1040,19 @@ struct FamilyView: View {
                         }
                     }
 
+                    // Checklist indicator (if available)
+                    if groupedEvent.hasChecklist, let progress = groupedEvent.checklistProgress {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.square")
+                                .font(.system(size: 12))
+                                .foregroundColor(secondaryTextColor)
+                            Text(progress.displayString)
+                                .font(.system(size: 12))
+                                .foregroundColor(secondaryTextColor)
+                                .lineLimit(1)
+                        }
+                    }
+
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 8)
@@ -1103,6 +1133,18 @@ struct FamilyView: View {
                     .lineLimit(2)
 
                 Spacer(minLength: 6)
+
+                // Checklist indicator if available
+                if event.hasChecklist, let progress = event.checklistProgress {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: detailSize - 1))
+                        Text(progress.displayString)
+                            .font(.system(size: detailSize))
+                    }
+                    .foregroundColor(secondaryTextColor)
+                    .lineLimit(1)
+                }
 
                 Text(timeLabel)
                     .font(.system(size: detailSize, weight: .semibold))
@@ -1618,6 +1660,13 @@ struct FamilyView: View {
         return nil
     }
 
+    private func getChecklistData(for eventIdentifier: String) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
+        let checklist = checklists.first { $0.eventIdentifier == eventIdentifier && $0.deletedAt == nil }
+        let hasChecklist = checklist != nil
+        let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+        return (hasChecklist, progress)
+    }
+
     private func groupEventsByDetails(_ events: [EventItem]) -> [GroupedEvent] {
         var grouped: [String: GroupedEvent] = [:]
 
@@ -1639,6 +1688,9 @@ struct FamilyView: View {
                     updatedColors.append(event.memberColor)
                 }
 
+                // Get checklist data
+                let checklistData = getChecklistData(for: event.eventIdentifier)
+
                 // Create new merged event
                 grouped[key] = GroupedEvent(
                     id: existing.id,
@@ -1658,9 +1710,14 @@ struct FamilyView: View {
                     hasRecurrence: existing.hasRecurrence || event.hasRecurrence,
                     isAllDay: existing.isAllDay,
                     driverName: existing.driverName ?? event.driverName,
-                    isImportant: existing.isImportant || event.isImportant
+                    isImportant: existing.isImportant || event.isImportant,
+                    hasChecklist: checklistData.hasChecklist,
+                    checklistProgress: checklistData.progress
                 )
             } else {
+                // Get checklist data
+                let checklistData = getChecklistData(for: event.eventIdentifier)
+
                 grouped[key] = GroupedEvent(
                     id: event.id,
                     eventIdentifier: event.eventIdentifier,
@@ -1679,7 +1736,9 @@ struct FamilyView: View {
                     hasRecurrence: event.hasRecurrence,
                     isAllDay: event.isAllDay,
                     driverName: event.driverName,
-                    isImportant: event.isImportant
+                    isImportant: event.isImportant,
+                    hasChecklist: checklistData.hasChecklist,
+                    checklistProgress: checklistData.progress
                 )
             }
         }
@@ -2294,6 +2353,8 @@ private struct GroupedEvent: Identifiable {
     let isAllDay: Bool
     let driverName: String?
     let isImportant: Bool
+    let hasChecklist: Bool
+    let checklistProgress: ChecklistProgress?
 }
 
 private struct MemberEventGroup: Identifiable, Equatable {

@@ -1139,6 +1139,8 @@ struct EditEventView: View {
 
             // Update CoreData record if needed
             updateFamilyEvent()
+
+            // Save checklist changes
             await syncDriverMetadataForLinks(span: updateSpan, applyToGroup: applyToGroup)
 
             await MainActor.run {
@@ -2783,6 +2785,7 @@ struct EditEventView: View {
             print("❌ No calendar ID available to create driver event")
         }
     }
+
 }
 
 #Preview {
