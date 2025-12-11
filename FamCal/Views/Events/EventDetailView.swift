@@ -512,6 +512,7 @@ struct EventDetailView: View {
                     .foregroundColor(.blue)
             }
         }
+        .id(checklistRefresh)
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
@@ -614,6 +615,9 @@ struct EventDetailView: View {
         do {
             try ChecklistManager.shared.toggleItemCompletion(item, completedBy: UUID())
 
+            // Trigger view refresh to update UI
+            checklistRefresh.toggle()
+
             // Sync to Supabase
             Task {
                 await ChecklistManager.shared.syncChecklistsToSupabase()
@@ -624,11 +628,18 @@ struct EventDetailView: View {
     }
 
     private func deleteChecklistItem(_ item: ChecklistItem) {
-        ChecklistManager.shared.deleteItem(item)
+        do {
+            ChecklistManager.shared.deleteItem(item)
 
-        // Sync to Supabase
-        Task {
-            await ChecklistManager.shared.syncChecklistsToSupabase()
+            // Trigger view refresh to update UI
+            checklistRefresh.toggle()
+
+            // Sync to Supabase
+            Task {
+                await ChecklistManager.shared.syncChecklistsToSupabase()
+            }
+        } catch {
+            print("❌ Error deleting checklist item: \(error)")
         }
     }
 
@@ -673,6 +684,9 @@ struct EventDetailView: View {
             newChecklistTitle = ""
             newChecklistHasDueDate = false
             showingAddChecklistItem = false
+
+            // Trigger view refresh to update UI
+            checklistRefresh.toggle()
 
             // Sync checklist to Supabase
             Task {
