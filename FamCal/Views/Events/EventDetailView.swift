@@ -640,6 +640,7 @@ struct EventDetailView: View {
     }
 
     private func performAddChecklistItem(title: String, dueDate: Date?, toAllFuture: Bool) {
+        print("📝 performAddChecklistItem called with toAllFuture=\(toAllFuture)")
         do {
             // Ensure checklist exists
             let targetChecklist: Checklist
@@ -660,13 +661,18 @@ struct EventDetailView: View {
                 sortOrder: nextSortOrder
             )
 
+            print("✅ Added item to current event: \(title)")
+
             newChecklistTitle = ""
             newChecklistHasDueDate = false
             showingAddChecklistItem = false
 
             // Apply to all future occurrences if requested
             if toAllFuture {
+                print("🔄 toAllFuture is TRUE - applying to future occurrences")
                 applyChecklistItemToFutureOccurrences(title: title, dueDate: dueDate)
+            } else {
+                print("⏹️ toAllFuture is FALSE - NOT applying to future occurrences")
             }
         } catch {
             print("❌ Error adding checklist item: \(error)")
@@ -674,46 +680,53 @@ struct EventDetailView: View {
     }
 
     private func applyChecklistItemToFutureOccurrences(title: String, dueDate: Date?) {
+        print("🔄 Applying checklist item to ALL FUTURE occurrences...")
         // Find all future occurrences of this recurring event
         let eventStore = EKEventStore()
 
-        guard let ekEvent = eventStore.event(withIdentifier: event.id),
-              let recurrenceRule = ekEvent.recurrenceRules?.first else {
-            print("⚠️ Could not find recurring event or recurrence rule")
+        guard let ekEvent = eventStore.event(withIdentifier: event.id) else {
+            print("⚠️ Could not find recurring event with ID: \(event.id)")
             return
         }
 
-        // Get all occurrences of this recurring event that are after the current event
+        guard ekEvent.hasRecurrenceRules else {
+            print("⚠️ Event does not have recurrence rules")
+            return
+        }
+
+        // Get all occurrences of this recurring event that are STRICTLY AFTER the current event
+        // Start from tomorrow to exclude today's event
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: event.startDate) ?? event.startDate
         let occurrences = eventStore.events(matching: eventStore.predicateForEvents(
-            withStart: event.startDate,
+            withStart: tomorrow,
             end: Calendar.current.date(byAdding: .year, value: 2, to: event.startDate) ?? Date.distantFuture,
             calendars: nil
-        )).filter { $0.hasRecurrenceRules }
+        ))
+
+        print("📋 Found \(occurrences.count) future occurrences")
 
         // For each future occurrence, find or create its checklist and add the item
         for occurrence in occurrences {
-            if occurrence.startDate > event.startDate {
-                do {
-                    // Get or create checklist for this occurrence
-                    let targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(
-                        for: occurrence.eventIdentifier,
-                        eventGroupId: eventChecklist?.eventGroupId
-                    )
+            do {
+                // Get or create checklist for this occurrence
+                let targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(
+                    for: occurrence.eventIdentifier,
+                    eventGroupId: eventChecklist?.eventGroupId
+                )
 
-                    let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
+                let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
 
-                    // Add the same item to this occurrence
-                    _ = try ChecklistManager.shared.addItem(
-                        to: targetChecklist,
-                        title: title,
-                        dueDate: dueDate,
-                        sortOrder: nextSortOrder
-                    )
+                // Add the same item to this occurrence
+                _ = try ChecklistManager.shared.addItem(
+                    to: targetChecklist,
+                    title: title,
+                    dueDate: dueDate,
+                    sortOrder: nextSortOrder
+                )
 
-                    print("✅ Added checklist item to future occurrence: \(occurrence.title)")
-                } catch {
-                    print("❌ Error adding checklist item to future occurrence: \(error)")
-                }
+                print("✅ Added checklist item to future occurrence: \(occurrence.title) on \(occurrence.startDate)")
+            } catch {
+                print("❌ Error adding checklist item to future occurrence: \(error)")
             }
         }
     }
@@ -904,18 +917,23 @@ struct EventDetailView: View {
             }
             .confirmationDialog("Add Checklist Item", isPresented: $showingChecklistRecurringDialog, titleVisibility: .visible) {
                 Button("This Event Only") {
+                    print("📌 Dialog: 'This Event Only' button tapped")
                     if let item = pendingChecklistItem {
+                        print("  → Calling performAddChecklistItem with toAllFuture=FALSE")
                         performAddChecklistItem(title: item.title, dueDate: item.dueDate, toAllFuture: false)
                         pendingChecklistItem = nil
                     }
                 }
                 Button("All Future Events") {
+                    print("📌 Dialog: 'All Future Events' button tapped")
                     if let item = pendingChecklistItem {
+                        print("  → Calling performAddChecklistItem with toAllFuture=TRUE")
                         performAddChecklistItem(title: item.title, dueDate: item.dueDate, toAllFuture: true)
                         pendingChecklistItem = nil
                     }
                 }
                 Button("Cancel", role: .cancel) {
+                    print("📌 Dialog: 'Cancel' button tapped")
                     pendingChecklistItem = nil
                 }
             } message: {
