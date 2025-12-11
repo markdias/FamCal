@@ -613,6 +613,11 @@ struct EventDetailView: View {
     private func toggleChecklistItem(_ item: ChecklistItem) {
         do {
             try ChecklistManager.shared.toggleItemCompletion(item, completedBy: UUID())
+
+            // Sync to Supabase
+            Task {
+                await ChecklistManager.shared.syncChecklistsToSupabase()
+            }
         } catch {
             print("❌ Error toggling checklist item: \(error)")
         }
@@ -620,6 +625,11 @@ struct EventDetailView: View {
 
     private func deleteChecklistItem(_ item: ChecklistItem) {
         ChecklistManager.shared.deleteItem(item)
+
+        // Sync to Supabase
+        Task {
+            await ChecklistManager.shared.syncChecklistsToSupabase()
+        }
     }
 
     private func addChecklistItem() {
@@ -663,6 +673,11 @@ struct EventDetailView: View {
             newChecklistTitle = ""
             newChecklistHasDueDate = false
             showingAddChecklistItem = false
+
+            // Sync checklist to Supabase
+            Task {
+                await ChecklistManager.shared.syncChecklistsToSupabase()
+            }
 
             // Apply to all future occurrences if requested
             if toAllFuture {
@@ -715,6 +730,11 @@ struct EventDetailView: View {
             } catch {
                 print("❌ Error adding checklist item to future occurrence: \(error)")
             }
+        }
+
+        // Sync all checklists to Supabase
+        Task {
+            await ChecklistManager.shared.syncChecklistsToSupabase()
         }
     }
 
