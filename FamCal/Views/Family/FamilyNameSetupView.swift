@@ -34,14 +34,21 @@ struct FamilyNameSetupView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Hide sign out for guest users
-                if !authManager.isGuest {
-                    Button(action: { showSignOutConfirmation = true }) {
+                // Allow both guests and authenticated users to exit the setup
+                Button(action: { showSignOutConfirmation = true }) {
+                    HStack(spacing: 6) {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 18))
-                            .foregroundColor(.gray)
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Log Out")
+                            .font(.system(size: 14, weight: .semibold))
                     }
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
                 }
+                .disabled(isSigningOut)
             }
 
             // Email Verification Section (only for non-Google authenticated users)
@@ -170,13 +177,13 @@ struct FamilyNameSetupView: View {
         .padding(24)
         .background(Color(.systemBackground))
         .onAppear(perform: handleInitialVerification)
-        .alert("Sign Out?", isPresented: $showSignOutConfirmation) {
+        .alert("Log Out?", isPresented: $showSignOutConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Sign Out", role: .destructive) {
+            Button("Log Out", role: .destructive) {
                 performSignOut()
             }
         } message: {
-            Text("Are you sure you want to sign out? You'll need to sign in again to continue setup.")
+            Text("Are you sure you want to sign out? You'll return to the login screen and can sign in or continue as guest to keep going.")
         }
     }
 

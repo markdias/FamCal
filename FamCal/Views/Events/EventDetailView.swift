@@ -724,7 +724,7 @@ struct EventDetailView: View {
                     sortOrder: nextSortOrder
                 )
 
-                print("✅ Added checklist item to future occurrence: \(occurrence.title) on \(occurrence.startDate)")
+                print("✅ Added checklist item to future occurrence: \(occurrence.title ?? "Unknown") on \(occurrence.startDate)")
             } catch {
                 print("❌ Error adding checklist item to future occurrence: \(error)")
             }

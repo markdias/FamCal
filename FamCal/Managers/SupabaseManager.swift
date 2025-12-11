@@ -454,7 +454,14 @@ class SupabaseManager: @unchecked Sendable {
         let userToken = token ?? authManager.accessToken
 
         // Get the user's family to get the family_id
-        let familyId = try await getFamilyIdForUser(userId: userId, token: userToken)
+        // Try cached family_id first (important for newly invited users whose profile might not be updated yet)
+        let familyId: String
+        if let cachedFamilyId = AppSettingsManager.shared.familyId {
+            familyId = cachedFamilyId
+            print("🔎 Using cached family_id \(cachedFamilyId) for getFamilyMembers")
+        } else {
+            familyId = try await getFamilyIdForUser(userId: userId, token: userToken)
+        }
 
         let queryItems = [URLQueryItem(name: "family_id", value: "eq.\(familyId)")]
         let (data, statusCode) = try await makeRequest("GET", path: "rest/v1/family_members", queryItems: queryItems, userToken: userToken)
@@ -838,7 +845,8 @@ class SupabaseManager: @unchecked Sendable {
     }
 
     /// Accept a pending invitation based on the authenticated user's email (service-role edge function).
-    func acceptInvitationForCurrentUserEmail() async throws {
+    /// Returns the family_id for the accepted invitation.
+    func acceptInvitationForCurrentUserEmail() async throws -> String? {
         guard let userToken = authManager.accessToken else {
             throw NSError(domain: "AcceptInvitationByEmail", code: -1, userInfo: [NSLocalizedDescriptionKey: "Missing access token"])
         }
@@ -860,6 +868,18 @@ class SupabaseManager: @unchecked Sendable {
             let message = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw NSError(domain: "AcceptInvitationByEmail", code: statusCode, userInfo: [NSLocalizedDescriptionKey: message])
         }
+
+        // Parse the family_id from the response
+        do {
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let familyId = json["family_id"] as? String {
+                return familyId
+            }
+        } catch {
+            print("⚠️ Failed to parse family_id from acceptance response: \(error)")
+        }
+
+        return nil
     }
 
     // MARK: - Family Member Calendars

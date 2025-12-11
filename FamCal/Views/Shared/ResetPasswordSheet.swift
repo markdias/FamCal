@@ -13,6 +13,7 @@ struct ResetPasswordSheet: View {
     @EnvironmentObject private var themeManager: ThemeManager
 
     let email: String?
+    var onPasswordUpdated: (() -> Void)?
 
     @State private var password: String = ""
     @State private var confirmPassword: String = ""
@@ -107,6 +108,7 @@ struct ResetPasswordSheet: View {
             do {
                 try await authManager.updatePassword(newPassword: password)
                 successMessage = "Password updated. You can now sign in with this password."
+                onPasswordUpdated?()
                 dismiss()
             } catch {
                 let msg = error.localizedDescription.lowercased()

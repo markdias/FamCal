@@ -301,7 +301,13 @@ struct FamCalApp: App {
             }
             .preferredColorScheme(themeManager.preferredColorScheme)
             .sheet(isPresented: $showResetPasswordSheet) {
-                ResetPasswordSheet(email: resetPasswordEmail)
+                ResetPasswordSheet(email: resetPasswordEmail, onPasswordUpdated: {
+                    Task { @MainActor in
+                        // Force a refresh of family data after password update
+                        await dataManager.fetchUserDataIfNeeded(force: true)
+                        checkFamilySetupNeeded()
+                    }
+                })
                     .environmentObject(authManager)
                     .environmentObject(themeManager)
             }
@@ -592,9 +598,8 @@ struct FamCalApp: App {
 
                     // Ensure invited users are linked via email-based acceptance (covers both token and tokenless links)
                     do {
-                        try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
-                        if let userId = authManager.userId,
-                           let familyId = try? await SupabaseManager.shared.getFamilyIdForUser(userId: userId) {
+                        let familyId = try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
+                        if let familyId {
                             completeFamilySetupForInvitedUser(familyId: familyId)
                         }
                         await SupabaseDataManager.shared.fetchUserDataIfNeeded()
@@ -621,9 +626,8 @@ struct FamCalApp: App {
                     }
 
                     do {
-                        try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
-                        if let userId = authManager.userId,
-                           let familyId = try? await SupabaseManager.shared.getFamilyIdForUser(userId: userId) {
+                        let familyId = try await SupabaseManager.shared.acceptInvitationForCurrentUserEmail()
+                        if let familyId {
                             completeFamilySetupForInvitedUser(familyId: familyId)
                         }
                         await SupabaseDataManager.shared.fetchUserDataIfNeeded()
