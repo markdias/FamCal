@@ -48,7 +48,8 @@ private let mockDrivers = [
 
 // MARK: - Main Prototyping View
 struct EventFormPrototypingView: View {
-    @State private var selectedDesign = 0
+    // Default to the "Grouped" option (index 1) as requested
+    @State private var selectedDesign = 1
     
     var body: some View {
         TabView(selection: $selectedDesign) {
@@ -111,101 +112,135 @@ struct QuickRow<Content: View>: View {
     }
 }
 
-// MARK: - Design Option 1: "High Fidelity"
-// Maps fields exactly to where they appear in the Read-Only View, inserting new fields (Meeting, Show As) into logical slots within that same structure.
-struct DesignOption1: View {
+// MARK: - Design Option 2: "Grouped Functionality" (User Preferred)
+struct DesignOption2: View {
     @State private var title = "Dinner with Grandparents"
     @State private var startDate = Date()
     @State private var endDate = Date().addingTimeInterval(3600)
+    @State private var allDay = false
     @State private var location = "123 Family Lane"
     @State private var meetingLink = ""
-    @State private var selectedCalendar = mockCalendars[0]
-    @State private var selectedMembers: Set<UUID> = []
+    @State private var notes = ""
     @State private var selectedDriver: MockDriver?
-    @State private var travelTime = 15
-    @State private var repeatOption = "None"
+    
+    // Recurrence State
+    @State private var repeatSelection = "Does not repeat" // Visual label
+    @State private var showCustomRepeatSheet = false
+    
+    @State private var showAsOption = "Busy"
+    @State private var selectedCalendar = mockCalendars[0]
+    @State private var selectedMembers: Set<UUID> = [mockMembers[0].id] // Pre-select one
     @State private var alertOption = "15 min before"
-    @State private var showAs = "Busy"
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 14) {
-                    // 1. Primary Info Card (Title, Time, Location, Repeat)
-                    VStack(alignment: .leading, spacing: 10) {
+             ScrollView {
+                VStack(spacing: 16) {
+                    // Header Card (Title, Location, Link)
+                    VStack(alignment: .leading, spacing: 0) {
                         TextField("Event Title", text: $title)
                             .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(.primary)
+                            .padding()
                         
-                        Divider()
+                        Divider().padding(.leading, 16)
                         
-                        // Date & Time
-                        HStack(spacing: 16) {
-                            Label {
+                        QuickRow(icon: "location.fill", title: "Location", showChevron: false, color: .red) {
+                            TextField("Add Location", text: $location)
+                                .multilineTextAlignment(.trailing)
+                                .font(.subheadline)
+                        }
+                        
+                        Divider().padding(.leading, 44)
+                        
+                        QuickRow(icon: "link", title: "Meeting Link", showChevron: false) {
+                            TextField("https://...", text: $meetingLink)
+                                .keyboardType(.URL)
+                                .multilineTextAlignment(.trailing)
+                                .font(.subheadline)
+                        }
+                    }
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+
+                    // "When" Card (Time, AllDay, Repeat)
+                    VStack(spacing: 0) {
+                         // All Day Toggle (Using QuickRow for consistent sizing)
+                        QuickRow(icon: "clock", title: "All-day", showChevron: false) {
+                            Toggle("", isOn: $allDay)
+                                .labelsHidden()
+                                .toggleStyle(SwitchToggleStyle(tint: .blue))
+                                .scaleEffect(0.8) // Make toggle slightly smaller to fit better
+                        }
+                        
+                        Divider().padding(.leading, 44)
+                        
+                        // Starts
+                        QuickRow(icon: "calendar", title: "Starts", showChevron: false) {
+                            HStack(spacing: 8) {
                                 DatePicker("", selection: $startDate, displayedComponents: [.date])
                                     .labelsHidden()
-                            } icon: {
-                                Image(systemName: "calendar")
-                                    .foregroundColor(.blue)
+                                    .fixedSize()
+                                
+                                if !allDay {
+                                    DatePicker("", selection: $startDate, displayedComponents: [.hourAndMinute])
+                                        .labelsHidden()
+                                        .fixedSize()
+                                }
                             }
-                            
-                            Label {
-                                DatePicker("", selection: $startDate, displayedComponents: [.hourAndMinute])
-                                    .labelsHidden()
-                            } icon: {
-                                Image(systemName: "clock")
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        .font(.subheadline)
-                        
-                        // Location
-                        HStack {
-                            Image(systemName: "location.fill")
-                                .foregroundColor(.red)
-                                .frame(width: 20) // Align with Label icons
-                            TextField("Add Location", text: $location)
-                                .font(.subheadline)
+                            // Force date pickers to not expand vertical space
+                            .scaleEffect(0.9) 
                         }
                         
-                        // Meeting Link (New Field)
-                        HStack {
-                            Image(systemName: "link")
-                                .foregroundColor(.blue)
-                                .frame(width: 20)
-                            TextField("Add Meeting Link", text: $meetingLink)
-                                .font(.subheadline)
-                                .keyboardType(.URL)
+                        Divider().padding(.leading, 44)
+                        
+                        // Ends
+                        if !allDay {
+                            QuickRow(icon: "calendar", title: "Ends", showChevron: false) {
+                                HStack(spacing: 8) {
+                                    DatePicker("", selection: $endDate, displayedComponents: [.date])
+                                        .labelsHidden()
+                                        .fixedSize()
+                                    
+                                    DatePicker("", selection: $endDate, displayedComponents: [.hourAndMinute])
+                                        .labelsHidden()
+                                        .fixedSize()
+                                }
+                                .scaleEffect(0.9)
+                            }
+                            Divider().padding(.leading, 44)
                         }
-
-                        // Repeat (New Field in Title Card context)
-                        HStack {
-                            Image(systemName: "repeat")
-                                .foregroundColor(.purple)
-                                .frame(width: 20)
+                        
+                        // Repeat Setup
+                        QuickRow(icon: "repeat", title: "Repeat", color: .purple) {
                             Menu {
-                                Button("None") { repeatOption = "None" }
-                                Button("Daily") { repeatOption = "Daily" }
-                                Button("Weekly") { repeatOption = "Weekly" }
+                                Button("Does not repeat") { repeatSelection = "Does not repeat" }
+                                Divider()
+                                Button("Every day") { repeatSelection = "Every day" }
+                                Button("Every week") { repeatSelection = "Every week" }
+                                Button("Every month") { repeatSelection = "Every month" }
+                                Button("Every year") { repeatSelection = "Every year" }
+                                Divider()
+                                Button("Custom...") { showCustomRepeatSheet = true }
                             } label: {
-                                Text(repeatOption)
-                                    .foregroundColor(.primary)
+                                Text(repeatSelection).foregroundColor(.primary)
                             }
                         }
-                        .font(.subheadline)
                     }
-                    .padding(.vertical, 12)
-                    .padding(.horizontal, 14)
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
                     
-                    // 2. Action Grid Card
-                    VStack(spacing: 0) {
-                        // Calendar
+                    // "Who & Status" Card
+                     VStack(spacing: 0) {
+                        // Calendar Picker
                         QuickRow(icon: "calendar.badge.clock", title: "Calendar") {
                             Menu {
                                 ForEach(mockCalendars) { cal in
-                                    Button(cal.title) { selectedCalendar = cal }
+                                    Button(action: { selectedCalendar = cal }) {
+                                        HStack {
+                                            Text(cal.title)
+                                            if selectedCalendar.id == cal.id { Image(systemName: "checkmark") }
+                                        }
+                                    }
                                 }
                             } label: {
                                 HStack {
@@ -214,39 +249,20 @@ struct DesignOption1: View {
                                 }
                             }
                         }
-                        
+                         
                         Divider().padding(.leading, 44)
-                        
-                        // Driver
-                        QuickRow(icon: "car.fill", title: "Driver") {
-                            Menu {
-                                Button("None") { selectedDriver = nil }
-                                ForEach(mockDrivers) { driver in
-                                    Button(driver.name) { selectedDriver = driver }
-                                }
-                            } label: {
-                                Text(selectedDriver?.name ?? "None")
-                                    .foregroundColor(.primary)
-                            }
-                        }
-                        
-                        Divider().padding(.leading, 44)
-                        
-                        // Alert
-                        QuickRow(icon: "bell.fill", title: "Alert") {
-                            Menu {
-                                Button("None") { alertOption = "None" }
-                                Button("15 min before") { alertOption = "15 min before" }
-                            } label: {
-                                Text(alertOption).foregroundColor(.primary)
-                            }
-                        }
-                        
-                        Divider().padding(.leading, 44)
-
-                        // Attendees
-                         QuickRow(icon: "person.2.fill", title: "Attendees") {
+                         
+                         // Attendees Multi-Select
+                         QuickRow(icon: "person.2.fill", title: "Attendees", color: .orange) {
                              Menu {
+                                 Button(action: {
+                                     // Toggle All Logic
+                                     if selectedMembers.count == mockMembers.count { selectedMembers.removeAll() }
+                                     else { selectedMembers = Set(mockMembers.map { $0.id }) }
+                                 }) {
+                                     Text(selectedMembers.count == mockMembers.count ? "Deselect All" : "Select Everyone")
+                                 }
+                                 Divider()
                                  ForEach(mockMembers) { member in
                                      Button(action: {
                                          if selectedMembers.contains(member.id) { selectedMembers.remove(member.id) }
@@ -259,110 +275,170 @@ struct DesignOption1: View {
                                      }
                                  }
                              } label: {
-                                 Text(selectedMembers.isEmpty ? "None" : "\(selectedMembers.count) Selected")
+                                 Text(selectedMembers.isEmpty ? "None" : (selectedMembers.count == mockMembers.count ? "Everyone" : "\(selectedMembers.count) Selected"))
                                      .foregroundColor(.primary)
                              }
                          }
                         
                         Divider().padding(.leading, 44)
-
-                        // Show As (New)
-                        QuickRow(icon: "briefcase.fill", title: "Show As", color: .gray) {
+                         
+                         // Driver Single Select
+                        QuickRow(icon: "car.fill", title: "Driver", color: .green) {
+                            Menu {
+                                Button("None") { selectedDriver = nil }
+                                ForEach(mockDrivers) { driver in
+                                    Button(action: { selectedDriver = driver }) {
+                                        HStack {
+                                            Text(driver.name)
+                                            if selectedDriver?.id == driver.id { Image(systemName: "checkmark") }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Text(selectedDriver?.name ?? "None").foregroundColor(.primary)
+                            }
+                        }
+                        
+                        // Travel Time (Conditional)
+                        if selectedDriver != nil {
+                            Divider().padding(.leading, 44)
+                            QuickRow(icon: "clock.fill", title: "Travel Time", color: .green) {
+                                Menu {
+                                    ForEach([5, 15, 30, 45, 60], id: \.self) { min in
+                                        Button("\(min) Minutes") { /* Mock update */ }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text("15 min").foregroundColor(.primary)
+                                        Image(systemName: "chevron.down").font(.caption).foregroundColor(.gray)
+                                    }
+                                }
+                            }
+                        }
+                         
+                        Divider().padding(.leading, 44)
+                         
+                        QuickRow(icon: "bell.fill", title: "Alert", color: .red) {
+                            Menu {
+                                Button("None") { alertOption = "None" }
+                                Button("At time of event") { alertOption = "At time of event" }
+                                Button("15 min before") { alertOption = "15 min before" }
+                                Button("1 hour before") { alertOption = "1 hour before" }
+                            } label: {
+                                Text(alertOption).foregroundColor(.primary)
+                            }
+                        }
+                         
+                         Divider().padding(.leading, 44)
+                         
+                         QuickRow(icon: "briefcase.fill", title: "Show As", color: .gray) {
                              Menu {
-                                 Button("Busy") { showAs = "Busy" }
-                                 Button("Free") { showAs = "Free" }
+                                 Button("Busy") { showAsOption = "Busy" }
+                                 Button("Free") { showAsOption = "Free" }
                              } label: {
-                                 Text(showAs).foregroundColor(.primary)
+                                 Text(showAsOption).foregroundColor(.primary)
                              }
                         }
                     }
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
                     
-                    // 3. Notes
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Notes")
-                            .font(.subheadline.weight(.semibold))
-                        TextEditor(text: .constant("Don't forget the gift!"))
-                            .frame(height: 80)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                }
-                .padding()
-            }
-            .navigationTitle("New Event")
-            .navigationBarTitleDisplayMode(.inline)
-            .background(Color(.systemGroupedBackground))
-        }
-    }
-}
-
-// MARK: - Design Option 2: "Grouped Functionality"
-// Similar aesthetic, but groups "When" (Time/Repeat), "Where" (Location/Link), and "Who" (Calendar/People/Driver) into separate cards.
-struct DesignOption2: View {
-    @State private var title = ""
-    @State private var startDate = Date()
-    @State private var location = ""
-    @State private var selectedDriver: MockDriver?
-    
-    var body: some View {
-        NavigationView {
-             ScrollView {
-                VStack(spacing: 16) {
-                    // Header Card (Title only)
-                    VStack(alignment: .leading) {
-                         TextField("Event Title", text: $title)
-                            .font(.system(size: 22, weight: .semibold))
-                    }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-
-                    // "When" Card
-                    VStack(spacing: 0) {
-                        QuickRow(icon: "calendar", title: "Starts", showChevron: false) {
-                            DatePicker("", selection: $startDate).labelsHidden()
-                        }
-                        Divider().padding(.leading, 44)
-                        QuickRow(icon: "calendar", title: "Ends", showChevron: false) {
-                             DatePicker("", selection: $startDate).labelsHidden()
-                        }
-                        Divider().padding(.leading, 44)
-                        QuickRow(icon: "repeat", title: "Repeat", color: .purple) {
-                            Text("Weekly")
-                        }
-                    }
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    
-                    // "Where" Card
-                    VStack(spacing: 0) {
-                        QuickRow(icon: "location.fill", title: "Location", showChevron: false, color: .red) {
-                            TextField("Add Location", text: $location)
-                                .multilineTextAlignment(.trailing)
-                        }
-                         Divider().padding(.leading, 44)
-                        QuickRow(icon: "link", title: "Meeting Link", showChevron: false) {
-                            TextField("https://...", text: .constant(""))
-                                .multilineTextAlignment(.trailing)
-                        }
-                    }
-                    .background(Color(.systemBackground))
+                    // "Notes" Card
+                     VStack(alignment: .leading, spacing: 10) {
+                         Text("Notes")
+                             .font(.subheadline.weight(.semibold))
+                             .foregroundColor(.secondary)
+                         
+                         TextEditor(text: $notes)
+                             .frame(height: 100)
+                             .font(.subheadline)
+                             .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                             )
+                     }
+                     .padding()
+                     .background(Color(.systemBackground))
                      .cornerRadius(12)
+                }
+                .padding()
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("New Event")
+             .navigationBarTitleDisplayMode(.inline)
+             .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                ToolbarItem(placement: .confirmationAction) { Button("Add") {} }
+            }
+            .sheet(isPresented: $showCustomRepeatSheet) {
+                MockCustomRepeatSheet(selection: $repeatSelection)
+            }
+        }
+    }
+}
+
+// MARK: - Mocks for Sheets
+// MARK: - Mocks for Sheets
+struct MockCustomRepeatSheet: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var selection: String
+    @State private var frequency = "Weekly"
+    @State private var interval = 1
+    @State private var hasEndDate = false
+    @State private var endDate = Date()
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 16) {
                     
-                    // "Who & How" Card
-                     VStack(spacing: 0) {
-                        QuickRow(icon: "calendar.badge.clock", title: "Calendar") { Text("Family") }
+                    // Main Recurrence Card
+                    VStack(spacing: 0) {
+                        // Frequency
+                        QuickRow(icon: "arrow.clockwise", title: "Frequency", color: .purple) {
+                            Menu {
+                                Button("Daily") { frequency = "Daily" }
+                                Button("Weekly") { frequency = "Weekly" }
+                                Button("Monthly") { frequency = "Monthly" }
+                                Button("Yearly") { frequency = "Yearly" }
+                            } label: {
+                                HStack {
+                                    Text(frequency).foregroundColor(.primary)
+                                    Image(systemName: "chevron.down").font(.caption).foregroundColor(.gray)
+                                }
+                            }
+                        }
+                        
                         Divider().padding(.leading, 44)
-                        QuickRow(icon: "person.2.fill", title: "Attendees") { Text("Everyone") }
-                        Divider().padding(.leading, 44)
-                        QuickRow(icon: "car.fill", title: "Driver") { Text("None") }
-                         Divider().padding(.leading, 44)
-                        QuickRow(icon: "bell.fill", title: "Alert") { Text("15 min before") }
+                        
+                        // Interval (Every X Weeks)
+                        QuickRow(icon: "number", title: "Every", showChevron: false, color: .purple) {
+                            HStack {
+                                Text("\(interval) \(frequency.lowercased().dropLast(2))(s)")
+                                    .foregroundColor(.primary)
+                                Stepper("", value: $interval, in: 1...999)
+                                    .labelsHidden()
+                            }
+                        }
+                    }
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    
+                    // End Date Card
+                    VStack(spacing: 0) {
+                        QuickRow(icon: "calendar.badge.exclamationmark", title: "End Date", showChevron: false, color: .red) {
+                            Toggle("", isOn: $hasEndDate)
+                                .labelsHidden()
+                                .toggleStyle(SwitchToggleStyle(tint: .blue))
+                        }
+                        
+                        if hasEndDate {
+                            Divider().padding(.leading, 44)
+                            QuickRow(icon: "calendar", title: "Ends On", showChevron: false, color: .red) {
+                                DatePicker("", selection: $endDate, displayedComponents: .date)
+                                    .labelsHidden()
+                            }
+                        }
                     }
                     .background(Color(.systemBackground))
                     .cornerRadius(12)
@@ -370,127 +446,39 @@ struct DesignOption2: View {
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("New Event")
-             .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Custom Recurrence")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        selection = "Custom (\(frequency))"
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
 
-
-// MARK: - Design Option 3: "Expanded Card"
-// Uses the Card aesthetic but expands the rows slightly to be more touch-friendly and "Form-like" while keeping the blue icons/white background.
-struct DesignOption3: View {
-    @State private var title = ""
+    
+// Option 1: Fidelity
+struct DesignOption1: View {
+    @State private var title = "Dinner with Grandparents"
     @State private var startDate = Date()
-    @State private var allDay = false
+    @State private var endDate = Date().addingTimeInterval(3600)
     
     var body: some View {
-        NavigationView {
-             ScrollView {
-                VStack(spacing: 20) {
-                    
-                    // Title Input
-                    TextField("Title", text: $title)
-                        .font(.title3.weight(.medium))
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                    
-                    // Details Stack
-                    VStack(spacing: 0) {
-                        // Row 1: All Day
-                        HStack {
-                            Image(systemName: "clock").foregroundColor(.blue).frame(width: 24)
-                            Toggle("All-day", isOn: $allDay)
-                        }
-                        .padding()
-                        
-                        Divider().padding(.leading, 50)
-                        
-                        // Row 2: Starts
-                        HStack {
-                            Text("Starts").padding(.leading, 40).foregroundColor(.secondary)
-                            Spacer()
-                            DatePicker("", selection: $startDate).labelsHidden()
-                        }
-                        .padding()
-                        
-                         Divider().padding(.leading, 50)
-                        
-                        // Row 3: Ends
-                        HStack {
-                            Text("Ends").padding(.leading, 40).foregroundColor(.secondary)
-                            Spacer()
-                            DatePicker("", selection: $startDate).labelsHidden()
-                        }
-                         .padding()
-                        
-                         Divider().padding(.leading, 50)
+        // Placeholder for legacy option 1
+        Text("Option 1 (Fidelity) - See Option 2 for refined Grouped view")
+    }
+}
 
-                         // Row 4: Repeat
-                         HStack {
-                             Image(systemName: "repeat").foregroundColor(.purple).frame(width: 24)
-                             Text("Repeat")
-                             Spacer()
-                             Text("Never").foregroundColor(.secondary)
-                         }
-                         .padding()
-                    }
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    
-                    // Configuration Stack
-                    VStack(spacing: 0) {
-                         // Calendar
-                        HStack {
-                             Image(systemName: "calendar.badge.clock").foregroundColor(.blue).frame(width: 24)
-                             Text("Calendar")
-                             Spacer()
-                             Circle().fill(Color.blue).frame(width: 8, height: 8)
-                             Text("Family").foregroundColor(.secondary)
-                         }
-                         .padding()
-                        
-                        Divider().padding(.leading, 50)
-                        
-                        // Location
-                        HStack {
-                             Image(systemName: "location.fill").foregroundColor(.red).frame(width: 24)
-                             TextField("Add Location", text: .constant(""))
-                         }
-                         .padding()
-
-                         Divider().padding(.leading, 50)
-                        
-                         // Attendees
-                         HStack {
-                             Image(systemName: "person.2.fill").foregroundColor(.orange).frame(width: 24)
-                             Text("Attendees")
-                             Spacer()
-                             Text("Select").foregroundColor(.secondary)
-                         }
-                         .padding()
-                        
-                        Divider().padding(.leading, 50)
-                        
-                        // Driver
-                        HStack {
-                             Image(systemName: "car.fill").foregroundColor(.green).frame(width: 24)
-                             Text("Driver")
-                             Spacer()
-                             Text("None").foregroundColor(.secondary)
-                         }
-                         .padding()
-                    }
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                }
-                .padding()
-            }
-             .background(Color(.systemGroupedBackground))
-             .navigationTitle("New Event")
-             .navigationBarTitleDisplayMode(.inline)
-        }
+// Option 3: Sectioned
+struct DesignOption3: View {
+    var body: some View {
+        // Placeholder for legacy option 3
+         Text("Option 3 (Sectioned) - See Option 2 for refined Grouped view")
     }
 }
 
