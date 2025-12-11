@@ -32,6 +32,7 @@ struct MainTabView: View {
     @State private var showingSettings = false
     @State private var showingAddEvent = false
     @State private var showingSearch = false
+    @State private var showingChecklists = false
     @State private var addEventInitialDate: Date? = nil
     @State private var calendarSelectedDate: Date = Date()
     @State private var calendarDisplayMode: CalendarView.CalendarDisplayMode = .month
@@ -94,6 +95,10 @@ struct MainTabView: View {
             EventSearchView()
                 .environment(\.managedObjectContext, viewContext)
         }
+        .sheet(isPresented: $showingChecklists) {
+            ChecklistsView()
+                .environment(\.managedObjectContext, viewContext)
+        }
         .sheet(isPresented: $showingAddEvent) {
             AddEventView(initialDate: addEventInitialDate)
                 .environment(\.managedObjectContext, viewContext)
@@ -131,6 +136,12 @@ struct MainTabView: View {
                 showingSearch = true
             }, theme: theme)
             .accessibilityLabel("Search events")
+
+            SettingsControlButton(imageName: "checkmark.circle.fill", action: {
+                showingChecklists = true
+            }, theme: theme)
+            .accessibilityLabel("View all checklists")
+            .accessibilityHint("Open the checklists view to see all items")
 
             SettingsControlButton(imageName: activeView == .events ? "calendar" : "list.bullet.rectangle", action: {
                 toggleActiveView()
