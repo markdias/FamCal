@@ -1660,6 +1660,10 @@ class SupabaseDataManager: ObservableObject {
                     syncedChecklistCount += 1
                     print("    ✅ Checklist synced successfully")
 
+                    // Small delay to ensure parent checklist is fully committed before syncing items
+                    // This prevents RLS policy race conditions on item insertion
+                    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+
                     // Sync items for this checklist
                     let itemRequest = ChecklistItem.fetchRequest()
                     itemRequest.predicate = NSPredicate(format: "checklist == %@", checklist)
@@ -1675,6 +1679,17 @@ class SupabaseDataManager: ObservableObject {
                             print("        ✅ Item synced successfully")
                         } catch {
                             print("      ❌ Error syncing item \(item.id?.uuidString ?? "unknown"): \(error)")
+                            // Retry once after a small delay
+                            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                            do {
+                                let itemDto = convertChecklistItemEntityToDTO(item)
+                                print("      ↻ Retrying item: \(itemDto.id) - \(itemDto.title)")
+                                _ = try await supabaseManager.upsertChecklistItem(itemDto)
+                                syncedItemCount += 1
+                                print("        ✅ Item synced successfully (retry)")
+                            } catch {
+                                print("      ❌ Error syncing item \(item.id?.uuidString ?? "unknown") (retry): \(error)")
+                            }
                         }
                     }
                 } catch {
