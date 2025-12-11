@@ -44,10 +44,6 @@ struct ChecklistsView: View {
         themeManager.selectedTheme
     }
 
-    private var secondaryTextColor: Color {
-        themeManager.selectedTheme.id == AppTheme.launchFlow.id ? themeManager.selectedTheme.textSecondary : .gray
-    }
-
     // MARK: - Computed Properties
 
     private var filteredItems: [ChecklistItem] {
@@ -119,28 +115,79 @@ struct ChecklistsView: View {
     var body: some View {
         NavigationView {
             ZStack(alignment: .topLeading) {
-                theme.backgroundLayer()
+                Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
-                if isEmptyState {
-                    emptyStateView
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            // Filter buttons
-                            filterButtons
+                VStack(alignment: .leading, spacing: 16) {
+                    // Title Card
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("All Checklists")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.primary)
 
-                            // Sections
-                            VStack(spacing: 12) {
+                        Text("\(filteredItems.count) item\(filteredItems.count == 1 ? "" : "s")")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if isEmptyState {
+                        // Empty state
+                        VStack(alignment: .center, spacing: 16) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 48))
+                                .foregroundColor(.secondary)
+
+                            VStack(spacing: 8) {
+                                Text("No Checklists Yet")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.primary)
+
+                                Text("Create your first checklist item to stay organized")
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 80)
+                        .padding(.horizontal, 32)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 12) {
+                                // Filter buttons
+                                HStack(spacing: 8) {
+                                    ForEach(CompletionFilter.allCases, id: \.rawValue) { filter in
+                                        Button(action: { completionFilter = filter }) {
+                                            Text(filter.rawValue)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(completionFilter == filter ? .white : .secondary)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 6)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .fill(completionFilter == filter ? Color.blue : Color(.systemGray5))
+                                                )
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.top, 4)
+
+                                // Sections
                                 ForEach(itemsBySection, id: \.title) { section in
                                     sectionView(title: section.title, items: section.items)
                                 }
-                            }
-                            .padding(.horizontal, 16)
 
-                            Spacer().frame(height: 32)
+                                Spacer().frame(height: 20)
+                            }
+                            .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 16)
                     }
                 }
 
@@ -164,15 +211,7 @@ struct ChecklistsView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(theme.accentColor)
-                    }
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    VStack(alignment: .trailing) {
-                        Text("All Checklists")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(theme.id == AppTheme.launchFlow.id ? .white : .primary)
+                            .foregroundColor(.blue)
                     }
                 }
             }
@@ -185,114 +224,77 @@ struct ChecklistsView: View {
 
     // MARK: - Views
 
-    private var emptyStateView: some View {
-        VStack(alignment: .center, spacing: 16) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 48))
-                .foregroundColor(secondaryTextColor)
-
-            VStack(spacing: 8) {
-                Text("No Checklists Yet")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(theme.id == AppTheme.launchFlow.id ? .white : .primary)
-
-                Text("Create your first checklist item to stay organized")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(secondaryTextColor)
-                    .multilineTextAlignment(.center)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 80)
-        .padding(.horizontal, 32)
-    }
-
-    private var filterButtons: some View {
-        HStack(spacing: 8) {
-            ForEach(CompletionFilter.allCases, id: \.rawValue) { filter in
-                Button(action: { completionFilter = filter }) {
-                    Text(filter.rawValue)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(completionFilter == filter ? .white : secondaryTextColor)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(completionFilter == filter ? theme.accentColor : theme.chromeOverlay)
-                        )
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-    }
-
     private func sectionView(title: String, items: [ChecklistItem]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(secondaryTextColor)
-                .padding(.horizontal, 12)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
                 .padding(.top, 4)
 
-            VStack(spacing: 8) {
-                ForEach(items, id: \.id) { item in
-                    checklistItemView(item)
+            VStack(spacing: 0) {
+                ForEach(items.indices, id: \.self) { index in
+                    let item = items[index]
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        checklistItemView(item)
+
+                        if index < items.count - 1 {
+                            Divider()
+                                .padding(.leading, 44)
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(theme.cardBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(theme.cardStroke, lineWidth: 1)
-            )
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .padding(.horizontal, 16)
         }
     }
 
     private func checklistItemView(_ item: ChecklistItem) -> some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             // Checkbox
             Button(action: { toggleItem(item) }) {
                 Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(item.completed ? theme.accentColor : secondaryTextColor)
+                    .foregroundColor(item.completed ? .blue : .secondary)
             }
+            .padding(.top, 2)
 
             // Content
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
+                // Title
                 Text(item.title ?? "Untitled")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(item.completed ? secondaryTextColor : (theme.id == AppTheme.launchFlow.id ? .white : .primary))
-                    .strikethrough(item.completed, color: secondaryTextColor)
+                    .foregroundColor(item.completed ? .secondary : .primary)
+                    .strikethrough(item.completed, color: .secondary)
                     .lineLimit(2)
 
+                // Event and due date info
                 HStack(spacing: 8) {
-                    if let eventId = item.checklist?.eventIdentifier {
+                    if let eventId = item.checklist?.eventIdentifier, eventId != "standalone" {
                         // Event badge
-                        Text(getEventTitle(eventId) ?? "Event")
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundColor(secondaryTextColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(theme.chromeOverlay)
-                            .cornerRadius(4)
+                        Label(
+                            title: { Text("Event").font(.system(size: 11, weight: .regular)) },
+                            icon: { Image(systemName: "calendar").font(.system(size: 10)) }
+                        )
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(.systemGray5))
+                        .cornerRadius(4)
                     }
 
                     if let dueDate = item.dueDate {
                         HStack(spacing: 4) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 11, weight: .regular))
-                                .foregroundColor(isOverdue(dueDate) ? .red : secondaryTextColor)
+                            Image(systemName: "clock.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .secondary)
 
                             Text(formatDueDate(dueDate))
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundColor(isOverdue(dueDate) ? .red : secondaryTextColor)
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .secondary)
                         }
                     }
                 }
@@ -306,13 +308,10 @@ struct ChecklistsView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.red)
             }
+            .padding(.top, 2)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(item.completed ? theme.chromeOverlay.opacity(0.3) : theme.backgroundColor)
-        )
     }
 
     private var addButton: some View {
@@ -323,7 +322,7 @@ struct ChecklistsView: View {
                 .frame(width: 48, height: 48)
                 .background(
                     Circle()
-                        .fill(theme.accentFillStyle())
+                        .fill(Color.blue)
                 )
                 .shadow(color: Color.black.opacity(0.12), radius: 10, y: 5)
         }
@@ -331,29 +330,24 @@ struct ChecklistsView: View {
 
     private var addItemSheet: some View {
         NavigationView {
-            ZStack(alignment: .topLeading) {
-                theme.backgroundLayer()
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Add Checklist Item")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(theme.id == AppTheme.launchFlow.id ? .white : .primary)
+                            .foregroundColor(.primary)
 
                         TextField("What needs to be done?", text: $newItemTitle)
                             .textFieldStyle(.roundedBorder)
                             .padding(.vertical, 8)
                     }
                     .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(theme.cardBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(theme.cardStroke, lineWidth: 1)
-                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
                     .padding(16)
 
                     // Due date toggle
@@ -365,7 +359,7 @@ struct ChecklistsView: View {
                                 .font(.system(size: 14, weight: .semibold))
                         }
                     }
-                    .tint(theme.accentColor)
+                    .tint(.blue)
                     .padding(.horizontal, 16)
 
                     if newItemHasDueDate {
@@ -374,7 +368,7 @@ struct ChecklistsView: View {
                             selection: $newItemDueDate,
                             displayedComponents: [.date, .hourAndMinute]
                         )
-                        .tint(theme.accentColor)
+                        .tint(.blue)
                         .padding(.horizontal, 16)
                     }
 
@@ -387,8 +381,8 @@ struct ChecklistsView: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .background(theme.chromeOverlay)
-                                .foregroundColor(secondaryTextColor)
+                                .background(Color(.systemGray5))
+                                .foregroundColor(.secondary)
                                 .cornerRadius(10)
                         }
 
@@ -397,7 +391,7 @@ struct ChecklistsView: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .background(theme.accentFillStyle())
+                                .background(Color.blue)
                                 .foregroundColor(.white)
                                 .cornerRadius(10)
                         }
@@ -405,7 +399,6 @@ struct ChecklistsView: View {
                     }
                     .padding(16)
                 }
-                .padding(.vertical, 16)
             }
             .navigationBarHidden(true)
         }
@@ -485,15 +478,6 @@ struct ChecklistsView: View {
 
     private func isOverdue(_ date: Date) -> Bool {
         date < Date() && !Calendar.current.isDateInToday(date)
-    }
-
-    private func getEventTitle(_ eventId: String) -> String? {
-        if eventId == "standalone" {
-            return nil
-        }
-        // In a real implementation, you'd fetch the event from EventKit
-        // For now, return nil to avoid showing event info for event-based items
-        return nil
     }
 }
 
