@@ -1830,20 +1830,38 @@ class SupabaseManager: @unchecked Sendable {
             deletion_reason: dto.deletion_reason
         )
 
-        let (data, statusCode) = try await makeRequest(
+        // Try UPDATE first (PATCH)
+        let (patchData, patchStatusCode) = try await makeRequest(
+            "PATCH",
+            path: "rest/v1/event_checklists?id=eq.\(dto.id)",
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=representation"]
+        )
+
+        // If record exists (200), return it
+        if patchStatusCode == 200 {
+            let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: patchData)
+            if let checklist = checklists.first {
+                return checklist
+            }
+        }
+
+        // If record doesn't exist (404) or patch failed, try INSERT (POST)
+        let (postData, postStatusCode) = try await makeRequest(
             "POST",
             path: "rest/v1/event_checklists",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation,resolution=merge-duplicates"]
+            extraHeaders: ["Prefer": "return=representation"]
         )
 
-        guard statusCode == 200 || statusCode == 201 else {
-            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklist")
-            throw NSError(domain: "UpsertChecklist", code: statusCode)
+        guard postStatusCode == 200 || postStatusCode == 201 else {
+            logErrorResponse(postData, statusCode: postStatusCode, operation: "upsertChecklist")
+            throw NSError(domain: "UpsertChecklist", code: postStatusCode)
         }
 
-        let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: data)
+        let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: postData)
         guard let checklist = checklists.first else {
             throw NSError(domain: "UpsertChecklist", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist not returned after upsert"])
         }
@@ -1880,20 +1898,38 @@ class SupabaseManager: @unchecked Sendable {
             notification_id: dto.notification_id
         )
 
-        let (data, statusCode) = try await makeRequest(
+        // Try UPDATE first (PATCH)
+        let (patchData, patchStatusCode) = try await makeRequest(
+            "PATCH",
+            path: "rest/v1/checklist_items?id=eq.\(dto.id)",
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=representation"]
+        )
+
+        // If record exists (200), return it
+        if patchStatusCode == 200 {
+            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: patchData)
+            if let item = items.first {
+                return item
+            }
+        }
+
+        // If record doesn't exist (404) or patch failed, try INSERT (POST)
+        let (postData, postStatusCode) = try await makeRequest(
             "POST",
             path: "rest/v1/checklist_items",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation,resolution=merge-duplicates"]
+            extraHeaders: ["Prefer": "return=representation"]
         )
 
-        guard statusCode == 200 || statusCode == 201 else {
-            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem")
-            throw NSError(domain: "UpsertChecklistItem", code: statusCode)
+        guard postStatusCode == 200 || postStatusCode == 201 else {
+            logErrorResponse(postData, statusCode: postStatusCode, operation: "upsertChecklistItem")
+            throw NSError(domain: "UpsertChecklistItem", code: postStatusCode)
         }
 
-        let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: data)
+        let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: postData)
         guard let item = items.first else {
             throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after upsert"])
         }

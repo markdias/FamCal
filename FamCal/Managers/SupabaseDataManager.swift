@@ -1660,9 +1660,10 @@ class SupabaseDataManager: ObservableObject {
                     syncedChecklistCount += 1
                     print("    ✅ Checklist synced successfully")
 
-                    // Small delay to ensure parent checklist is fully committed before syncing items
-                    // This prevents RLS policy race conditions on item insertion
-                    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                    // Longer delay to ensure parent checklist is fully committed before syncing items
+                    // This prevents RLS policy race conditions on item insertion and gives the
+                    // transaction time to propagate through the database
+                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
 
                     // Sync items for this checklist
                     let itemRequest = ChecklistItem.fetchRequest()
@@ -1679,8 +1680,8 @@ class SupabaseDataManager: ObservableObject {
                             print("        ✅ Item synced successfully")
                         } catch {
                             print("      ❌ Error syncing item \(item.id?.uuidString ?? "unknown"): \(error)")
-                            // Retry once after a small delay
-                            try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                            // Retry once after a longer delay to allow transaction propagation
+                            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
                             do {
                                 let itemDto = convertChecklistItemEntityToDTO(item)
                                 print("      ↻ Retrying item: \(itemDto.id) - \(itemDto.title)")
