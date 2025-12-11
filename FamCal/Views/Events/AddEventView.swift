@@ -188,37 +188,33 @@ struct AddEventView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                theme.backgroundLayer()
+                Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        titleSection
-                        locationSection
-                        meetingLinkSection
-                        timeSection
-                        attendeesSection
-                        calendarSection
-                        driverSection
-                        repeatSection
-                        alertSection
-                        notesSection
-                        Spacer()
-                            .frame(height: 20)
+                    VStack(spacing: 20) {
+                        headerCard
+                        whenCard
+                        whoCard
+                        notesCard
+                        
+                        // Spacer for bottom safe area
+                        Spacer().frame(height: 40)
                     }
-                    .padding(16)
+                    .padding(.vertical, 20)
+                    .padding(.horizontal, 16)
                 }
-                .background(Color.clear)
             }
+            .navigationTitle("New Event")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
                     }
                 }
 
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button(action: {
                         if hasAttendees {
                             Task { await saveEvent() }
@@ -229,8 +225,8 @@ struct AddEventView: View {
                         if isSaving {
                             ProgressView()
                         } else {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 16, weight: .semibold))
+                            Text("Add")
+                                .bold()
                         }
                     }
                     .disabled(!isFormValid || isSaving)
@@ -250,19 +246,17 @@ struct AddEventView: View {
                     alertOption = defaultAlert
                 }
 
-                // Set default start and end times (only if no initialDate was provided)
+                // Initial Setup logic (preserved)
                 if initialDate == nil {
                     let calendar = Calendar.current
                     let now = Date()
                     var components = calendar.dateComponents([.year, .month, .day, .hour], from: now)
 
                     if let hour = components.hour, hour >= 23 {
-                        // 11th hour logic: Start at 23:00, End at 00:00 next day
                         components.hour = 23
                         components.minute = 0
                         startTime = calendar.date(from: components) ?? now
-
-                        // End time is next day at 00:00
+                        
                         if let nextDay = calendar.date(byAdding: .day, value: 1, to: startTime),
                            let nextDayStart = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: nextDay) {
                             endTime = nextDayStart
@@ -270,7 +264,6 @@ struct AddEventView: View {
                             endTime = startTime.addingTimeInterval(3600)
                         }
                     } else {
-                        // Standard logic
                         components.hour = (components.hour ?? 0) + 1
                         components.minute = 0
                         startTime = calendar.date(from: components) ?? now.addingTimeInterval(3600)
@@ -282,12 +275,10 @@ struct AddEventView: View {
                     eventDate = now
                     recurrenceConfig = RecurrenceConfiguration.none(anchor: now)
                 } else {
-                    // When initialDate is provided, set the times based on that date
                     let calendar = Calendar.current
                     var components = calendar.dateComponents([.year, .month, .day, .hour], from: initialDate!)
 
                     if let hour = components.hour, hour >= 23 {
-                        // 11th hour logic
                         components.hour = 23
                         components.minute = 0
                         startTime = calendar.date(from: components) ?? initialDate!
@@ -299,7 +290,6 @@ struct AddEventView: View {
                             endTime = startTime.addingTimeInterval(3600)
                         }
                     } else {
-                        // Standard logic
                         components.hour = (components.hour ?? 0) + 1
                         components.minute = 0
                         startTime = calendar.date(from: components) ?? initialDate!.addingTimeInterval(3600)
@@ -314,7 +304,7 @@ struct AddEventView: View {
                 // Build available calendars list
                 updateAvailableCalendars()
 
-                // Clean up stale selected members (in case they were deleted)
+                // Clean up stale selected members
                 let validMemberIDs = Set(familyMembers.map { $0.objectID })
                 selectedMembers = selectedMembers.intersection(validMemberIDs)
             }
@@ -924,75 +914,7 @@ struct AddEventView: View {
         return calendar
     }
 
-    // MARK: - Time Picker Helper
 
-    @ViewBuilder
-    private func timePickerWithFiveMinuteIntervals(
-        title: String,
-        selectedTime: Binding<Date>
-    ) -> some View {
-        VStack(spacing: 12) {
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(primaryTextColor)
-
-            HStack(spacing: 8) {
-                // Hour picker
-                Picker("Hour", selection: Binding(
-                    get: {
-                        Calendar.current.dateComponents([.hour], from: selectedTime.wrappedValue).hour ?? 0
-                    },
-                    set: { newHour in
-                        let calendar = Calendar.current
-                        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime.wrappedValue)
-                        components.hour = newHour
-                        selectedTime.wrappedValue = calendar.date(from: components) ?? selectedTime.wrappedValue
-                    }
-                )) {
-                    ForEach(0..<24, id: \.self) { hour in
-                        Text(String(format: "%02d", hour)).tag(hour)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
-                .padding(10)
-                .background(chipBackground)
-                .cornerRadius(10)
-
-                Text(":")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(primaryTextColor)
-                    .padding(.horizontal, 4)
-
-                // Minute picker (5-minute intervals)
-                Picker("Minute", selection: Binding(
-                    get: {
-                        let minute = Calendar.current.dateComponents([.minute], from: selectedTime.wrappedValue).minute ?? 0
-                        return (minute / 5) * 5
-                    },
-                    set: { (newMinute: Int) in
-                        let calendar = Calendar.current
-                        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: selectedTime.wrappedValue)
-                        components.minute = newMinute
-                        selectedTime.wrappedValue = calendar.date(from: components) ?? selectedTime.wrappedValue
-                    }
-                )) {
-                    ForEach(Array(stride(from: 0, to: 60, by: 5)), id: \.self) { minute in
-                        Text(String(format: "%02d", minute)).tag(minute)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
-                .padding(10)
-                .background(chipBackground)
-                .cornerRadius(10)
-            }
-            .padding(12)
-            .background(fieldBackground)
-            .cornerRadius(12)
-        }
-        .padding(12)
-    }
 
     // MARK: - Section Builders
 
@@ -1113,407 +1035,164 @@ struct AddEventView: View {
         }
     }
 
-    @ViewBuilder
-    private var meetingLinkSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 8) {
-                sectionHeading("Meeting Link")
 
-                TextField("https://zoom.us/j/...", text: $meetingLink)
+
+    // MARK: - Section Builders
+
+    @ViewBuilder
+    private var headerCard: some View {
+        VStack(spacing: 0) {
+            // Title
+            QuickRow(icon: "text.alignleft", title: "Title", showChevron: false, color: .purple) {
+                TextField("Event Title", text: $eventTitle)
+                    .font(.system(size: 17))
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Location
+            QuickRow(icon: "mappin.circle.fill", title: "Location", showChevron: false, color: .red) {
+                Button(action: { showingLocationSearch = true }) {
+                    if locationName.isEmpty {
+                        Text("Add Location")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    } else {
+                        Text(locationName)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingLocationSearch) {
+                LocationSearchView(locationName: $locationName, locationAddress: $locationAddress)
+                    .environment(\.managedObjectContext, viewContext)
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Link
+            QuickRow(icon: "link", title: "Video Call", showChevron: false, color: .blue) {
+                TextField("Add URL", text: $meetingLink)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .font(.system(size: 16))
-                    .foregroundColor(primaryTextColor)
-                    .padding(10)
-                    .background(fieldBackground)
-                    .cornerRadius(10)
+                    .multilineTextAlignment(.trailing)
             }
         }
+        .background(Color(uiColor: .systemBackground)) // White/Dark card
+        .cornerRadius(12)
     }
 
     @ViewBuilder
-    private var timeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeading("Time")
-
+    private var whenCard: some View {
+        VStack(spacing: 0) {
+            // All-day
+            QuickRow(icon: "clock", title: "All-day", showChevron: false, color: .blue) {
+                Button(action: { isAllDay.toggle() }) {
+                    Text(isAllDay ? "Yes" : "No")
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Starts
             VStack(spacing: 0) {
-                HStack {
-                    Text("All-day")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(primaryTextColor)
-                    Spacer()
-                    Toggle("", isOn: $isAllDay)
-                        .tint(accentColor)
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 10)
-
-                Divider().padding(.leading, 4)
-
-                timeRow(title: "Starts",
-                        dateText: formattedDate(startTime),
-                        timeText: formattedTime(startTime),
-                        dateAction: {
-                            withAnimation {
-                                activeTimePicker = activeTimePicker == .startDate ? .none : .startDate
-                            }
-                        },
-                        timeAction: {
-                            withAnimation {
-                                activeTimePicker = activeTimePicker == .startTime ? .none : .startTime
-                            }
-                        })
-
-                Divider().padding(.leading, 4)
-
-                timeRow(title: "Ends",
-                        dateText: formattedDate(endTime),
-                        timeText: formattedTime(endTime),
-                        dateAction: {
-                            withAnimation {
-                                activeTimePicker = activeTimePicker == .endDate ? .none : .endDate
-                            }
-                        },
-                        timeAction: {
-                            withAnimation {
-                                activeTimePicker = activeTimePicker == .endTime ? .none : .endTime
-                            }
-                        })
-
-                if activeTimePicker == .startDate {
-                    DatePicker(
-                        "Select Start Date",
-                        selection: $startTime,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .environment(\.calendar, calendarWithMondayAsFirstDay)
-                    .onChange(of: startTime) { _, newValue in
-                        // Update eventDate for recurrence anchor if needed, or just keep it in sync
-                        eventDate = newValue
-                        // When start date changes, maintain the same duration
-                        endTime = newValue.addingTimeInterval(eventDuration)
-                    }
-                }
-
-                if activeTimePicker == .endDate {
-                    DatePicker(
-                        "Select End Date",
-                        selection: $endTime,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .environment(\.calendar, calendarWithMondayAsFirstDay)
-                }
-
-                Divider().padding(.leading, 4)
-
-                timeShowAsRow
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(cardBackground)
-            .cornerRadius(24)
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(sectionBorder, lineWidth: 1)
-            )
-
-
-
-            if activeTimePicker == .startTime {
-                timePickerWithFiveMinuteIntervals(
-                    title: "Start Time",
-                    selectedTime: Binding(
-                        get: { startTime },
-                        set: { newValue in
-                            startTime = newValue
-                            // When start time changes, maintain the same duration
-                            endTime = newValue.addingTimeInterval(eventDuration)
-                        }
-                    )
-                )
-            }
-
-            if activeTimePicker == .endTime {
-                timePickerWithFiveMinuteIntervals(
-                    title: "End Time",
-                    selectedTime: Binding(
-                        get: { endTime },
-                        set: { newValue in
-                            endTime = newValue
-                            // When end time changes, update the duration
-                            eventDuration = newValue.timeIntervalSince(startTime)
-                        }
-                    )
-                )
-            }
-        }
-    }
-
-    private func timeRow(title: String,
-                         dateText: String,
-                         timeText: String,
-                         dateAction: @escaping () -> Void,
-                         timeAction: @escaping () -> Void) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 15, weight: .regular))
-                .foregroundColor(primaryTextColor)
-
-            Spacer()
-
-            pillButton(dateText, action: dateAction)
-            pillButton(timeText, action: timeAction)
-        }
-        .padding(.vertical, 10)
-    }
-
-    private var timeShowAsRow: some View {
-        HStack {
-            Text("Show as")
-                .font(.system(size: 15, weight: .regular))
-                .foregroundColor(primaryTextColor)
-
-            Spacer()
-
-            Menu {
-                ForEach(ShowAsOption.allCases, id: \.self) { option in
-                    Button(option.rawValue) {
-                        showAsOption = option
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(showAsOption.rawValue)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(primaryTextColor)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(secondaryTextColor)
-                }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 12)
-                .background(chipBackground)
-                .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.vertical, 10)
-    }
-
-    private func pillButton(_ text: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(text)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(primaryTextColor)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 14)
-                .background(chipBackground)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var attendeesSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Attendees")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(primaryTextColor)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "person.2")
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundColor(secondaryTextColor)
-                        Text(attendeesSummary)
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(primaryTextColor)
-                        Spacer()
-                        Button(action: {
-                            withAnimation {
-                                showingPeoplePicker.toggle()
-                            }
-                        }) {
-                            Image(systemName: showingPeoplePicker ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                        }
-                    }
-                    .padding(12)
-                    .background(fieldBackground)
-                    .cornerRadius(12)
-
-                    if showingPeoplePicker {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Toggle(isOn: $selectEveryone.animation()) {
-                                HStack(spacing: 12) {
-                                    Circle()
-                                        .fill(accentColor.opacity(0.9))
-                                        .frame(width: 32, height: 32)
-                                        .overlay(Text("👥").font(.system(size: 18)))
-                                    Text("Everyone")
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(primaryTextColor)
-                                }
-                            }
-                            .tint(accentColor)
-
-                            if !selectEveryone {
-                                ForEach(familyMembers, id: \.objectID) { member in
-                                    Toggle(isOn: Binding(
-                                        get: { selectedMembers.contains(member.objectID) },
-                                        set: { isSelected in
-                                            if isSelected {
-                                                selectedMembers.insert(member.objectID)
-                                            } else {
-                                                selectedMembers.remove(member.objectID)
-                                            }
-                                        }
-                                    )) {
-                                        HStack(spacing: 12) {
-                                            if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar>,
-                                               let firstCal = memberCals.first,
-                                               let colorHex = firstCal.calendarColorHex {
-                                                Circle()
-                                                    .fill(Color.fromHex(colorHex))
-                                                    .frame(width: 12, height: 12)
-                                            } else {
-                                                Circle()
-                                                    .fill(Color.fromHex(member.colorHex ?? "#555555"))
-                                                    .frame(width: 12, height: 12)
-                                            }
-                                            Text(member.name ?? "Unknown")
-                                                .font(.system(size: 16, weight: .regular))
-                                                .foregroundColor(primaryTextColor)
-                                        }
-                                    }
-                                }
+                QuickRow(icon: "", title: "Starts", showChevron: false) {
+                    Button(action: {
+                        withAnimation {
+                            if activeTimePicker == .startDate || activeTimePicker == .startTime {
+                                activeTimePicker = .none
+                            } else {
+                                activeTimePicker = isAllDay ? .startDate : .startTime
                             }
                         }
-                        .padding(12)
-                        .background(fieldBackground)
-                        .cornerRadius(12)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var driverSection: some View {
-        if !allAvailableDrivers.isEmpty {
-            sectionCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Driver")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(primaryTextColor)
-
-                    VStack(alignment: .leading, spacing: 12) {
+                    }) {
                         HStack {
-                            Image(systemName: "car.fill")
-                                .font(.system(size: 14, weight: .regular))
-                                .foregroundColor(secondaryTextColor)
-                            Text("Assign driver")
-                                .font(.system(size: 16, weight: .regular))
-                                .foregroundColor(primaryTextColor)
-                            Spacer()
-                            Menu {
-                                Button(action: { selectedDriver = nil }) {
-                                    HStack {
-                                        Text("None")
-                                        if selectedDriver == nil {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-
-                                Divider()
-
-                                ForEach(allAvailableDrivers, id: \.id) { driverWrapper in
-                                    Button(action: {
-                                        selectedDriver = driverWrapper
-                                        // Only show alert if selecting a family member driver
-                                        if case .familyMember(_) = driverWrapper {
-                                            driverToCreateEventFor = driverWrapper
-                                            showingCreateEventForDriverAlert = true
-                                        }
-                                    }) {
-                                        HStack {
-                                            Text(driverWrapper.name)
-                                            if selectedDriver?.id == driverWrapper.id {
-                                                Image(systemName: "checkmark")
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Text(selectedDriver?.name ?? "None")
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(primaryTextColor)
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(secondaryTextColor)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(fieldBackground)
-                                .cornerRadius(10)
-                            }
-                        }
-
-                        if let driver = selectedDriver, driver.isFamilyMember {
-                            HStack {
-                                Image(systemName: "clock.fill")
-                                    .font(.system(size: 14, weight: .regular))
-                                    .foregroundColor(secondaryTextColor)
-                                Text("Travel Time")
-                                    .font(.system(size: 16, weight: .regular))
-                                    .foregroundColor(primaryTextColor)
-                                Spacer()
-                                Menu {
-                                    ForEach([5, 10, 15, 20, 25, 30, 45, 60], id: \.self) { minutes in
-                                        Button(action: { driverTravelTimeMinutes = minutes }) {
-                                            HStack {
-                                                Text("\(minutes) min")
-                                                if driverTravelTimeMinutes == minutes {
-                                                    Image(systemName: "checkmark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Text("\(driverTravelTimeMinutes) min")
-                                            .font(.system(size: 16, weight: .regular))
-                                            .foregroundColor(primaryTextColor)
-                                        Image(systemName: "chevron.down")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 10)
-                                    .background(fieldBackground)
-                                    .cornerRadius(10)
-                                }
+                            Text(startTime.formatted(date: .abbreviated, time: .omitted))
+                                .foregroundColor(activeTimePicker == .startDate ? .blue : .primary)
+                                .padding(6)
+                                .background(activeTimePicker == .startDate ? Color.blue.opacity(0.1) : Color.clear)
+                                .cornerRadius(6)
+                            
+                            if !isAllDay {
+                                Text(startTime.formatted(date: .omitted, time: .shortened))
+                                    .foregroundColor(activeTimePicker == .startTime ? .blue : .primary)
+                                    .padding(6)
+                                    .background(activeTimePicker == .startTime ? Color.blue.opacity(0.1) : Color.clear)
+                                    .cornerRadius(6)
                             }
                         }
                     }
+                    .buttonStyle(.plain)
+                }
+                
+                if activeTimePicker == .startDate {
+                    DatePicker("", selection: $startTime, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .padding(.horizontal)
+                }
+                
+                if activeTimePicker == .startTime && !isAllDay {
+                    DatePicker("", selection: $startTime, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private var repeatSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeading("Repeat")
-
+            
+            Divider().padding(.leading, 44)
+            
+            // Ends
+            VStack(spacing: 0) {
+                QuickRow(icon: "", title: "Ends", showChevron: false) {
+                    Button(action: {
+                        withAnimation {
+                            if activeTimePicker == .endDate || activeTimePicker == .endTime {
+                                activeTimePicker = .none
+                            } else {
+                                activeTimePicker = isAllDay ? .endDate : .endTime
+                            }
+                        }
+                    }) {
+                        HStack {
+                            Text(endTime.formatted(date: .abbreviated, time: .omitted))
+                                .foregroundColor(activeTimePicker == .endDate ? .blue : .primary)
+                                .padding(6)
+                                .background(activeTimePicker == .endDate ? Color.blue.opacity(0.1) : Color.clear)
+                                .cornerRadius(6)
+                            
+                            if !isAllDay {
+                                Text(endTime.formatted(date: .omitted, time: .shortened))
+                                    .foregroundColor(activeTimePicker == .endTime ? .blue : .primary)
+                                    .padding(6)
+                                    .background(activeTimePicker == .endTime ? Color.blue.opacity(0.1) : Color.clear)
+                                    .cornerRadius(6)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                if activeTimePicker == .endDate {
+                    DatePicker("", selection: $endTime, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .padding(.horizontal)
+                }
+                
+                if activeTimePicker == .endTime && !isAllDay {
+                    DatePicker("", selection: $endTime, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                }
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Repeat
+            QuickRow(icon: "repeat", title: "Repeat", color: .gray) {
                 Menu {
                     ForEach(RepeatOption.allCases, id: \.self) { option in
                         Button(option.rawValue) {
@@ -1521,410 +1200,277 @@ struct AddEventView: View {
                         }
                     }
                 } label: {
-                    HStack {
-                        Text("Repeat")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(primaryTextColor)
-                        Spacer()
-                        Text(repeatOption.rawValue)
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(secondaryTextColor)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(fieldBackground)
-                    .cornerRadius(14)
+                    Text(repeatOption == .custom ? (recurrenceConfig.isEnabled ? recurrenceConfig.summary(anchor: eventDate) : "Custom") : repeatOption.rawValue)
+                        .foregroundColor(.primary)
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(recurrenceSummaryText(anchorDate: eventDate))
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(primaryTextColor)
-                    Text(repeatDetailLabel)
-                        .font(.system(size: 13))
-                        .foregroundColor(secondaryTextColor)
+            }
+            .sheet(isPresented: $showingCustomRepeatSheet) {
+                CustomRepeatView(
+                    recurrence: $recurrenceConfig,
+                    anchorDate: eventDate
+                ) { updated in
+                    repeatOption = updated.isEnabled ? .custom : .none
                 }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(fieldBackground)
-                )
-
-                Button {
-                    if let existing = currentRecurrenceConfiguration(anchorDate: eventDate) {
-                        recurrenceConfig = existing
-                    } else {
-                        recurrenceConfig = RecurrenceConfiguration.quick(option: .weekly, anchor: eventDate) ?? recurrenceConfig
-                    }
-                    repeatOption = .custom
-                    showingCustomRepeatSheet = true
-                } label: {
-                    HStack {
-                        Image(systemName: "slider.horizontal.3")
-                        Text("Custom repeat options")
-                            .font(.system(size: 15, weight: .semibold))
-                        Spacer()
-                        Image(systemName: "pencil")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundColor(accentColor)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background(accentColor.opacity(0.1))
-                    .cornerRadius(12)
-                }
-                .buttonStyle(.plain)
             }
         }
-        .sheet(isPresented: $showingCustomRepeatSheet) {
-            CustomRepeatView(
-                recurrence: $recurrenceConfig,
-                anchorDate: eventDate
-            ) { updated in
-                repeatOption = updated.isEnabled ? .custom : .none
-            }
-        }
+        .background(Color(uiColor: .systemBackground))
+        .cornerRadius(12)
     }
 
     @ViewBuilder
-    private var alertSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeading("Alert")
+    private var whoCard: some View {
+        VStack(spacing: 0) {
+            // Invitees
+            QuickRow(icon: "person.2.fill", title: "Invitees", color: .indigo) {
+                HStack(spacing: 4) {
+                     Text(attendeesSummary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundColor(.primary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation { showingPeoplePicker.toggle() }
+                }
+            }
+            
+            if showingPeoplePicker {
+                Divider().padding(.leading, 44)
+                
+                VStack(spacing: 0) {
+                     // Everyone toggle
+                    QuickRow(icon: "person.3.fill", title: "Everyone", showChevron: false, color: .blue) {
+                        Button(action: { selectEveryone.toggle() }) {
+                            Text(selectEveryone ? "Yes" : "No")
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                    }
+                    
+                    if !selectEveryone {
+                        Divider().padding(.leading, 44)
+                        
+                        ForEach(familyMembers, id: \.objectID) { member in
+                            QuickRow(icon: "person.fill", title: member.name ?? "Unknown", showChevron: false, color: .gray) {
+                                Button(action: {
+                                    if selectedMembers.contains(member.objectID) {
+                                        selectedMembers.remove(member.objectID)
+                                    } else {
+                                        selectedMembers.insert(member.objectID)
+                                    }
+                                }) {
+                                    Image(systemName: selectedMembers.contains(member.objectID) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(selectedMembers.contains(member.objectID) ? .blue : .secondary)
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
+                                }
+                            }
+                            // Add divider if not last
+                            if member.objectID != familyMembers.last?.objectID {
+                                Divider().padding(.leading, 44)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Calendar(s)
+            if selectEveryone {
+                // Single shared calendar selection
+                QuickRow(icon: "calendar", title: "Calendar", color: .red) {
+                    Menu {
+                        ForEach(availableCalendars) { cal in
+                            Button(action: { selectedCalendarID = cal.calendarID }) {
+                                HStack {
+                                    if selectedCalendarID == cal.calendarID { Image(systemName: "checkmark") }
+                                    Circle().fill(Color(uiColor: cal.color)).frame(width: 8, height: 8)
+                                    Text(cal.calendarName)
+                                }
+                            }
+                        }
+                    } label: {
+                        if let current = availableCalendars.first(where: { $0.calendarID == selectedCalendarID }) {
+                            Text(current.calendarName).foregroundColor(.primary)
+                        } else {
+                            Text("Select").foregroundColor(.secondary)
+                        }
+                    }
+                }
+            } else {
+                // Per-member calendar selection
+                // We'll show this as a subgroup if members are selected, or always?
+                // If members are selected, we show a row for each member's calendar preference
+                if !selectedMembers.isEmpty {
+                   ForEach(selectedMembers.sorted { id1, id2 in
+                       let m1 = familyMembers.first(where: { $0.objectID == id1 })?.name ?? ""
+                       let m2 = familyMembers.first(where: { $0.objectID == id2 })?.name ?? ""
+                       return m1 < m2
+                   }, id: \.self) { memberID in
+                       if let member = familyMembers.first(where: { $0.objectID == memberID }) {
+                           // Check if member has multiple calendars
+                           let allCalendars = buildCombinedCalendarList(
+                               memberCalendars: (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set(),
+                               personalCalendars: (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
+                           )
+                           let writableCount = allCalendars.filter { item in
+                               if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
+                                   if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
+                                       return ekCalendar.allowsContentModifications
+                                   }
+                               }
+                               return true
+                           }.count
+                           
+                           // Only show if member has more than one calendar
+                           if writableCount > 1 {
+                               QuickRow(icon: "calendar", title: "\(member.name ?? "")'s Cal", color: .red) {
+                                   memberCalendarMenu(for: member)
+                               }
+                               Divider().padding(.leading, 44)
+                           }
+                       }
+                   }
+                } else {
+                    QuickRow(icon: "calendar", title: "Calendar", color: .red) {
+                        Text("Select invitees first").foregroundColor(.secondary)
+                    }
+                    Divider().padding(.leading, 44)
+                }
+            }
 
+            // Driver
+            QuickRow(icon: "car.fill", title: "Driver", color: .green) {
+                Menu {
+                    Button("None") { selectedDriver = nil }
+                    Divider()
+                    ForEach(allAvailableDrivers, id: \.id) { driver in
+                        Button(action: {
+                            selectedDriver = driver
+                            if case .familyMember(_) = driver {
+                                driverToCreateEventFor = driver
+                                showingCreateEventForDriverAlert = true
+                            }
+                        }) {
+                            HStack {
+                                if selectedDriver?.id == driver.id { Image(systemName: "checkmark") }
+                                Text(driver.name)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(selectedDriver?.name ?? "None").foregroundColor(.primary)
+                }
+            }
+            
+            // Travel Time (Conditional)
+            if let driver = selectedDriver, driver.isFamilyMember {
+                Divider().padding(.leading, 44)
+                
+                QuickRow(icon: "timer", title: "Travel Time", color: .orange) {
+                    Menu {
+                        ForEach([5, 10, 15, 20, 25, 30, 45, 60], id: \.self) { minutes in
+                            Button("\(minutes) min") { driverTravelTimeMinutes = minutes }
+                        }
+                    } label: {
+                        Text("\(driverTravelTimeMinutes) min").foregroundColor(.primary)
+                    }
+                }
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Alert
+            QuickRow(icon: "bell.fill", title: "Alert", color: .red) {
                 Menu {
                     ForEach(AlertOption.allCases, id: \.self) { option in
-                        Button(option.rawValue) {
-                            alertOption = option
-                        }
+                         Button(option.rawValue) { alertOption = option }
                     }
                 } label: {
-                    HStack {
-                        Text("Alert")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(primaryTextColor)
-                        Spacer()
-                        Text(alertOption.rawValue)
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(secondaryTextColor)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
+                    Text(alertOption.rawValue).foregroundColor(.primary)
+                }
+            }
+            
+            Divider().padding(.leading, 44)
+            
+            // Show As
+            QuickRow(icon: "circle.square", title: "Show As", color: .gray) {
+                Menu {
+                    ForEach(ShowAsOption.allCases, id: \.self) { option in
+                        Button(option.rawValue) { showAsOption = option }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(fieldBackground)
-                    .cornerRadius(14)
+                } label: {
+                     Text(showAsOption.rawValue).foregroundColor(.primary)
                 }
             }
         }
+        .background(Color(uiColor: .systemBackground))
+        .cornerRadius(12)
     }
 
     @ViewBuilder
-    private var calendarSection: some View {
-        if selectEveryone && !availableCalendars.isEmpty {
-            // For "Everyone": Show shared calendars selection
-            sectionCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionHeading("Calendar")
-
-                    Menu {
-                        ForEach(availableCalendars) { calendar in
-                            Button(action: {
-                                selectedCalendarID = calendar.calendarID
-                            }) {
-                                HStack {
-                                    Circle()
-                                        .fill(Color(uiColor: calendar.color))
-                                        .frame(width: 12, height: 12)
-                                    Text(calendar.calendarName)
-                                    if selectedCalendarID == calendar.calendarID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Text("Calendar")
-                                .font(.system(size: 16, weight: .regular))
-                                .foregroundColor(primaryTextColor)
-                            Spacer()
-                            if let current = availableCalendars.first(where: { $0.calendarID == selectedCalendarID }) {
-                                HStack(spacing: 6) {
-                                    Circle()
-                                        .fill(Color(uiColor: current.color))
-                                        .frame(width: 10, height: 10)
-                                    Text(current.calendarName)
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(primaryTextColor)
-                                }
-                            } else {
-                                Text("Select")
-                                    .font(.system(size: 16, weight: .regular))
-                                    .foregroundColor(secondaryTextColor)
-                            }
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(fieldBackground)
-                        .cornerRadius(14)
-                    }
-                }
-            }
-        } else if !selectEveryone {
-            // For specific members: Show per-member calendar selection (always visible)
-            sectionCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionHeading("Calendars")
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(selectedMembers.sorted { mem1, mem2 in
-                            let member1 = familyMembers.first(where: { $0.objectID == mem1 })?.name ?? "Unknown"
-                            let member2 = familyMembers.first(where: { $0.objectID == mem2 })?.name ?? "Unknown"
-                            return member1.localizedCaseInsensitiveCompare(member2) == .orderedAscending
-                        }, id: \.self) { memberID in
-                            if let member = familyMembers.first(where: { $0.objectID == memberID }) {
-                                memberCalendarSelector(for: member)
-                            }
-                        }
-                    }
-                }
-            }
+    private var notesCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Notes")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            
+            TextEditor(text: $notes)
+                .frame(minHeight: 100)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .scrollContentBackground(.hidden) 
         }
+        .background(Color(uiColor: .systemBackground))
+        .cornerRadius(12)
     }
-
-    private func buildCombinedCalendarList(memberCalendars: Set<FamilyMemberCalendar>, personalCalendars: Set<PersonalCalendar>) -> [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] {
-        var allCalendars: [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] = []
-
-        // Add member calendars
-        for cal in memberCalendars {
-            allCalendars.append((
-                calendar: cal,
-                type: "member",
-                name: cal.calendarName ?? "Unknown",
-                colorHex: cal.calendarColorHex ?? "#555555",
-                isAutoLinked: cal.isAutoLinked
-            ))
-        }
-
-        // Add personal calendars
-        for cal in personalCalendars {
-            allCalendars.append((
-                calendar: cal,
-                type: "personal",
-                name: cal.calendarName ?? "Unknown",
-                colorHex: cal.calendarColorHex ?? "#555555",
-                isAutoLinked: false
-            ))
-        }
-
-        return allCalendars
-    }
-
+    
+    // Helper for per-member calendar menu
     @ViewBuilder
-    private func memberCalendarSelector(for member: FamilyMember) -> some View {
-        // Force-load the memberCalendars relationship
-        let memberCalendars = (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set()
-        // Load personal calendars for this member
-        let personalCalendars = (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
+    private func memberCalendarMenu(for member: FamilyMember) -> some View {
+        let allCalendars = buildCombinedCalendarList(
+            memberCalendars: (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set(),
+            personalCalendars: (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
+        )
+        
+        let writable = allCalendars.filter { item in
+             if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
+                 if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
+                     return ekCalendar.allowsContentModifications
+                 }
+             }
+             return true
+        }
 
-        // Combine both types into a single list
-        let allCalendars = buildCombinedCalendarList(memberCalendars: memberCalendars, personalCalendars: personalCalendars)
-
-        if !allCalendars.isEmpty {
-            // Filter out subscription/read-only calendars
-            let writableCalendars = allCalendars.filter { item in
-                if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
-                    if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
-                        return ekCalendar.allowsContentModifications
-                    }
-                }
-                // Include calendars we can't verify (assume writable)
-                return true
-            }
-
-            if !writableCalendars.isEmpty {
-                let sortedCalendars = writableCalendars.sorted { item1, item2 in
-                    // Auto-linked calendar first
-                    if item1.isAutoLinked && !item2.isAutoLinked { return true }
-                    if !item1.isAutoLinked && item2.isAutoLinked { return false }
-                    // Then by name
-                    return item1.name < item2.name
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(member.name ?? "Unknown")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(primaryTextColor)
-
-                    Menu {
-                        ForEach(sortedCalendars.indices, id: \.self) { index in
-                            let item = sortedCalendars[index]
-                            Button(action: {
-                                // Store selected calendar per member
-                                updateSelectedCalendarForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type)
-                            }) {
-                                HStack {
-                                    Circle()
-                                        .fill(Color.fromHex(item.colorHex))
-                                        .frame(width: 12, height: 12)
-                                    Text(item.name)
-                                    if isCalendarSelectedForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type) {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            if let (selectedID, selectedColor) = getSelectedCalendarForMemberCombined(member: member) {
-                                Circle()
-                                    .fill(Color.fromHex(selectedColor))
-                                    .frame(width: 10, height: 10)
-                                if let memberCal = memberCalendars.first(where: { $0.calendarID == selectedID }) {
-                                    Text(memberCal.calendarName ?? "Unknown")
-                                        .font(.system(size: 15, weight: .regular))
-                                        .foregroundColor(primaryTextColor)
-                                } else if let personalCal = personalCalendars.first(where: { $0.calendarID == selectedID }) {
-                                    Text(personalCal.calendarName ?? "Unknown")
-                                        .font(.system(size: 15, weight: .regular))
-                                        .foregroundColor(primaryTextColor)
-                                } else {
-                                    Text("Unknown")
-                                        .font(.system(size: 15, weight: .regular))
-                                        .foregroundColor(primaryTextColor)
-                                }
-                            } else {
-                                Text("Select calendar")
-                                    .font(.system(size: 15, weight: .regular))
-                                    .foregroundColor(secondaryTextColor)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(fieldBackground)
-                        .cornerRadius(12)
-                    }
+        Menu {
+            ForEach(writable.indices, id: \.self) { index in
+                let item = writable[index]
+                Button(action: {
+                    updateSelectedCalendarForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type)
+                }) {
+                     HStack {
+                         if isCalendarSelectedForMemberCombined(member: member, calendarID: (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID, type: item.type) {
+                             Image(systemName: "checkmark")
+                         }
+                         Circle().fill(Color.fromHex(item.colorHex))
+                         Text(item.name)
+                     }
                 }
             }
-        }
-    }
-
-    // MARK: - Member Calendar Selection Helpers
-
-    private func updateSelectedCalendarForMember(member: FamilyMember, calendar: FamilyMemberCalendar) {
-        if let calendarID = calendar.calendarID {
-            selectedMemberCalendars[member.objectID] = calendarID
-            selectedCalendarID = calendarID // Also update main selection
-        }
-    }
-
-    private func getSelectedCalendarForMember(member: FamilyMember) -> FamilyMemberCalendar? {
-        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
-            // Check if there's a manually selected calendar for this member
-            if let selectedCalID = selectedMemberCalendars[member.objectID],
-               let selected = memberCalendars.first(where: { $0.calendarID == selectedCalID }) {
-                return selected
-            }
-
-            // Otherwise return the first auto-linked calendar (predefined default)
-            if let autoLinked = memberCalendars.first(where: { $0.isAutoLinked }) {
-                return autoLinked
-            }
-            // If no auto-linked, return first calendar
-            return memberCalendars.sorted { ($0.calendarName ?? "") < ($1.calendarName ?? "") }.first
-        }
-        return nil
-    }
-
-    private func isCalendarSelectedForMember(member: FamilyMember, calendar: FamilyMemberCalendar) -> Bool {
-        if let selected = getSelectedCalendarForMember(member: member),
-           selected.objectID == calendar.objectID {
-            return true
-        }
-        return false
-    }
-
-    // New combined helpers for member + personal calendars
-    private func updateSelectedCalendarForMemberCombined(member: FamilyMember, calendarID: String?, type: String) {
-        if let calendarID = calendarID {
-            selectedMemberCalendars[member.objectID] = calendarID
-            selectedCalendarID = calendarID // Also update main selection
-        }
-    }
-
-    private func getSelectedCalendarForMemberCombined(member: FamilyMember) -> (id: String, color: String)? {
-        if let selectedCalID = selectedMemberCalendars[member.objectID] {
-            // Check if it's a member calendar
-            if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
-               let selected = memberCalendars.first(where: { $0.calendarID == selectedCalID }) {
-                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
-            }
-            // Check if it's a personal calendar
-            if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
-               let selected = personalCalendars.first(where: { $0.calendarID == selectedCalID }) {
-                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
-            }
-            return nil
-        }
-
-        // Default to first auto-linked member calendar
-        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
-           let autoLinked = memberCalendars.first(where: { $0.isAutoLinked }) {
-            return (id: autoLinked.calendarID ?? "", color: autoLinked.calendarColorHex ?? "#555555")
-        }
-
-        // Fallback to first available member or personal calendar
-        let memberCalendars = (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set()
-        if let firstMember = memberCalendars.sorted(by: { ($0.calendarName ?? "") < ($1.calendarName ?? "") }).first,
-           let calID = firstMember.calendarID {
-            return (id: calID, color: firstMember.calendarColorHex ?? "#555555")
-        }
-
-        if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
-           let firstPersonal = personalCalendars.sorted(by: { ($0.calendarName ?? "") < ($1.calendarName ?? "") }).first,
-           let calID = firstPersonal.calendarID {
-            return (id: calID, color: firstPersonal.calendarColorHex ?? "#555555")
-        }
-
-        return nil
-    }
-
-    private func isCalendarSelectedForMemberCombined(member: FamilyMember, calendarID: String?, type: String) -> Bool {
-        guard let calendarID = calendarID else { return false }
-
-        if let (selectedID, _) = getSelectedCalendarForMemberCombined(member: member) {
-            return selectedID == calendarID
-        }
-        return false
-    }
-
-    @ViewBuilder
-    private var notesSection: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 8) {
-                sectionHeading("Notes")
-
-                TextEditor(text: $notes)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(primaryTextColor)
-                    .scrollContentBackground(.hidden)
-                    .padding(12)
-                    .background(fieldBackground)
-                    .cornerRadius(12)
-                    .frame(height: 120)
-            }
+        } label: {
+             if let (selectedID, _) = getSelectedCalendarForMemberCombined(member: member) {
+                  // Find name
+                 let name: String = {
+                     if let m = (member.memberCalendars as? Set<FamilyMemberCalendar>)?.first(where: { $0.calendarID == selectedID }) { return m.calendarName ?? "" }
+                     if let p = (member.personalCalendars as? Set<PersonalCalendar>)?.first(where: { $0.calendarID == selectedID }) { return p.calendarName ?? "" }
+                     return "Unknown"
+                 }()
+                 Text(name).foregroundColor(.primary)
+             } else {
+                 Text("Select").foregroundColor(.secondary)
+             }
         }
     }
 
@@ -2022,6 +1568,77 @@ struct AddEventView: View {
 
         print("❌ Failed to recreate recurring event in calendar \(calendarId). Keeping original ID \(eventId)")
         return eventId
+    }
+
+    // MARK: - Calendar Selection Helpers
+
+    private func buildCombinedCalendarList(memberCalendars: Set<FamilyMemberCalendar>, personalCalendars: Set<PersonalCalendar>) -> [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] {
+        var allCalendars: [(calendar: Any, type: String, name: String, colorHex: String, isAutoLinked: Bool)] = []
+
+        // Add member calendars
+        for cal in memberCalendars {
+            allCalendars.append((
+                calendar: cal,
+                type: "member",
+                name: cal.calendarName ?? "Unknown",
+                colorHex: cal.calendarColorHex ?? "#555555",
+                isAutoLinked: cal.isAutoLinked
+            ))
+        }
+
+        // Add personal calendars
+        for cal in personalCalendars {
+            allCalendars.append((
+                calendar: cal,
+                type: "personal",
+                name: cal.calendarName ?? "Unknown",
+                colorHex: cal.calendarColorHex ?? "#555555",
+                isAutoLinked: false
+            ))
+        }
+
+        return allCalendars
+    }
+
+    private func updateSelectedCalendarForMemberCombined(member: FamilyMember, calendarID: String?, type: String) {
+        if let calendarID = calendarID {
+            selectedMemberCalendars[member.objectID] = calendarID
+            // For now, if editing a single user's calendar choice, we rely on the map.
+        }
+    }
+
+    private func getSelectedCalendarForMemberCombined(member: FamilyMember) -> (id: String, color: String)? {
+        if let selectedCalID = selectedMemberCalendars[member.objectID] {
+            // Check if it's a member calendar
+            if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar>,
+               let selected = memberCalendars.first(where: { $0.calendarID == selectedCalID }) {
+                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
+            }
+            // Check if it's a personal calendar
+            if let personalCalendars = member.personalCalendars as? Set<PersonalCalendar>,
+               let selected = personalCalendars.first(where: { $0.calendarID == selectedCalID }) {
+                return (id: selectedCalID, color: selected.calendarColorHex ?? "#555555")
+            }
+            // Fallback if ID exists but object not found easily (data inconsistency?)
+            return (id: selectedCalID, color: "#555555")
+        }
+
+        // Default to first auto-linked member calendar or first avail
+        if let memberCalendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
+            if let autoLinked = memberCalendars.first(where: { $0.isAutoLinked }) {
+                return (id: autoLinked.calendarID ?? "", color: autoLinked.calendarColorHex ?? "#555555")
+            }
+        }
+        return nil
+    }
+
+    private func isCalendarSelectedForMemberCombined(member: FamilyMember, calendarID: String?, type: String) -> Bool {
+        guard let calendarID = calendarID else { return false }
+
+        if let (selectedID, _) = getSelectedCalendarForMemberCombined(member: member) {
+            return selectedID == calendarID
+        }
+        return false
     }
 }
 

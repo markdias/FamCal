@@ -27,6 +27,11 @@ struct DailyEventsView: View {
     @State private var lastTapTime: Date = .distantPast
     @State private var lastTappedEventId: String = ""
     @State private var tapDelayTimer: Timer?
+    @State private var showingLinkedDeleteDialog = false
+    @State private var pendingDeleteEvent: DayEventItem?
+    @State private var pendingDeleteScope: DeleteScope = .singleCalendar
+
+    @Environment(\.managedObjectContext) private var viewContext
 
     private let timeColumnWidth: CGFloat = 60
     private let hourHeight: CGFloat = 60
@@ -202,11 +207,34 @@ struct DailyEventsView: View {
             }
         }
         .confirmationDialog("Delete Event", isPresented: $showingDeleteConfirmation, presenting: eventToDelete) { event in
-            Button("Delete", role: .destructive) {
-                deleteEvent(event)
+            // Check if event has linked copies
+            if linkedFamilyEvents(for: event.eventIdentifier).count > 1 {
+                Button("Delete only this calendar", role: .destructive) {
+                    if let event = eventToDelete {
+                        deleteEvent(event, scope: .singleCalendar)
+                    }
+                }
+                Button("Delete in all linked calendars", role: .destructive) {
+                    if let event = eventToDelete {
+                        deleteEvent(event, scope: .allLinked)
+                    }
+                }
+            } else {
+                Button("Delete", role: .destructive) {
+                    if let event = eventToDelete {
+                        deleteEvent(event, scope: .singleCalendar)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                eventToDelete = nil
             }
         } message: { event in
-            Text("Are you sure you want to delete '\(event.title)'?")
+            if linkedFamilyEvents(for: event.eventIdentifier).count > 1 {
+                Text("'\(event.title)' is linked to other calendars. Delete only here or everywhere?")
+            } else {
+                Text("Are you sure you want to delete '\(event.title)'?")
+            }
         }
         .sheet(isPresented: $showingEventDetail) {
             if let event = selectedEventForDetail {
@@ -273,16 +301,71 @@ struct DailyEventsView: View {
         }
     }
 
-    private func deleteEvent(_ event: DayEventItem) {
+    private func deleteEvent(_ event: DayEventItem, scope: DeleteScope = .singleCalendar) {
         let store = EKEventStore()
-        if let ekEvent = store.event(withIdentifier: event.eventIdentifier) {
-            do {
-                try store.remove(ekEvent, span: .thisEvent, commit: true)
-            } catch {
-                print("❌ Failed to delete event: \(error.localizedDescription)")
+
+        // Get linked events if needed
+        var targetIdentifiers: [String] = [event.eventIdentifier]
+
+        if scope == .allLinked {
+            let linked = linkedFamilyEvents(for: event.eventIdentifier)
+            let linkedIdentifiers = linked.compactMap { $0.eventIdentifier }
+            targetIdentifiers.append(contentsOf: linkedIdentifiers.filter { $0 != event.eventIdentifier })
+        }
+
+        // Delete from EventKit
+        for identifier in targetIdentifiers {
+            if let ekEvent = store.event(withIdentifier: identifier) {
+                do {
+                    try store.remove(ekEvent, span: .thisEvent, commit: true)
+                } catch {
+                    print("❌ Failed to delete event \(identifier): \(error.localizedDescription)")
+                }
             }
         }
+
+        // Delete from CoreData
+        for identifier in targetIdentifiers {
+            let fetchRequest = FamilyEvent.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", identifier)
+            do {
+                if let familyEvent = try viewContext.fetch(fetchRequest).first {
+                    viewContext.delete(familyEvent)
+                }
+            } catch {
+                print("⚠️ Failed to delete CoreData record for \(identifier): \(error.localizedDescription)")
+            }
+        }
+
+        try? viewContext.save()
         eventToDelete = nil
+    }
+
+    private func linkedFamilyEvents(for eventId: String) -> [FamilyEvent] {
+        let fetchRequest = FamilyEvent.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventId)
+
+        do {
+            guard let current = try viewContext.fetch(fetchRequest).first else { return [] }
+
+            var results: [FamilyEvent] = [current]
+            if let groupId = current.eventGroupId {
+                let groupFetch = FamilyEvent.fetchRequest()
+                groupFetch.predicate = NSPredicate(format: "eventGroupId == %@", groupId as CVarArg)
+                let groupResults = try viewContext.fetch(groupFetch)
+                results.append(contentsOf: groupResults)
+            }
+
+            let keyed = results.compactMap { familyEvent -> (String, FamilyEvent)? in
+                guard let identifier = familyEvent.eventIdentifier else { return nil }
+                return (identifier, familyEvent)
+            }
+            let grouped = Dictionary(grouping: keyed, by: { $0.0 })
+            return grouped.compactMap { _, value in value.first?.1 }
+        } catch {
+            print("⚠️ Failed to load linked events: \(error.localizedDescription)")
+            return []
+        }
     }
 
     private var currentActiveMembers: [FamilyMember] {

@@ -34,7 +34,7 @@ struct CustomRepeatView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     summaryCard
                     toggleRow
                     frequencyPicker
@@ -45,6 +45,7 @@ struct CustomRepeatView: View {
                 }
                 .padding(16)
             }
+            .background(Color(.systemGroupedBackground)) // Grey background
             .navigationTitle("Custom Repeat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -78,8 +79,8 @@ struct CustomRepeatView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var toggleRow: some View {
@@ -96,7 +97,7 @@ struct CustomRepeatView: View {
                 .labelsHidden()
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
     }
 
     private var frequencyPicker: some View {
@@ -114,7 +115,7 @@ struct CustomRepeatView: View {
             .animation(.easeInOut, value: draft.frequency)
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
     }
 
     private var intervalStepper: some View {
@@ -132,7 +133,7 @@ struct CustomRepeatView: View {
             .disabled(!draft.isEnabled)
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
     }
 
     private var weeklySelector: some View {
@@ -152,7 +153,7 @@ struct CustomRepeatView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(isSelected ? Color.accentColor : Color(.systemGray5))
                             )
                     }
@@ -161,7 +162,7 @@ struct CustomRepeatView: View {
             }
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
     }
 
     private var monthlyPatternSelector: some View {
@@ -209,7 +210,7 @@ struct CustomRepeatView: View {
             }
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
     }
 
     private var endSection: some View {
@@ -259,7 +260,7 @@ struct CustomRepeatView: View {
             }
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.systemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)))
     }
 
     private var monthlyPatternBinding: Binding<MonthlyMode> {

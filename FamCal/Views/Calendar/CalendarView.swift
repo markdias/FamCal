@@ -1478,8 +1478,9 @@ struct CalendarView: View {
 
                     // Fetch checklist data
                     let checklist = checklists.first { $0.eventIdentifier == event.id && $0.deletedAt == nil }
-                    let hasChecklist = checklist != nil
                     let checklistProgress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+                    // Only show checklist if it has items (not empty)
+                    let hasChecklist = checklistProgress?.isEmpty == false
 
                     let dayEvent = DayEventItem(
                         id: UUID(),

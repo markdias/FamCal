@@ -110,11 +110,15 @@
 		};
 		FD1B9A842ECB1ED800B8C72E /* FamCalTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = FamCalTests;
 			sourceTree = "<group>";
 		};
 		FD1B9A8E2ECB1ED800B8C72E /* FamCalUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = FamCalUITests;
 			sourceTree = "<group>";
 		};
@@ -420,13 +424,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FamCal/Pods-FamCal-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-FamCal/Pods-FamCal-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

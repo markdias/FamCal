@@ -79,18 +79,14 @@ struct EventDetailView: View {
 
     @FetchRequest(
         entity: Checklist.entity(),
-        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: true)]
+        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: true)],
+        predicate: NSPredicate(format: "deletedAt == nil")
     )
     private var allChecklists: FetchedResults<Checklist>
 
     private var eventChecklist: Checklist? {
         let eventId = event.id
-        for checklist in allChecklists {
-            if checklist.eventIdentifier == eventId && checklist.deletedAt == nil {
-                return checklist
-            }
-        }
-        return nil
+        return allChecklists.first { $0.eventIdentifier == eventId }
     }
 
     private var driverFamilyMembers: [FamilyMember] {
@@ -519,7 +515,6 @@ struct EventDetailView: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
-        .id(checklistRefresh)
     }
 
     private var linkedCalendarsCompact: some View {
@@ -618,7 +613,6 @@ struct EventDetailView: View {
     private func toggleChecklistItem(_ item: ChecklistItem) {
         do {
             try ChecklistManager.shared.toggleItemCompletion(item, completedBy: UUID())
-            checklistRefresh.toggle()
         } catch {
             print("❌ Error toggling checklist item: \(error)")
         }
@@ -626,7 +620,6 @@ struct EventDetailView: View {
 
     private func deleteChecklistItem(_ item: ChecklistItem) {
         ChecklistManager.shared.deleteItem(item)
-        checklistRefresh.toggle()
     }
 
     private func addChecklistItem() {
@@ -669,14 +662,59 @@ struct EventDetailView: View {
 
             newChecklistTitle = ""
             newChecklistHasDueDate = false
-            checklistRefresh.toggle()
+            showingAddChecklistItem = false
 
-            // TODO: If toAllFuture is true, apply to all future occurrences
+            // Apply to all future occurrences if requested
             if toAllFuture {
-                print("ℹ️ TODO: Apply checklist item to all future occurrences")
+                applyChecklistItemToFutureOccurrences(title: title, dueDate: dueDate)
             }
         } catch {
             print("❌ Error adding checklist item: \(error)")
+        }
+    }
+
+    private func applyChecklistItemToFutureOccurrences(title: String, dueDate: Date?) {
+        // Find all future occurrences of this recurring event
+        let eventStore = EKEventStore()
+
+        guard let ekEvent = eventStore.event(withIdentifier: event.id),
+              let recurrenceRule = ekEvent.recurrenceRules?.first else {
+            print("⚠️ Could not find recurring event or recurrence rule")
+            return
+        }
+
+        // Get all occurrences of this recurring event that are after the current event
+        let occurrences = eventStore.events(matching: eventStore.predicateForEvents(
+            withStart: event.startDate,
+            end: Calendar.current.date(byAdding: .year, value: 2, to: event.startDate) ?? Date.distantFuture,
+            calendars: nil
+        )).filter { $0.hasRecurrenceRules }
+
+        // For each future occurrence, find or create its checklist and add the item
+        for occurrence in occurrences {
+            if occurrence.startDate > event.startDate {
+                do {
+                    // Get or create checklist for this occurrence
+                    let targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(
+                        for: occurrence.eventIdentifier,
+                        eventGroupId: eventChecklist?.eventGroupId
+                    )
+
+                    let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
+
+                    // Add the same item to this occurrence
+                    _ = try ChecklistManager.shared.addItem(
+                        to: targetChecklist,
+                        title: title,
+                        dueDate: dueDate,
+                        sortOrder: nextSortOrder
+                    )
+
+                    print("✅ Added checklist item to future occurrence: \(occurrence.title)")
+                } catch {
+                    print("❌ Error adding checklist item to future occurrence: \(error)")
+                }
+            }
         }
     }
 

@@ -285,13 +285,17 @@ class SupabaseAuthManager: ObservableObject {
             // Refresh token is invalid or expired
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             print("⚠️ Token refresh failed (HTTP \(httpResponse.statusCode)): \(errorMessage)")
-            
-            // Checks for unrecoverable errors where the refresh token is invalid/revoked
-            if httpResponse.statusCode == 400 || errorMessage.contains("refresh_token_not_found") {
-                print("🚨 Fatal refresh token error (Revoked/Invalid). Signing out user to prevent error loop.")
+
+            // Only sign out on explicit "refresh_token_not_found" or clear 400 with specific error
+            // Don't sign out on generic 400 errors that might be transient
+            if errorMessage.contains("refresh_token_not_found") {
+                print("🚨 Fatal refresh token error (Not found). Signing out user to prevent error loop.")
+                try? await self.signOut()
+            } else if httpResponse.statusCode == 400 && (errorMessage.contains("invalid_grant") || errorMessage.contains("revoked")) {
+                print("🚨 Fatal refresh token error (Invalid/Revoked). Signing out user to prevent error loop.")
                 try? await self.signOut()
             }
-            
+
             throw NSError(domain: "TokenRefreshFailed", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Unable to refresh session. Please try again."])
         }
     }

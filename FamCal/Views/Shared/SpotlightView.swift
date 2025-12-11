@@ -40,6 +40,12 @@ struct SpotlightView: View {
     )
     private var savedAddresses: FetchedResults<SavedAddress>
 
+    @FetchRequest(
+        entity: Checklist.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: true)]
+    )
+    private var checklists: FetchedResults<Checklist>
+
     @State private var isLoadingEvents = false
     @State private var events: [GroupedEvent] = []
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
@@ -522,6 +528,20 @@ struct SpotlightView: View {
                         }
                     }
 
+                    // Checklist indicator (if available)
+                    let checklistData = getChecklistData(for: event.eventIdentifier)
+                    if checklistData.hasChecklist, let progress = checklistData.progress {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.square")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                            Text(progress.displayString)
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                                .lineLimit(1)
+                        }
+                    }
+
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 8)
@@ -699,6 +719,14 @@ struct SpotlightView: View {
         } catch {
             return nil
         }
+    }
+
+    private func getChecklistData(for eventIdentifier: String) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
+        let checklist = checklists.first { $0.eventIdentifier == eventIdentifier && $0.deletedAt == nil }
+        let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+        // Only show checklist if it has items (not empty)
+        let hasChecklist = progress?.isEmpty == false
+        return (hasChecklist, progress)
     }
 
     private func loadEvents() {

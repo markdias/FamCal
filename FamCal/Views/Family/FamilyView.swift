@@ -1196,7 +1196,10 @@ struct FamilyView: View {
             }
         }
 
-        // Set up notification observer for calendar changes
+        // Set up notification observers (remove old ones first to prevent accumulation)
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.EKEventStoreChanged, object: eventStore)
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("PersonalCalendarVisibilityChanged"), object: nil)
+
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name.EKEventStoreChanged,
             object: eventStore,
@@ -1207,13 +1210,11 @@ struct FamilyView: View {
             loadAvailableCalendars()
         }
 
-        // Set up notification observer for personal calendar visibility changes
         NotificationCenter.default.addObserver(
             forName: Notification.Name("PersonalCalendarVisibilityChanged"),
             object: nil,
             queue: .main
         ) { _ in
-            print("🔔 Personal calendar visibility changed, reloading events...")
             // Small delay to ensure CoreData has propagated the change
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 // Refresh silently for visibility changes
@@ -1258,9 +1259,7 @@ struct FamilyView: View {
     /// Populate missing calendarID values in FamilyMemberCalendar entries by matching calendar names
     /// This is needed because calendar_id is not synced from Supabase (device-specific), so we match locally
     private func populateMissingCalendarIDs() {
-        print("🔍 DEBUG populateMissingCalendarIDs: Starting...")
         let availableCalendars = CalendarManager.shared.fetchAvailableCalendars()
-        print("🔍 DEBUG populateMissingCalendarIDs: Found \(availableCalendars.count) available calendars")
 
         for link in memberCalendarLinks {
             // Skip if already has calendarID
@@ -1272,7 +1271,6 @@ struct FamilyView: View {
             guard let calendarName = link.calendarName else { continue }
             if let matchingCalendar = availableCalendars.first(where: { $0.title == calendarName }) {
                 link.calendarID = matchingCalendar.id
-                print("✅ DEBUG populateMissingCalendarIDs: Populated member calendar '\(calendarName)': \(matchingCalendar.id)")
             }
         }
 
@@ -1284,7 +1282,6 @@ struct FamilyView: View {
                         guard let calendarName = sharedCal.calendarName else { continue }
                         if let matchingCalendar = availableCalendars.first(where: { $0.title == calendarName }) {
                             sharedCal.calendarID = matchingCalendar.id
-                            print("✅ DEBUG populateMissingCalendarIDs: Populated shared calendar '\(calendarName)': \(matchingCalendar.id)")
                         }
                     }
                 }
@@ -1292,31 +1289,17 @@ struct FamilyView: View {
         }
 
         // Also populate for personal calendars
-        print("🔍 DEBUG populateMissingCalendarIDs: Processing \(personalCalendars.count) personal calendars")
         for personalCal in personalCalendars {
-            print("🔍 DEBUG populateMissingCalendarIDs: Personal calendar '\(personalCal.calendarName ?? "nil")' has ID: '\(personalCal.calendarID ?? "nil")'")
             if personalCal.calendarID == nil || personalCal.calendarID!.isEmpty {
-                guard let calendarName = personalCal.calendarName else {
-                    print("❌ DEBUG populateMissingCalendarIDs: Personal calendar has no name")
-                    continue
-                }
+                guard let calendarName = personalCal.calendarName else { continue }
                 if let matchingCalendar = availableCalendars.first(where: { $0.title == calendarName }) {
                     personalCal.calendarID = matchingCalendar.id
-                    print("✅ DEBUG populateMissingCalendarIDs: Populated personal calendar '\(calendarName)': \(matchingCalendar.id)")
-                } else {
-                    print("❌ DEBUG populateMissingCalendarIDs: No matching calendar found for '\(calendarName)'")
-                    print("🔍 DEBUG populateMissingCalendarIDs: Available calendar names: \(availableCalendars.map { $0.title }.joined(separator: ", "))")
                 }
             }
         }
 
         // Save changes
-        do {
-            try viewContext.save()
-            print("✅ DEBUG populateMissingCalendarIDs: Saved changes to CoreData")
-        } catch {
-            print("❌ DEBUG populateMissingCalendarIDs: Failed to save: \(error)")
-        }
+        try? viewContext.save()
     }
 
     private func loadNextEvents(showLoadingState: Bool = true) {
@@ -1366,56 +1349,32 @@ struct FamilyView: View {
             }
 
         // Add personal calendars for the current user
-        print("🔍 DEBUG: Total personal calendars in CoreData: \(personalCalendars.count)")
-        for pc in personalCalendars {
-            print("🔍 DEBUG: Personal Calendar: \(pc.calendarName ?? "nil") | ID: \(pc.calendarID ?? "nil") | Next: \(pc.showInNext) | Spotlight: \(pc.showInSpotlight) | Upcoming: \(pc.showInUpcoming)")
-        }
-
-        print("🔍 DEBUG: Available family members:")
-        for fm in familyMembers {
-            print("   - \(fm.name ?? "nil") (ID: \(fm.id?.uuidString ?? "nil"))")
-        }
-
         if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
            let linkedMember = familyMembers.first(where: { $0.id?.uuidString.lowercased() == linkedMemberId.lowercased() }) {
-            print("🔍 DEBUG: Linked member found: \(linkedMember.name ?? "nil") (ID: \(linkedMemberId))")
             var entry = memberCalendarMap[linkedMember.objectID] ?? (linkedMember, [])
             for personalCal in personalCalendars {
                 // Only include if toggled into at least one main view surface
                 let shouldInclude = personalCal.showInNext
                     || personalCal.showInSpotlight
                     || personalCal.showInUpcoming
-                print("🔍 DEBUG: Personal Calendar '\(personalCal.calendarName ?? "nil")' shouldInclude: \(shouldInclude)")
-                guard shouldInclude else {
-                    print("⚠️ DEBUG: Skipping personal calendar '\(personalCal.calendarName ?? "nil")' - not enabled for any view")
-                    continue
-                }
+                guard shouldInclude else { continue }
 
                 var resolvedID: String?
                 if let storedID = personalCal.calendarID {
                     resolvedID = storedID
-                    print("🔍 DEBUG: Personal Calendar '\(personalCal.calendarName ?? "nil")' has stored ID: \(storedID)")
                     // If ID not found locally, try to find by name
                     if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
-                        print("⚠️ Personal Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
                         resolvedID = localCal.calendarIdentifier
                     }
                 } else if let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
-                    print("ℹ️ Personal Calendar missing ID, resolved by name: \(name) -> \(localCal.calendarIdentifier)")
                     resolvedID = localCal.calendarIdentifier
                 }
 
                 if let resolvedID {
-                    print("✅ DEBUG: Adding personal calendar '\(personalCal.calendarName ?? "nil")' with ID: \(resolvedID) to member '\(linkedMember.name ?? "nil")'")
                     entry.calendars.insert(resolvedID)
-                } else {
-                    print("❌ DEBUG: Failed to resolve ID for personal calendar '\(personalCal.calendarName ?? "nil")'")
                 }
             }
-            print("🔍 DEBUG: Total calendar IDs for linked member '\(linkedMember.name ?? "nil")': \(entry.calendars.count)")
             memberCalendarMap[linkedMember.objectID] = entry
-        } else {
-            print("⚠️ DEBUG: No linked member found! linkedFamilyMemberId: \(appSettingsManager.linkedFamilyMemberId ?? "nil")")
         }
 
             // Process events per member
@@ -1435,8 +1394,6 @@ struct FamilyView: View {
 
                 guard !calendarIDs.isEmpty else { continue }
 
-                print("🔍 DEBUG: Fetching events for member '\(member.name ?? "nil")' from \(calendarIDs.count) calendars: \(calendarIDs)")
-
                 // Fetch events for this member
                 let upcomingEvents = await CalendarManager.shared.fetchNextEventsAsync(
                     for: Array(calendarIDs),
@@ -1444,8 +1401,6 @@ struct FamilyView: View {
                     pastDays: appSettingsManager.eventsPastDays,
                     futureDays: appSettingsManager.eventsFutureDays
                 )
-
-                print("✅ DEBUG: Found \(upcomingEvents.count) events for member '\(member.name ?? "nil")'")
 
                 // Convert to EventItem and expand recurring events
                 var memberEventItems: [EventItem] = []
@@ -1500,13 +1455,10 @@ struct FamilyView: View {
 
                 // Sort grouped events by start date (ensure chronological order)
                 let sortedGroupedEvents = groupedMemberEvents.sorted { $0.startDate < $1.startDate }
-                print("🔍 DEBUG: Member '\(member.name ?? "nil")' - sortedGroupedEvents count: \(sortedGroupedEvents.count)")
-                print("🔍 DEBUG: eventsPerPerson limit: \(eventsPerPerson)")
 
                 // Fetch one extra event to account for the first event being shown in "Next Event" section
                 // This ensures we display the configured number of events in "Upcoming Events"
                 let limitedEvents = Array(sortedGroupedEvents.prefix(eventsPerPerson + 1))
-                print("🔍 DEBUG: Member '\(member.name ?? "nil")' - limitedEvents count: \(limitedEvents.count)")
 
                 // Create member event group
                 let memberColor = Color.fromHex(member.colorHex ?? "#555555")
@@ -1521,7 +1473,6 @@ struct FamilyView: View {
                     upcomingEvents: limitedEvents
                 )
 
-                print("🔍 DEBUG: Created memberGroup for '\(member.name ?? "nil")' - upcomingEvents: \(memberGroup.upcomingEvents.count), nextEvent: \(nextNonAllDayEvent?.title ?? "nil")")
                 memberEventGroups.append(memberGroup)
             }
 
@@ -1531,11 +1482,6 @@ struct FamilyView: View {
                     return $0.memberName.localizedCaseInsensitiveCompare($1.memberName) == .orderedAscending
                 }
                 return $0.sortOrder < $1.sortOrder
-            }
-
-            print("🔍 DEBUG: Final memberEventGroups count: \(memberEventGroups.count)")
-            for group in memberEventGroups {
-                print("   - \(group.memberName): \(group.upcomingEvents.count) events, nextEvent: \(group.nextEvent?.title ?? "nil")")
             }
 
             memberEvents = memberEventGroups
@@ -1631,15 +1577,13 @@ struct FamilyView: View {
                 let staleEvents = try viewContext.fetch(fetchRequest)
                 for staleEvent in staleEvents {
                     viewContext.delete(staleEvent)
-                    print("🗑️ Deleted stale FamilyEvent record for: \(staleEvent.eventIdentifier ?? "unknown")")
                 }
 
                 if !staleEvents.isEmpty {
                     try viewContext.save()
-                    print("✅ Cleaned up \(staleEvents.count) stale event record(s)")
                 }
             } catch {
-                print("⚠️ Error cleaning up stale events: \(error.localizedDescription)")
+                // Silently fail - cleanup is non-critical
             }
         }
     }
@@ -1662,8 +1606,9 @@ struct FamilyView: View {
 
     private func getChecklistData(for eventIdentifier: String) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
         let checklist = checklists.first { $0.eventIdentifier == eventIdentifier && $0.deletedAt == nil }
-        let hasChecklist = checklist != nil
         let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+        // Only show checklist if it has items (not empty)
+        let hasChecklist = progress?.isEmpty == false
         return (hasChecklist, progress)
     }
 
@@ -2442,6 +2387,16 @@ private struct CompactCardStyle1: View {
 
                 Spacer(minLength: 0)
 
+                if event.hasChecklist, let progress = event.checklistProgress {
+                    HStack(spacing: 2) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 10))
+                        Text(progress.displayString)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(secondaryTextColor)
+                }
+
                 if event.isImportant {
                     Image(systemName: "star.fill")
                         .font(.system(size: 10))
@@ -2520,6 +2475,16 @@ private struct CompactCardStyle3: View {
                             .font(.system(size: 11, weight: .regular))
                             .foregroundColor(secondaryTextColor)
                     }
+
+                    if event.hasChecklist, let progress = event.checklistProgress {
+                        HStack(spacing: 2) {
+                            Image(systemName: "checkmark.square")
+                                .font(.system(size: 9))
+                            Text(progress.displayString)
+                                .font(.system(size: 9, weight: .medium))
+                        }
+                        .foregroundColor(secondaryTextColor)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -2592,6 +2557,16 @@ private struct CompactCardStyle4: View {
                     Text("All Day")
                         .font(.system(size: 11, weight: .regular))
                         .foregroundColor(secondaryTextColor)
+                }
+
+                if event.hasChecklist, let progress = event.checklistProgress {
+                    HStack(spacing: 2) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 9))
+                        Text(progress.displayString)
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundColor(secondaryTextColor)
                 }
             }
 
