@@ -288,20 +288,10 @@ class ChecklistManager: ObservableObject {
         return ChecklistProgress(completed: completedCount, total: activeItems.count)
     }
 
-    // MARK: - Sync (to be implemented with Supabase)
+    // MARK: - Sync
 
-    func syncChecklistsFromSupabase() async throws {
-        // TODO: Implement Supabase sync
-        print("⚠️ Supabase sync not yet implemented")
-    }
-
-    func syncChecklistToSupabase(_ checklist: Checklist) async throws {
-        // TODO: Implement Supabase sync
-        print("⚠️ Supabase sync not yet implemented")
-    }
-
-    func syncItemToSupabase(_ item: ChecklistItem) async throws {
-        // TODO: Implement Supabase sync
-        print("⚠️ Supabase sync not yet implemented")
+    /// Sync checklists to Supabase (called after local changes)
+    func syncChecklistsToSupabase() async {
+        await SupabaseDataManager.shared.syncChecklistsToSupabase()
     }
 }

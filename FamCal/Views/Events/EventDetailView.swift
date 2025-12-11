@@ -895,6 +895,11 @@ struct EventDetailView: View {
                 }
 
                 fetchDriver()
+
+                // Sync checklists from Supabase
+                Task {
+                    await SupabaseDataManager.shared.syncChecklistsFromSupabase(for: [event.id])
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
                 fetchEventDetails()

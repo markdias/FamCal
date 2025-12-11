@@ -1740,6 +1740,220 @@ class SupabaseManager: @unchecked Sendable {
 
         print("✅ Restored soft deleted event \(eventIdentifier)")
     }
+
+    // MARK: - Checklists
+
+    /// Fetch checklists for specific event identifiers
+    func fetchChecklists(for eventIdentifiers: [String], token: String? = nil) async throws -> [ChecklistDTO] {
+        guard !eventIdentifiers.isEmpty else { return [] }
+
+        let ids = eventIdentifiers.map { "'\($0)'" }.joined(separator: ",")
+        let queryItems = [URLQueryItem(name: "event_identifier", value: "in.(\(ids))")]
+        let userToken = token ?? authManager.accessToken
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/event_checklists",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "fetchChecklists")
+            throw NSError(domain: "FetchChecklists", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([ChecklistDTO].self, from: data)
+    }
+
+    /// Fetch checklist items for specific checklists
+    func fetchChecklistItems(for checklistIds: [String], token: String? = nil) async throws -> [ChecklistItemDTO] {
+        guard !checklistIds.isEmpty else { return [] }
+
+        let ids = checklistIds.map { "'\($0)'" }.joined(separator: ",")
+        let queryItems = [URLQueryItem(name: "checklist_id", value: "in.(\(ids))")]
+        let userToken = token ?? authManager.accessToken
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/checklist_items",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "fetchChecklistItems")
+            throw NSError(domain: "FetchChecklistItems", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([ChecklistItemDTO].self, from: data)
+    }
+
+    /// Fetch a single checklist by ID
+    func fetchChecklist(id: String, token: String? = nil) async throws -> ChecklistDTO? {
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        let userToken = token ?? authManager.accessToken
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/event_checklists",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "fetchChecklist")
+            throw NSError(domain: "FetchChecklist", code: statusCode)
+        }
+
+        let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: data)
+        return checklists.first
+    }
+
+    /// Create or update a checklist
+    func upsertChecklist(_ dto: ChecklistDTO, token: String? = nil) async throws -> ChecklistDTO {
+        let userToken = token ?? authManager.accessToken
+
+        struct UpsertBody: Encodable {
+            let id: String
+            let event_identifier: String
+            let event_group_id: String?
+            let deleted_at: String?
+            let deletion_reason: String?
+        }
+
+        let body = UpsertBody(
+            id: dto.id,
+            event_identifier: dto.event_identifier,
+            event_group_id: dto.event_group_id,
+            deleted_at: dto.deleted_at,
+            deletion_reason: dto.deletion_reason
+        )
+
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "rest/v1/event_checklists",
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=representation"]
+        )
+
+        guard statusCode == 200 || statusCode == 201 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklist")
+            throw NSError(domain: "UpsertChecklist", code: statusCode)
+        }
+
+        let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: data)
+        guard let checklist = checklists.first else {
+            throw NSError(domain: "UpsertChecklist", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist not returned after upsert"])
+        }
+        return checklist
+    }
+
+    /// Create or update a checklist item
+    func upsertChecklistItem(_ dto: ChecklistItemDTO, token: String? = nil) async throws -> ChecklistItemDTO {
+        let userToken = token ?? authManager.accessToken
+
+        struct UpsertBody: Encodable {
+            let id: String
+            let checklist_id: String
+            let title: String
+            let due_date: String?
+            let completed: Bool
+            let completed_at: String?
+            let completed_by: String?
+            let sort_order: Int
+            let deleted_at: String?
+            let notification_id: String?
+        }
+
+        let body = UpsertBody(
+            id: dto.id,
+            checklist_id: dto.checklist_id,
+            title: dto.title,
+            due_date: dto.due_date,
+            completed: dto.completed,
+            completed_at: dto.completed_at,
+            completed_by: dto.completed_by,
+            sort_order: dto.sort_order,
+            deleted_at: dto.deleted_at,
+            notification_id: dto.notification_id
+        )
+
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "rest/v1/checklist_items",
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=representation"]
+        )
+
+        guard statusCode == 200 || statusCode == 201 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem")
+            throw NSError(domain: "UpsertChecklistItem", code: statusCode)
+        }
+
+        let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: data)
+        guard let item = items.first else {
+            throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after upsert"])
+        }
+        return item
+    }
+
+    /// Delete (soft delete) a checklist
+    func deleteChecklist(id: String, reason: String? = nil, token: String? = nil) async throws {
+        let userToken = token ?? authManager.accessToken
+
+        struct DeleteBody: Encodable {
+            let deleted_at: String
+            let deletion_reason: String?
+        }
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let body = DeleteBody(deleted_at: now, deletion_reason: reason)
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        let (data, statusCode) = try await makeRequest(
+            "PATCH",
+            path: "rest/v1/event_checklists",
+            queryItems: queryItems,
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=minimal"]
+        )
+
+        guard statusCode == 200 || statusCode == 204 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "deleteChecklist")
+            throw NSError(domain: "DeleteChecklist", code: statusCode)
+        }
+    }
+
+    /// Delete (soft delete) a checklist item
+    func deleteChecklistItem(id: String, token: String? = nil) async throws {
+        let userToken = token ?? authManager.accessToken
+
+        struct DeleteBody: Encodable {
+            let deleted_at: String
+        }
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let body = DeleteBody(deleted_at: now)
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        let (data, statusCode) = try await makeRequest(
+            "PATCH",
+            path: "rest/v1/checklist_items",
+            queryItems: queryItems,
+            body: body,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=minimal"]
+        )
+
+        guard statusCode == 200 || statusCode == 204 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "deleteChecklistItem")
+            throw NSError(domain: "DeleteChecklistItem", code: statusCode)
+        }
+    }
 }
 
 // MARK: - Data Transfer Objects

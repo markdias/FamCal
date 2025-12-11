@@ -1582,4 +1582,215 @@ class SupabaseDataManager: ObservableObject {
             print("⚠️ Error syncing family setup: \(error)")
         }
     }
+
+    // MARK: - Checklist Sync
+
+    /// Sync checklists from Supabase to Core Data
+    @MainActor
+    func syncChecklistsFromSupabase(for eventIdentifiers: [String]) async {
+        guard !authManager.isGuest else {
+            print("ℹ️ Guest mode - skipping checklist sync from Supabase")
+            return
+        }
+
+        guard !eventIdentifiers.isEmpty, let context = managedObjectContext else {
+            return
+        }
+
+        do {
+            print("📥 Syncing checklists from Supabase for \(eventIdentifiers.count) events...")
+
+            // Fetch checklists and items from Supabase
+            let dtos = try await supabaseManager.fetchChecklists(for: eventIdentifiers)
+            guard !dtos.isEmpty else {
+                print("ℹ️ No checklists found in Supabase")
+                return
+            }
+
+            let checklistIds = dtos.map { $0.id }
+            let itemDtos = try await supabaseManager.fetchChecklistItems(for: checklistIds)
+
+            // Convert DTOs to Core Data and merge
+            try context.performAndWait {
+                for dto in dtos {
+                    _ = try convertChecklistDTOToEntity(dto, in: context)
+                }
+
+                for itemDto in itemDtos {
+                    _ = try convertChecklistItemDTOToEntity(itemDto, in: context)
+                }
+
+                try context.save()
+            }
+
+            print("✅ Synced \(dtos.count) checklists and \(itemDtos.count) items from Supabase")
+        } catch {
+            print("⚠️ Error syncing checklists from Supabase: \(error)")
+        }
+    }
+
+    /// Sync checklists from Core Data to Supabase
+    @MainActor
+    func syncChecklistsToSupabase() async {
+        guard !authManager.isGuest else {
+            print("ℹ️ Guest mode - skipping checklist sync to Supabase")
+            return
+        }
+
+        guard let context = managedObjectContext else {
+            return
+        }
+
+        do {
+            print("📤 Syncing checklists to Supabase...")
+
+            var syncedCount = 0
+
+            // Sync all checklists
+            let request = Checklist.fetchRequest()
+            let checklists = try context.fetch(request)
+
+            for checklist in checklists {
+                let dto = convertChecklistEntityToDTO(checklist)
+                _ = try await supabaseManager.upsertChecklist(dto)
+
+                // Sync items for this checklist
+                let itemRequest = ChecklistItem.fetchRequest()
+                itemRequest.predicate = NSPredicate(format: "checklist == %@", checklist)
+                let items = try context.fetch(itemRequest)
+
+                for item in items {
+                    let itemDto = convertChecklistItemEntityToDTO(item)
+                    _ = try await supabaseManager.upsertChecklistItem(itemDto)
+                }
+
+                syncedCount += 1
+            }
+
+            print("✅ Synced \(syncedCount) checklists to Supabase")
+        } catch {
+            print("⚠️ Error syncing checklists to Supabase: \(error)")
+        }
+    }
+
+    /// Convert ChecklistDTO to Core Data entity
+    private func convertChecklistDTOToEntity(_ dto: ChecklistDTO, in context: NSManagedObjectContext) throws -> Checklist {
+        let request = Checklist.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", dto.id)
+
+        let existing = try context.fetch(request).first
+        let checklist = existing ?? Checklist(context: context)
+
+        checklist.id = UUID(uuidString: dto.id) ?? UUID()
+        checklist.eventIdentifier = dto.event_identifier
+        checklist.eventGroupId = dto.event_group_id.flatMap { UUID(uuidString: $0) }
+
+        if let deletedAtStr = dto.deleted_at {
+            checklist.deletedAt = ISO8601DateFormatter().date(from: deletedAtStr)
+        } else {
+            checklist.deletedAt = nil
+        }
+
+        checklist.deletionReason = dto.deletion_reason
+
+        if existing == nil {
+            if let createdAtStr = dto.created_at {
+                checklist.createdAt = ISO8601DateFormatter().date(from: createdAtStr) ?? Date()
+            } else {
+                checklist.createdAt = Date()
+            }
+        }
+
+        return checklist
+    }
+
+    /// Convert ChecklistItemDTO to Core Data entity
+    private func convertChecklistItemDTOToEntity(_ dto: ChecklistItemDTO, in context: NSManagedObjectContext) throws -> ChecklistItem {
+        let request = ChecklistItem.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", dto.id)
+
+        let existing = try context.fetch(request).first
+        let item = existing ?? ChecklistItem(context: context)
+
+        item.id = UUID(uuidString: dto.id) ?? UUID()
+
+        // Find the checklist
+        let checklistRequest = Checklist.fetchRequest()
+        checklistRequest.predicate = NSPredicate(format: "id == %@", dto.checklist_id)
+        if let checklist = try context.fetch(checklistRequest).first {
+            item.checklist = checklist
+        }
+
+        item.title = dto.title
+        item.sortOrder = Int16(dto.sort_order)
+        item.completed = dto.completed
+        item.notificationId = dto.notification_id
+
+        if let dueDate = dto.due_date {
+            item.dueDate = ISO8601DateFormatter().date(from: dueDate)
+        } else {
+            item.dueDate = nil
+        }
+
+        if let completedAtStr = dto.completed_at {
+            item.completedAt = ISO8601DateFormatter().date(from: completedAtStr)
+        } else {
+            item.completedAt = nil
+        }
+
+        if let completedByStr = dto.completed_by {
+            item.completedBy = UUID(uuidString: completedByStr)
+        } else {
+            item.completedBy = nil
+        }
+
+        if let deletedAtStr = dto.deleted_at {
+            item.deletedAt = ISO8601DateFormatter().date(from: deletedAtStr)
+        } else {
+            item.deletedAt = nil
+        }
+
+        if existing == nil {
+            if let createdAtStr = dto.created_at {
+                item.createdAt = ISO8601DateFormatter().date(from: createdAtStr) ?? Date()
+            } else {
+                item.createdAt = Date()
+            }
+        }
+
+        return item
+    }
+
+    /// Convert Checklist entity to DTO for Supabase
+    private func convertChecklistEntityToDTO(_ checklist: Checklist) -> ChecklistDTO {
+        let formatter = ISO8601DateFormatter()
+        return ChecklistDTO(
+            id: checklist.id?.uuidString ?? UUID().uuidString,
+            event_identifier: checklist.eventIdentifier ?? "",
+            event_group_id: checklist.eventGroupId?.uuidString,
+            created_at: checklist.createdAt.map { formatter.string(from: $0) },
+            modified_at: formatter.string(from: Date()),
+            deleted_at: checklist.deletedAt.map { formatter.string(from: $0) },
+            deletion_reason: checklist.deletionReason
+        )
+    }
+
+    /// Convert ChecklistItem entity to DTO for Supabase
+    private func convertChecklistItemEntityToDTO(_ item: ChecklistItem) -> ChecklistItemDTO {
+        let formatter = ISO8601DateFormatter()
+        return ChecklistItemDTO(
+            id: item.id?.uuidString ?? UUID().uuidString,
+            checklist_id: item.checklist?.id?.uuidString ?? "",
+            title: item.title ?? "",
+            due_date: item.dueDate.map { formatter.string(from: $0) },
+            completed: item.completed,
+            completed_at: item.completedAt.map { formatter.string(from: $0) },
+            completed_by: item.completedBy?.uuidString,
+            sort_order: Int(item.sortOrder),
+            created_at: item.createdAt.map { formatter.string(from: $0) },
+            modified_at: formatter.string(from: Date()),
+            deleted_at: item.deletedAt.map { formatter.string(from: $0) },
+            notification_id: item.notificationId
+        )
+    }
 }
