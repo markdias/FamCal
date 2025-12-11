@@ -1644,30 +1644,45 @@ class SupabaseDataManager: ObservableObject {
         do {
             print("📤 Syncing checklists to Supabase...")
 
-            var syncedCount = 0
+            var syncedChecklistCount = 0
+            var syncedItemCount = 0
 
             // Sync all checklists
             let request = Checklist.fetchRequest()
             let checklists = try context.fetch(request)
+            print("📋 Found \(checklists.count) checklists to sync")
 
             for checklist in checklists {
-                let dto = convertChecklistEntityToDTO(checklist)
-                _ = try await supabaseManager.upsertChecklist(dto)
+                do {
+                    let dto = convertChecklistEntityToDTO(checklist)
+                    print("  ↑ Syncing checklist: \(dto.id) for event: \(dto.event_identifier)")
+                    _ = try await supabaseManager.upsertChecklist(dto)
+                    syncedChecklistCount += 1
+                    print("    ✅ Checklist synced successfully")
 
-                // Sync items for this checklist
-                let itemRequest = ChecklistItem.fetchRequest()
-                itemRequest.predicate = NSPredicate(format: "checklist == %@", checklist)
-                let items = try context.fetch(itemRequest)
+                    // Sync items for this checklist
+                    let itemRequest = ChecklistItem.fetchRequest()
+                    itemRequest.predicate = NSPredicate(format: "checklist == %@", checklist)
+                    let items = try context.fetch(itemRequest)
+                    print("    📝 Found \(items.count) items to sync")
 
-                for item in items {
-                    let itemDto = convertChecklistItemEntityToDTO(item)
-                    _ = try await supabaseManager.upsertChecklistItem(itemDto)
+                    for item in items {
+                        do {
+                            let itemDto = convertChecklistItemEntityToDTO(item)
+                            print("      ↑ Syncing item: \(itemDto.id) - \(itemDto.title)")
+                            _ = try await supabaseManager.upsertChecklistItem(itemDto)
+                            syncedItemCount += 1
+                            print("        ✅ Item synced successfully")
+                        } catch {
+                            print("      ❌ Error syncing item \(item.id?.uuidString ?? "unknown"): \(error)")
+                        }
+                    }
+                } catch {
+                    print("  ❌ Error syncing checklist \(checklist.id?.uuidString ?? "unknown"): \(error)")
                 }
-
-                syncedCount += 1
             }
 
-            print("✅ Synced \(syncedCount) checklists to Supabase")
+            print("✅ Synced \(syncedChecklistCount) checklists and \(syncedItemCount) items to Supabase")
         } catch {
             print("⚠️ Error syncing checklists to Supabase: \(error)")
         }
