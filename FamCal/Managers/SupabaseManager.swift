@@ -1830,48 +1830,52 @@ class SupabaseManager: @unchecked Sendable {
             deletion_reason: dto.deletion_reason
         )
 
-        // Try UPDATE first (PATCH)
-        let (patchData, patchStatusCode) = try await makeRequest(
-            "PATCH",
-            path: "rest/v1/event_checklists?id=eq.\(dto.id)",
-            body: body,
-            userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
-        )
-
-        // If PATCH succeeded and returned a record, return it
-        if patchStatusCode == 200 {
-            do {
-                let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: patchData)
-                if let checklist = checklists.first {
-                    print("✅ Checklist updated via PATCH: \(dto.id)")
-                    return checklist
-                }
-            } catch {
-                print("⚠️ Could not decode PATCH response: \(error)")
-            }
-        }
-
-        // PATCH either failed or returned empty, try INSERT (POST)
-        print("📝 Record doesn't exist or PATCH failed, attempting POST insert")
-        let (postData, postStatusCode) = try await makeRequest(
+        // POST with merge-duplicates for automatic conflict handling
+        // This tells Supabase to update if record exists, insert if not
+        let (data, statusCode) = try await makeRequest(
             "POST",
             path: "rest/v1/event_checklists",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
+            extraHeaders: [
+                "Prefer": "return=representation,resolution=merge-duplicates"
+            ]
         )
 
-        guard postStatusCode == 200 || postStatusCode == 201 else {
-            logErrorResponse(postData, statusCode: postStatusCode, operation: "upsertChecklist")
-            throw NSError(domain: "UpsertChecklist", code: postStatusCode)
+        // If we got 409, fall back to PATCH update
+        if statusCode == 409 {
+            print("⚠️ POST got 409, attempting PATCH update")
+            let (patchData, patchStatusCode) = try await makeRequest(
+                "PATCH",
+                path: "rest/v1/event_checklists?id=eq.\(dto.id)",
+                body: body,
+                userToken: userToken,
+                extraHeaders: ["Prefer": "return=representation"]
+            )
+
+            guard patchStatusCode == 200 else {
+                logErrorResponse(patchData, statusCode: patchStatusCode, operation: "upsertChecklist (PATCH)")
+                throw NSError(domain: "UpsertChecklist", code: patchStatusCode)
+            }
+
+            let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: patchData)
+            guard let checklist = checklists.first else {
+                throw NSError(domain: "UpsertChecklist", code: -1, userInfo: [NSLocalizedDescriptionKey: "No record returned from PATCH"])
+            }
+            print("✅ Checklist updated via PATCH: \(dto.id)")
+            return checklist
         }
 
-        let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: postData)
+        guard statusCode == 200 || statusCode == 201 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklist")
+            throw NSError(domain: "UpsertChecklist", code: statusCode)
+        }
+
+        let checklists = try JSONDecoder().decode([ChecklistDTO].self, from: data)
         guard let checklist = checklists.first else {
             throw NSError(domain: "UpsertChecklist", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist not returned after upsert"])
         }
-        print("✅ Checklist inserted via POST: \(dto.id)")
+        print("✅ Checklist synced: \(dto.id)")
         return checklist
     }
 
@@ -1905,48 +1909,51 @@ class SupabaseManager: @unchecked Sendable {
             notification_id: dto.notification_id
         )
 
-        // Try UPDATE first (PATCH)
-        let (patchData, patchStatusCode) = try await makeRequest(
-            "PATCH",
-            path: "rest/v1/checklist_items?id=eq.\(dto.id)",
-            body: body,
-            userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
-        )
-
-        // If PATCH succeeded and returned a record, return it
-        if patchStatusCode == 200 {
-            do {
-                let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: patchData)
-                if let item = items.first {
-                    print("✅ Item updated via PATCH: \(dto.id)")
-                    return item
-                }
-            } catch {
-                print("⚠️ Could not decode PATCH response: \(error)")
-            }
-        }
-
-        // PATCH either failed or returned empty, try INSERT (POST)
-        print("📝 Item record doesn't exist or PATCH failed, attempting POST insert")
-        let (postData, postStatusCode) = try await makeRequest(
+        // POST with merge-duplicates for automatic conflict handling
+        let (data, statusCode) = try await makeRequest(
             "POST",
             path: "rest/v1/checklist_items",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
+            extraHeaders: [
+                "Prefer": "return=representation,resolution=merge-duplicates"
+            ]
         )
 
-        guard postStatusCode == 200 || postStatusCode == 201 else {
-            logErrorResponse(postData, statusCode: postStatusCode, operation: "upsertChecklistItem")
-            throw NSError(domain: "UpsertChecklistItem", code: postStatusCode)
+        // If we got 409, fall back to PATCH update
+        if statusCode == 409 {
+            print("⚠️ POST got 409, attempting PATCH update for item \(dto.id)")
+            let (patchData, patchStatusCode) = try await makeRequest(
+                "PATCH",
+                path: "rest/v1/checklist_items?id=eq.\(dto.id)",
+                body: body,
+                userToken: userToken,
+                extraHeaders: ["Prefer": "return=representation"]
+            )
+
+            guard patchStatusCode == 200 else {
+                logErrorResponse(patchData, statusCode: patchStatusCode, operation: "upsertChecklistItem (PATCH)")
+                throw NSError(domain: "UpsertChecklistItem", code: patchStatusCode)
+            }
+
+            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: patchData)
+            guard let item = items.first else {
+                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "No item returned from PATCH"])
+            }
+            print("✅ Item updated via PATCH: \(dto.id)")
+            return item
         }
 
-        let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: postData)
+        guard statusCode == 200 || statusCode == 201 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem")
+            throw NSError(domain: "UpsertChecklistItem", code: statusCode)
+        }
+
+        let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: data)
         guard let item = items.first else {
             throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after upsert"])
         }
-        print("✅ Item inserted via POST: \(dto.id)")
+        print("✅ Item synced: \(dto.id)")
         return item
     }
 
