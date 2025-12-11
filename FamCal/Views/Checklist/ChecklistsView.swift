@@ -7,19 +7,13 @@
 
 import SwiftUI
 import CoreData
+import EventKit
 
 struct ChecklistsView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
-
-    @FetchRequest(
-        entity: Checklist.entity(),
-        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: false)],
-        predicate: NSPredicate(format: "deletedAt == nil")
-    )
-    private var allChecklists: FetchedResults<Checklist>
 
     @FetchRequest(
         entity: ChecklistItem.entity(),
@@ -33,6 +27,8 @@ struct ChecklistsView: View {
     @State private var newItemTitle: String = ""
     @State private var newItemHasDueDate = false
     @State private var newItemDueDate = Date()
+    @State private var editingItem: ChecklistItem?
+    @State private var showingEditSheet = false
 
     enum CompletionFilter: String, CaseIterable {
         case all = "All"
@@ -114,14 +110,14 @@ struct ChecklistsView: View {
 
     var body: some View {
         NavigationView {
-            ZStack(alignment: .topLeading) {
+            ZStack(alignment: .bottomTrailing) {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: 16) {
-                    // Title Card
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("All Checklists")
+                VStack(alignment: .leading, spacing: 0) {
+                    // Header
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Checklists")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.primary)
 
@@ -158,7 +154,7 @@ struct ChecklistsView: View {
                         .padding(.horizontal, 32)
                     } else {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 16) {
                                 // Filter buttons
                                 HStack(spacing: 8) {
                                     ForEach(CompletionFilter.allCases, id: \.rawValue) { filter in
@@ -177,7 +173,6 @@ struct ChecklistsView: View {
                                     Spacer()
                                 }
                                 .padding(.horizontal, 16)
-                                .padding(.top, 4)
 
                                 // Sections
                                 ForEach(itemsBySection, id: \.title) { section in
@@ -186,7 +181,7 @@ struct ChecklistsView: View {
 
                                 Spacer().frame(height: 20)
                             }
-                            .padding(.vertical, 8)
+                            .padding(.vertical, 16)
                         }
                     }
                 }
@@ -220,6 +215,11 @@ struct ChecklistsView: View {
         .sheet(isPresented: $showingAddItemSheet) {
             addItemSheet
         }
+        .sheet(isPresented: $showingEditSheet) {
+            if let item = editingItem {
+                editItemSheet(item)
+            }
+        }
     }
 
     // MARK: - Views
@@ -230,7 +230,6 @@ struct ChecklistsView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 16)
-                .padding(.top, 4)
 
             VStack(spacing: 0) {
                 ForEach(items.indices, id: \.self) { index in
@@ -253,65 +252,105 @@ struct ChecklistsView: View {
     }
 
     private func checklistItemView(_ item: ChecklistItem) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Checkbox
-            Button(action: { toggleItem(item) }) {
-                Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(item.completed ? .blue : .secondary)
-            }
-            .padding(.top, 2)
+        VStack(alignment: .leading, spacing: 0) {
+            // Main row with checkbox and title
+            HStack(alignment: .center, spacing: 12) {
+                // Checkbox
+                Button(action: { toggleItem(item) }) {
+                    Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(item.completed ? .blue : .secondary)
+                }
+                .padding(.top, 10)
+                .padding(.bottom, 10)
 
-            // Content
-            VStack(alignment: .leading, spacing: 6) {
                 // Title
-                Text(item.title ?? "Untitled")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(item.completed ? .secondary : .primary)
-                    .strikethrough(item.completed, color: .secondary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title ?? "Untitled")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(item.completed ? .secondary : .primary)
+                        .strikethrough(item.completed, color: .secondary)
+                        .lineLimit(2)
 
-                // Event and due date info
-                HStack(spacing: 8) {
+                    // Event title if linked
                     if let eventId = item.checklist?.eventIdentifier, eventId != "standalone" {
-                        // Event badge
-                        Label(
-                            title: { Text("Event").font(.system(size: 11, weight: .regular)) },
-                            icon: { Image(systemName: "calendar").font(.system(size: 10)) }
-                        )
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(.systemGray5))
-                        .cornerRadius(4)
-                    }
-
-                    if let dueDate = item.dueDate {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock.fill")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .secondary)
-
-                            Text(formatDueDate(dueDate))
-                                .font(.system(size: 11, weight: .regular))
-                                .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .secondary)
+                        if let eventTitle = getEventTitle(eventId) {
+                            Text(eventTitle)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            // Delete button
-            Button(action: { deleteItem(item) }) {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.red)
+                // Delete button
+                Button(action: { deleteItem(item) }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.red)
+                }
+                .padding(.top, 10)
+                .padding(.bottom, 10)
             }
-            .padding(.top, 2)
+            .padding(.horizontal, 12)
+
+            // Expandable due date section
+            if let dueDate = item.dueDate {
+                Divider()
+                    .padding(.leading, 44)
+
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.clear)
+                        .frame(width: 18)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Due")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Text(formatDueDate(dueDate))
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button(action: { editingItem = item; showingEditSheet = true }) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            } else if !item.completed {
+                // Add due date option for incomplete items without due date
+                Divider()
+                    .padding(.leading, 44)
+
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.clear)
+                        .frame(width: 18)
+
+                    Button(action: { editingItem = item; showingEditSheet = true }) {
+                        Text("Add due date")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.blue)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 
     private var addButton: some View {
@@ -335,6 +374,7 @@ struct ChecklistsView: View {
                     .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 16) {
+                    // Title Card
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Add Checklist Item")
                             .font(.system(size: 18, weight: .semibold))
@@ -350,27 +390,35 @@ struct ChecklistsView: View {
                     .cornerRadius(12)
                     .padding(16)
 
-                    // Due date toggle
-                    Toggle(isOn: $newItemHasDueDate) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Add due date")
-                                .font(.system(size: 14, weight: .semibold))
+                    // Due date card
+                    VStack(spacing: 0) {
+                        Toggle(isOn: $newItemHasDueDate) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                Text("Add due date")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                        }
+                        .tint(.blue)
+                        .padding(16)
+
+                        if newItemHasDueDate {
+                            Divider().padding(.leading, 16)
+
+                            DatePicker(
+                                "Due date and time",
+                                selection: $newItemDueDate,
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .tint(.blue)
+                            .padding(16)
                         }
                     }
-                    .tint(.blue)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
                     .padding(.horizontal, 16)
-
-                    if newItemHasDueDate {
-                        DatePicker(
-                            "Due date and time",
-                            selection: $newItemDueDate,
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
-                        .tint(.blue)
-                        .padding(.horizontal, 16)
-                    }
 
                     Spacer()
 
@@ -396,6 +444,143 @@ struct ChecklistsView: View {
                                 .cornerRadius(10)
                         }
                         .disabled(newItemTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private func editItemSheet(_ item: ChecklistItem) -> some View {
+        let binding = Binding(
+            get: { item.dueDate ?? Date() },
+            set: { item.dueDate = $0 }
+        )
+
+        return NavigationView {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+
+                VStack(alignment: .leading, spacing: 16) {
+                    // Title info
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Edit Checklist Item")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.primary)
+
+                        Text(item.title ?? "Untitled")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .padding(16)
+
+                    // Due date card
+                    VStack(spacing: 0) {
+                        if item.dueDate != nil {
+                            HStack {
+                                Label(
+                                    title: { Text("Due Date").font(.system(size: 14, weight: .semibold)) },
+                                    icon: { Image(systemName: "calendar").foregroundColor(.red) }
+                                )
+                                Spacer()
+                            }
+                            .padding(16)
+
+                            Divider()
+
+                            DatePicker(
+                                "Date and time",
+                                selection: binding,
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .tint(.blue)
+                            .padding(16)
+
+                            Divider()
+
+                            Button(action: {
+                                withAnimation {
+                                    item.dueDate = nil
+                                    try? viewContext.save()
+                                    Task {
+                                        await ChecklistManager.shared.syncChecklistsToSupabase()
+                                    }
+                                    showingEditSheet = false
+                                }
+                            }) {
+                                Text("Remove Due Date")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.red)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .padding(16)
+                        } else {
+                            HStack {
+                                Label(
+                                    title: { Text("Add Due Date").font(.system(size: 14, weight: .semibold)) },
+                                    icon: { Image(systemName: "calendar").foregroundColor(.blue) }
+                                )
+                                Spacer()
+                            }
+                            .padding(16)
+
+                            Divider()
+
+                            DatePicker(
+                                "Date and time",
+                                selection: binding,
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .tint(.blue)
+                            .padding(16)
+                        }
+                    }
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .padding(.horizontal, 16)
+
+                    Spacer()
+
+                    // Save button
+                    HStack(spacing: 12) {
+                        Button(action: { showingEditSheet = false }) {
+                            Text("Cancel")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemGray5))
+                                .foregroundColor(.secondary)
+                                .cornerRadius(10)
+                        }
+
+                        Button(action: {
+                            withAnimation {
+                                do {
+                                    try viewContext.save()
+                                    Task {
+                                        await ChecklistManager.shared.syncChecklistsToSupabase()
+                                    }
+                                } catch {
+                                    print("❌ Error saving due date: \(error)")
+                                }
+                                showingEditSheet = false
+                            }
+                        }) {
+                            Text("Save")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(10)
+                        }
                     }
                     .padding(16)
                 }
@@ -478,6 +663,14 @@ struct ChecklistsView: View {
 
     private func isOverdue(_ date: Date) -> Bool {
         date < Date() && !Calendar.current.isDateInToday(date)
+    }
+
+    private func getEventTitle(_ eventIdentifier: String) -> String? {
+        let ekEventStore = EKEventStore()
+        if let event = ekEventStore.event(withIdentifier: eventIdentifier) {
+            return event.title
+        }
+        return nil
     }
 }
 
