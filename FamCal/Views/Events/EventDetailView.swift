@@ -640,7 +640,6 @@ struct EventDetailView: View {
     }
 
     private func performAddChecklistItem(title: String, dueDate: Date?, toAllFuture: Bool) {
-        print("📝 performAddChecklistItem called with toAllFuture=\(toAllFuture)")
         do {
             // Ensure checklist exists
             let targetChecklist: Checklist
@@ -661,18 +660,13 @@ struct EventDetailView: View {
                 sortOrder: nextSortOrder
             )
 
-            print("✅ Added item to current event: \(title)")
-
             newChecklistTitle = ""
             newChecklistHasDueDate = false
             showingAddChecklistItem = false
 
             // Apply to all future occurrences if requested
             if toAllFuture {
-                print("🔄 toAllFuture is TRUE - applying to future occurrences")
                 applyChecklistItemToFutureOccurrences(title: title, dueDate: dueDate)
-            } else {
-                print("⏹️ toAllFuture is FALSE - NOT applying to future occurrences")
             }
         } catch {
             print("❌ Error adding checklist item: \(error)")
@@ -680,17 +674,14 @@ struct EventDetailView: View {
     }
 
     private func applyChecklistItemToFutureOccurrences(title: String, dueDate: Date?) {
-        print("🔄 Applying checklist item to ALL FUTURE occurrences...")
         // Find all future occurrences of this recurring event
         let eventStore = EKEventStore()
 
         guard let ekEvent = eventStore.event(withIdentifier: event.id) else {
-            print("⚠️ Could not find recurring event with ID: \(event.id)")
             return
         }
 
         guard ekEvent.hasRecurrenceRules else {
-            print("⚠️ Event does not have recurrence rules")
             return
         }
 
@@ -702,8 +693,6 @@ struct EventDetailView: View {
             end: Calendar.current.date(byAdding: .year, value: 2, to: event.startDate) ?? Date.distantFuture,
             calendars: nil
         ))
-
-        print("📋 Found \(occurrences.count) future occurrences")
 
         // For each future occurrence, find or create its checklist and add the item
         for occurrence in occurrences {
@@ -723,8 +712,6 @@ struct EventDetailView: View {
                     dueDate: dueDate,
                     sortOrder: nextSortOrder
                 )
-
-                print("✅ Added checklist item to future occurrence: \(occurrence.title ?? "Unknown") on \(occurrence.startDate)")
             } catch {
                 print("❌ Error adding checklist item to future occurrence: \(error)")
             }
@@ -917,23 +904,18 @@ struct EventDetailView: View {
             }
             .confirmationDialog("Add Checklist Item", isPresented: $showingChecklistRecurringDialog, titleVisibility: .visible) {
                 Button("This Event Only") {
-                    print("📌 Dialog: 'This Event Only' button tapped")
                     if let item = pendingChecklistItem {
-                        print("  → Calling performAddChecklistItem with toAllFuture=FALSE")
                         performAddChecklistItem(title: item.title, dueDate: item.dueDate, toAllFuture: false)
                         pendingChecklistItem = nil
                     }
                 }
                 Button("All Future Events") {
-                    print("📌 Dialog: 'All Future Events' button tapped")
                     if let item = pendingChecklistItem {
-                        print("  → Calling performAddChecklistItem with toAllFuture=TRUE")
                         performAddChecklistItem(title: item.title, dueDate: item.dueDate, toAllFuture: true)
                         pendingChecklistItem = nil
                     }
                 }
                 Button("Cancel", role: .cancel) {
-                    print("📌 Dialog: 'Cancel' button tapped")
                     pendingChecklistItem = nil
                 }
             } message: {
@@ -1404,12 +1386,17 @@ struct EventDetailView: View {
         fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventId)
 
         do {
-            guard let current = try viewContext.fetch(fetchRequest).first else { return [] }
+            var results = try viewContext.fetch(fetchRequest)
 
-            var results: [FamilyEvent] = [current]
-            if let groupId = current.eventGroupId {
+            if let current = results.first, let groupId = current.eventGroupId {
                 let groupFetch = FamilyEvent.fetchRequest()
                 groupFetch.predicate = NSPredicate(format: "eventGroupId == %@", groupId as CVarArg)
+                let groupResults = try viewContext.fetch(groupFetch)
+                results.append(contentsOf: groupResults)
+            } else if results.isEmpty, let groupUUID = UUID(uuidString: eventId) {
+                // Fallback: if the incoming ID is actually the group ID, fetch by group
+                let groupFetch = FamilyEvent.fetchRequest()
+                groupFetch.predicate = NSPredicate(format: "eventGroupId == %@", groupUUID as CVarArg)
                 let groupResults = try viewContext.fetch(groupFetch)
                 results.append(contentsOf: groupResults)
             }

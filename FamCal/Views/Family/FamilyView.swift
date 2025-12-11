@@ -656,34 +656,35 @@ struct FamilyView: View {
     }
 
     private func eventButton(for groupedEvent: GroupedEvent) -> some View {
-        Group {
+        let displayEvent = refreshedGroupedEvent(groupedEvent)
+        return Group {
             if appSettingsManager.upcomingEventsDensityMode == "compact" {
                 CompactEventCard(
-                    groupedEvent: groupedEvent,
+                    groupedEvent: displayEvent,
                     style: appSettingsManager.compactViewStyle,
                     theme: theme
                 )
             } else {
-                eventCard(groupedEvent)
+                eventCard(displayEvent)
             }
         }
         .onTapGesture {
-            handleEventTap(event: groupedEvent)
+            handleEventTap(event: displayEvent)
         }
         .contextMenu {
             let event = UpcomingCalendarEvent(
-                id: groupedEvent.eventIdentifier,
-                title: groupedEvent.title,
-                location: groupedEvent.location,
-                meetingLink: groupedEvent.meetingLink,
-                startDate: groupedEvent.startDate,
-                endDate: groupedEvent.endDate,
-                calendarID: groupedEvent.calendarID,
-                calendarColor: groupedEvent.memberColor,
-                calendarTitle: groupedEvent.calendarTitle,
-                hasRecurrence: groupedEvent.hasRecurrence,
+                id: displayEvent.eventIdentifier,
+                title: displayEvent.title,
+                location: displayEvent.location,
+                meetingLink: displayEvent.meetingLink,
+                startDate: displayEvent.startDate,
+                endDate: displayEvent.endDate,
+                calendarID: displayEvent.calendarID,
+                calendarColor: displayEvent.memberColor,
+                calendarTitle: displayEvent.calendarTitle,
+                hasRecurrence: displayEvent.hasRecurrence,
                 recurrenceRule: nil,
-                isAllDay: groupedEvent.isAllDay
+                isAllDay: displayEvent.isAllDay
             )
 
             Button(action: { duplicateEvent(event) }) {
@@ -741,7 +742,8 @@ struct FamilyView: View {
         }
     }
 
-    private func nextEventCard(for memberGroup: MemberEventGroup, event: GroupedEvent) -> some View {
+    private func nextEventCard(for memberGroup: MemberEventGroup, event groupedEvent: GroupedEvent) -> some View {
+        let event = refreshedGroupedEvent(groupedEvent)
         let _ = getEventStatus(event)
         let barColor = Color(uiColor: event.calendarColor)
         let barWidth: CGFloat = 6
@@ -819,7 +821,9 @@ struct FamilyView: View {
                     }
 
                 // Checklist indicator (only in 2-column view)
-                if nextEventColumns <= 2, event.hasChecklist, let progress = event.checklistProgress {
+                let checklistData = getChecklistData(for: event.eventIdentifier)
+
+                if nextEventColumns <= 2, checklistData.hasChecklist, let progress = checklistData.progress {
                     HStack(spacing: 4) {
                         Image(systemName: "checkmark.square")
                             .font(.system(size: detailSize - 1, weight: .semibold))
@@ -882,31 +886,32 @@ struct FamilyView: View {
     }
 
     private func eventCard(_ groupedEvent: GroupedEvent) -> some View {
+        let event = refreshedGroupedEvent(groupedEvent)
         let dateBoxWidth: CGFloat = 64
         let cardCornerRadius: CGFloat = 16
         let now = Date()
-        let isInProgress = groupedEvent.startDate <= now && now < groupedEvent.endDate
-        let isSelected = selectedEventIdsForDeletion.contains(groupedEvent.eventIdentifier)
+        let isInProgress = event.startDate <= now && now < event.endDate
+        let isSelected = selectedEventIdsForDeletion.contains(event.eventIdentifier)
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .fill(
-                    isSelected ? Color(groupedEvent.memberColor).opacity(0.25) :
-                    groupedEvent.isImportant ? Color.orange.opacity(0.15) :
+                    isSelected ? Color(event.memberColor).opacity(0.25) :
+                    event.isImportant ? Color.orange.opacity(0.15) :
                     isInProgress ? Color.green.opacity(0.12) :
                     theme.cardBackground
                 )
 
             // Colored date panel that fills the card height with rounded left edge
             Group {
-                if groupedEvent.memberColors.count > 1 {
+                if event.memberColors.count > 1 {
                     LinearGradient(
-                        gradient: Gradient(colors: groupedEvent.memberColors.map { Color(uiColor: $0) }),
+                        gradient: Gradient(colors: event.memberColors.map { Color(uiColor: $0) }),
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 } else {
-                    Color(uiColor: groupedEvent.memberColor)
+                    Color(uiColor: event.memberColor)
                 }
             }
             .clipShape(RoundedCorner(radius: cardCornerRadius, corners: [.topLeft, .bottomLeft]))
@@ -914,17 +919,17 @@ struct FamilyView: View {
 
             HStack(spacing: 0) {
                 VStack(spacing: 2) {
-                    Text(Self.dayOfWeekFormatter.string(from: groupedEvent.startDate))
+                    Text(Self.dayOfWeekFormatter.string(from: event.startDate))
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
                         .lineLimit(1)
 
-                    Text(Self.dayFormatter.string(from: groupedEvent.startDate))
+                    Text(Self.dayFormatter.string(from: event.startDate))
                         .font(.system(size: 22, weight: .heavy))
                         .foregroundColor(.white)
                         .lineLimit(1)
 
-                    Text(Self.monthFormatter.string(from: groupedEvent.startDate))
+                    Text(Self.monthFormatter.string(from: event.startDate))
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
                         .lineLimit(1)
@@ -935,14 +940,14 @@ struct FamilyView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     // Title with start time on the right
                     HStack(alignment: .top, spacing: 8) {
-                        Text(groupedEvent.title)
+                        Text(event.title)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.primary)
                             .lineLimit(2)
 
                         Spacer(minLength: 0)
 
-                        if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
+                        if !event.isAllDay, let timeRange = event.timeRange {
                             let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                             Text(startTime)
                                 .font(.system(size: 11, weight: .semibold))
@@ -954,7 +959,7 @@ struct FamilyView: View {
                     }
 
                     // Location with end time
-                    if let location = groupedEvent.location, !location.isEmpty {
+                    if let location = event.location, !location.isEmpty {
                         let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
                         let savedAddress = getSavedAddress(for: firstLine)
                         let displayText = savedAddress?.name ?? firstLine
@@ -972,7 +977,7 @@ struct FamilyView: View {
 
                                 Spacer(minLength: 0)
 
-                                if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
+                                if !event.isAllDay, let timeRange = event.timeRange {
                                     let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                                     Text(endTime)
                                         .font(.system(size: 11, weight: .semibold))
@@ -984,7 +989,7 @@ struct FamilyView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                    } else if let meetingLink = groupedEvent.meetingLink,
+                    } else if let meetingLink = event.meetingLink,
                               let destination = MeetingLinkHelper.normalizedURL(from: meetingLink) {
                         Link(destination: destination) {
                             HStack(spacing: 6) {
@@ -998,7 +1003,7 @@ struct FamilyView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                    } else if !groupedEvent.isAllDay, let timeRange = groupedEvent.timeRange {
+                    } else if !event.isAllDay, let timeRange = event.timeRange {
                         // Show time if no location or link
                         let endTime = timeRange.split(separator: "–").last.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
                         HStack(spacing: 0) {
@@ -1013,8 +1018,8 @@ struct FamilyView: View {
                     }
 
                     // Driver (if available)
-                    if let driverName = groupedEvent.driverName {
-                        let driverPhone = fetchDriverPhoneForEvent(groupedEvent.eventIdentifier)
+                    if let driverName = event.driverName {
+                        let driverPhone = fetchDriverPhoneForEvent(event.eventIdentifier)
                         if let phone = driverPhone, !phone.isEmpty {
                             Link(destination: URL(string: "tel:\(phone)")!) {
                                 HStack(spacing: 8) {
@@ -1041,7 +1046,7 @@ struct FamilyView: View {
                     }
 
                     // Checklist indicator (if available)
-                    if groupedEvent.hasChecklist, let progress = groupedEvent.checklistProgress {
+                    if event.hasChecklist, let progress = event.checklistProgress {
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark.square")
                                 .font(.system(size: 12))
@@ -1197,12 +1202,12 @@ struct FamilyView: View {
         }
 
         // Set up notification observers (remove old ones first to prevent accumulation)
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.EKEventStoreChanged, object: eventStore)
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.EKEventStoreChanged, object: nil)
         NotificationCenter.default.removeObserver(self, name: Notification.Name("PersonalCalendarVisibilityChanged"), object: nil)
 
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name.EKEventStoreChanged,
-            object: eventStore,
+            object: nil,
             queue: .main
         ) { _ in
             // Refresh silently when calendars change
@@ -1228,7 +1233,7 @@ struct FamilyView: View {
 
     private func cleanupView() {
         eventsTask?.cancel()
-        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.EKEventStoreChanged, object: eventStore)
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.EKEventStoreChanged, object: nil)
         stopRefreshTimer()
         dataChangeDebounceTimer?.invalidate()
     }
@@ -1610,6 +1615,19 @@ struct FamilyView: View {
         // Only show checklist if it has items (not empty)
         let hasChecklist = progress?.isEmpty == false
         return (hasChecklist, progress)
+    }
+
+    /// Refresh checklist status for an event using the latest CoreData fetch results
+    private func refreshedGroupedEvent(_ event: GroupedEvent) -> GroupedEvent {
+        let checklistData = getChecklistData(for: event.eventIdentifier)
+
+        if checklistData.hasChecklist == event.hasChecklist,
+           checklistData.progress?.completed == event.checklistProgress?.completed,
+           checklistData.progress?.total == event.checklistProgress?.total {
+            return event
+        }
+
+        return event.updatingChecklist(hasChecklist: checklistData.hasChecklist, checklistProgress: checklistData.progress)
     }
 
     private func groupEventsByDetails(_ events: [EventItem]) -> [GroupedEvent] {
@@ -2312,6 +2330,33 @@ private struct MemberEventGroup: Identifiable, Equatable {
 
     static func == (lhs: MemberEventGroup, rhs: MemberEventGroup) -> Bool {
         lhs.memberName == rhs.memberName && lhs.id == rhs.id
+    }
+}
+
+private extension GroupedEvent {
+    func updatingChecklist(hasChecklist: Bool, checklistProgress: ChecklistProgress?) -> GroupedEvent {
+        GroupedEvent(
+            id: id,
+            eventIdentifier: eventIdentifier,
+            title: title,
+            timeRange: timeRange,
+            location: location,
+            meetingLink: meetingLink,
+            startDate: startDate,
+            endDate: endDate,
+            memberNames: memberNames,
+            memberColor: memberColor,
+            calendarColor: calendarColor,
+            calendarTitle: calendarTitle,
+            calendarID: calendarID,
+            memberColors: memberColors,
+            hasRecurrence: hasRecurrence,
+            isAllDay: isAllDay,
+            driverName: driverName,
+            isImportant: isImportant,
+            hasChecklist: hasChecklist,
+            checklistProgress: checklistProgress
+        )
     }
 }
 

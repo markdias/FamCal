@@ -730,6 +730,8 @@ struct AddEventView: View {
                 print("   - Event: \(event.eventIdentifier ?? "unknown"), Driver: \(event.driver?.name ?? "nil")")
             }
 
+            // Nudge all views to refresh immediately after creation
+            NotificationCenter.default.post(name: NSNotification.Name.EKEventStoreChanged, object: nil)
 
             // Trigger haptic feedback
             let notificationFeedback = UINotificationFeedbackGenerator()

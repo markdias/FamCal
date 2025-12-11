@@ -1134,7 +1134,25 @@ struct SpotlightView: View {
         fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventIdentifier)
 
         do {
-            return try viewContext.fetch(fetchRequest)
+            guard let current = try viewContext.fetch(fetchRequest).first else { return [] }
+
+            var results: [FamilyEvent] = [current]
+
+            if let groupId = current.eventGroupId {
+                let groupFetch = FamilyEvent.fetchRequest()
+                groupFetch.predicate = NSPredicate(format: "eventGroupId == %@", groupId as CVarArg)
+                let groupResults = try viewContext.fetch(groupFetch)
+                results.append(contentsOf: groupResults)
+            }
+
+            // Deduplicate by identifier in case the group fetch includes the current event
+            let keyed = results.compactMap { familyEvent -> (String, FamilyEvent)? in
+                guard let identifier = familyEvent.eventIdentifier else { return nil }
+                return (identifier, familyEvent)
+            }
+
+            let grouped = Dictionary(grouping: keyed, by: { $0.0 })
+            return grouped.compactMap { _, value in value.first?.1 }
         } catch {
             print("❌ Failed to fetch linked events: \(error.localizedDescription)")
             return []

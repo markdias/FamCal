@@ -490,26 +490,27 @@ struct CalendarView: View {
 
     @ViewBuilder
     private func dayEventButton(for groupedEvent: GroupedDayEvent, isCompact: Bool) -> some View {
-        let upcomingEvent = makeUpcomingEvent(from: groupedEvent)
-        let isPast = Date() > groupedEvent.endDate
+        let event = refreshedGroupedEvent(groupedEvent)
+        let upcomingEvent = makeUpcomingEvent(from: event)
+        let isPast = Date() > event.endDate
         let now = Date()
-        let isInProgress = groupedEvent.startDate <= now && now < groupedEvent.endDate
-        let isSelected = selectedEventIdsForDeletion.contains(groupedEvent.eventIdentifier)
+        let isInProgress = event.startDate <= now && now < event.endDate
+        let isSelected = selectedEventIdsForDeletion.contains(event.eventIdentifier)
         let isCompactMode = appSettingsManager.calendarEventsDensityMode == "compact"
 
         Button(action: {
-            handleMonthViewEventTap(groupedEvent: groupedEvent, upcomingEvent: upcomingEvent)
+            handleMonthViewEventTap(groupedEvent: event, upcomingEvent: upcomingEvent)
         }) {
             let timeBoxWidth: CGFloat = isCompactMode ? 60 : 76
             let spacerWidth: CGFloat = 2
             let cardCornerRadius: CGFloat = isCompactMode ? 12 : 16
-            let memberLabel = groupedEvent.memberNames.count > 1 ? "All" : (groupedEvent.memberNames.first ?? "")
-            let timeLabel = groupedEvent.isAllDay ? "All day" : (groupedEvent.startTime ?? "")
+            let memberLabel = event.memberNames.count > 1 ? "All" : (event.memberNames.first ?? "")
+            let timeLabel = event.isAllDay ? "All day" : (event.startTime ?? "")
 
             if isCompactMode {
                 // Compact mode: simplified layout
                 compactEventCard(
-                    groupedEvent: groupedEvent,
+                    groupedEvent: event,
                     timeLabel: timeLabel,
                     memberLabel: memberLabel,
                     isPast: isPast,
@@ -522,7 +523,7 @@ struct CalendarView: View {
             } else {
                 // Detailed mode: original layout
                 detailedEventCard(
-                    groupedEvent: groupedEvent,
+                    groupedEvent: event,
                     timeLabel: timeLabel,
                     memberLabel: memberLabel,
                     isPast: isPast,
@@ -1031,6 +1032,21 @@ struct CalendarView: View {
         return grouped.values.sorted { e1, e2 in
             e1.timeRange ?? "" < e2.timeRange ?? ""
         }
+    }
+
+    /// Refresh checklist info for a grouped event using the latest CoreData state
+    private func refreshedGroupedEvent(_ event: GroupedDayEvent) -> GroupedDayEvent {
+        let checklist = checklists.first { $0.eventIdentifier == event.eventIdentifier && $0.deletedAt == nil }
+        let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+        let hasChecklist = progress?.isEmpty == false
+
+        if hasChecklist == event.hasChecklist,
+           progress?.completed == event.checklistProgress?.completed,
+           progress?.total == event.checklistProgress?.total {
+            return event
+        }
+
+        return event.updatingChecklist(hasChecklist: hasChecklist, checklistProgress: progress)
     }
 
     // MARK: - Helper Functions
@@ -2019,6 +2035,34 @@ struct GroupedDayEvent: Identifiable {
     var startTime: String? {
         guard let timeRange = timeRange else { return nil }
         return timeRange.split(separator: "–").first?.trimmingCharacters(in: .whitespaces)
+    }
+}
+
+private extension GroupedDayEvent {
+    func updatingChecklist(hasChecklist: Bool, checklistProgress: ChecklistProgress?) -> GroupedDayEvent {
+        GroupedDayEvent(
+            id: id,
+            title: title,
+            timeRange: timeRange,
+            location: location,
+            meetingLink: meetingLink,
+            memberNames: memberNames,
+            memberInitials: memberInitials,
+            memberColor: memberColor,
+            color: color,
+            memberColors: memberColors,
+            eventIdentifier: eventIdentifier,
+            calendarID: calendarID,
+            calendarColor: calendarColor,
+            calendarTitle: calendarTitle,
+            startDate: startDate,
+            endDate: endDate,
+            hasRecurrence: hasRecurrence,
+            isAllDay: isAllDay,
+            driverName: driverName,
+            hasChecklist: hasChecklist,
+            checklistProgress: checklistProgress
+        )
     }
 }
 
