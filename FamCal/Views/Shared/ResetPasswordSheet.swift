@@ -43,6 +43,12 @@ struct ResetPasswordSheet: View {
                             .stroke(themeManager.selectedTheme.cardStroke, lineWidth: 1)
                     )
                     .cornerRadius(10)
+                    .onChange(of: password) { _, newPassword in
+                        // Auto-fill confirm password if password manager fills the first field
+                        if !newPassword.isEmpty && confirmPassword.isEmpty {
+                            confirmPassword = newPassword
+                        }
+                    }
 
                 SecureField("Confirm password", text: $confirmPassword)
                     .textContentType(.newPassword)
@@ -53,6 +59,54 @@ struct ResetPasswordSheet: View {
                             .stroke(themeManager.selectedTheme.cardStroke, lineWidth: 1)
                     )
                     .cornerRadius(10)
+
+                // Password validation checklist
+                if !password.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: password.count >= 10 ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(password.count >= 10 ? .green : themeManager.selectedTheme.textSecondary)
+                            Text("At least 10 characters")
+                                .font(.system(size: 12))
+                                .foregroundColor(themeManager.selectedTheme.textSecondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Image(systemName: password.contains(where: { $0.isUppercase }) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(password.contains(where: { $0.isUppercase }) ? .green : themeManager.selectedTheme.textSecondary)
+                            Text("One uppercase letter")
+                                .font(.system(size: 12))
+                                .foregroundColor(themeManager.selectedTheme.textSecondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Image(systemName: password.contains(where: { $0.isLowercase }) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(password.contains(where: { $0.isLowercase }) ? .green : themeManager.selectedTheme.textSecondary)
+                            Text("One lowercase letter")
+                                .font(.system(size: 12))
+                                .foregroundColor(themeManager.selectedTheme.textSecondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Image(systemName: password.contains(where: { $0.isNumber }) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(password.contains(where: { $0.isNumber }) ? .green : themeManager.selectedTheme.textSecondary)
+                            Text("One number")
+                                .font(.system(size: 12))
+                                .foregroundColor(themeManager.selectedTheme.textSecondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Image(systemName: password.contains(where: { !$0.isLetter && !$0.isNumber }) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(password.contains(where: { !$0.isLetter && !$0.isNumber }) ? .green : themeManager.selectedTheme.textSecondary)
+                            Text("One special character")
+                                .font(.system(size: 12))
+                                .foregroundColor(themeManager.selectedTheme.textSecondary)
+                        }
+                    }
+                    .padding(12)
+                    .background(themeManager.selectedTheme.cardBackground)
+                    .cornerRadius(8)
+                }
 
                 if let errorMessage {
                     Text(errorMessage)

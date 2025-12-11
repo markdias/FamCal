@@ -26,11 +26,19 @@ Family features and data management:
 
 ### `/features/`
 Feature-specific implementation documentation:
+
+**Invitation & Account Linking System:**
+- [INVITATION_SYSTEM_INDEX.md](features/INVITATION_SYSTEM_INDEX.md) - Navigation hub (START HERE)
+- [INVITATION_AND_LINKING.md](features/INVITATION_AND_LINKING.md) - Complete reference
+- [INVITATION_ARCHITECTURE.md](features/INVITATION_ARCHITECTURE.md) - Technical deep dive
+- [INVITATION_QUICK_REFERENCE.md](features/INVITATION_QUICK_REFERENCE.md) - Quick lookup
+- [INVITATION_TESTING_GUIDE.md](features/INVITATION_TESTING_GUIDE.md) - Testing procedures
+
+**Other Features:**
 - [APP_SETTINGS_IMPLEMENTATION.md](features/APP_SETTINGS_IMPLEMENTATION.md) - App settings architecture
+- [CHECKLISTS_IMPLEMENTATION_SUMMARY.md](features/CHECKLISTS_IMPLEMENTATION_SUMMARY.md) - Checklist features
 - [EVENTS_VIEW_DESIGN.md](features/EVENTS_VIEW_DESIGN.md) - Event view design patterns
 - [LINKED_EVENTS_IMPLEMENTATION.md](features/LINKED_EVENTS_IMPLEMENTATION.md) - Linked events feature
-- [WATCHCONNECTIVITY_SUMMARY.md](features/WATCHCONNECTIVITY_SUMMARY.md) - Apple Watch integration
-- [WATCH_CONNECTIVITY_GUIDE.md](features/WATCH_CONNECTIVITY_GUIDE.md) - Watch connectivity guide
 
 ### `/migration/`
 Historical migration documentation (reference only):
@@ -49,7 +57,8 @@ Supabase backend setup and schema documentation:
 
 ## Quick Links
 
+- **Invitation & Linking System:** See `/features/INVITATION_SYSTEM_INDEX.md` (NEW!)
 - **Getting Started:** See `/supabase/` for backend setup
-- **AdMob Integration:** See `/admob/ADMOB_README.md`
 - **Authentication:** See `/auth/AUTHENTICATION_STATUS.md`
-- **Apple Watch:** See `/features/WATCH_CONNECTIVITY_GUIDE.md`
+- **Family Features:** See `/family/` for family-related documentation
+- **AdMob Integration:** See `/admob/ADMOB_README.md`

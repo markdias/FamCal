@@ -31,6 +31,7 @@ class SupabaseDataManager: ObservableObject {
     private var managedObjectContext: NSManagedObjectContext?
     private var networkMonitor: NWPathMonitor?
     private var wasOffline = false
+    private var hasHydratedFromCache = false
 
     // Persist last authenticated user ID to prevent false "different user" detection on app restart
     private var lastAuthenticatedUserId: String? {
@@ -124,9 +125,13 @@ class SupabaseDataManager: ObservableObject {
         networkMonitor?.cancel()
     }
 
+    @MainActor
     func setManagedObjectContext(_ context: NSManagedObjectContext) {
         print("ℹ️ Setting CoreData context, now fetching user data...")
         self.managedObjectContext = context
+
+        // Immediately hydrate in-memory cache from CoreData so the UI never starts empty on app launch/resume
+        hydrateFromCoreDataCacheIfNeeded(reason: "context set")
 
         // First, try to load cached data from CoreData to ensure immediate display
         do {
@@ -162,6 +167,9 @@ class SupabaseDataManager: ObservableObject {
             print("⚠️ CoreData context not available for change detection")
             return
         }
+
+        // Always hydrate from CoreData first so cached data shows up even if the network call fails
+        hydrateFromCoreDataCacheIfNeeded(reason: "smart fetch", force: force)
 
         guard authManager.userId != nil else {
             print("❌ Cannot fetch data: User ID is nil")
@@ -695,6 +703,7 @@ class SupabaseDataManager: ObservableObject {
             print("  ✅ Saved addresses: \(cachedAddresses.count)")
 
             print("✅ Successfully restored data from CoreData cache for offline support")
+            hasHydratedFromCache = true
         } catch {
             print("❌ Error loading cached data from CoreData: \(error)")
             errorMessage = "Unable to load data. No network and no local cache available."
@@ -1403,6 +1412,7 @@ class SupabaseDataManager: ObservableObject {
         drivers = []
         savedAddresses = []
         errorMessage = nil
+        hasHydratedFromCache = false
     }
 
     @MainActor
@@ -1462,6 +1472,29 @@ class SupabaseDataManager: ObservableObject {
         } catch {
             print("❌ Error clearing local CoreData: \(error)")
         }
+    }
+
+    /// Ensure published data is backed by whatever is in CoreData so the UI never renders empty data after relaunch
+    @MainActor
+    private func hydrateFromCoreDataCacheIfNeeded(reason: String, force: Bool = false) {
+        guard let context = managedObjectContext else {
+            print("⚠️ CoreData context not available for hydration (\(reason))")
+            return
+        }
+
+        // Only hydrate when we are missing any slice of data or when explicitly forced
+        let isMissingData = familyMembers.isEmpty ||
+            sharedCalendars.isEmpty ||
+            personalCalendars.isEmpty ||
+            drivers.isEmpty ||
+            savedAddresses.isEmpty
+
+        if !force && (!isMissingData && hasHydratedFromCache) {
+            return
+        }
+
+        print("📦 Hydrating in-memory cache from CoreData (\(reason))")
+        loadCachedDataFromCoreData(context)
     }
 
     // MARK: - Family Setup Detection
