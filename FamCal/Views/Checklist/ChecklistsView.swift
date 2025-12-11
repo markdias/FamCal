@@ -204,7 +204,7 @@ struct ChecklistsView: View {
 
             Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topCenter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 80)
         .padding(.horizontal, 32)
     }
@@ -431,7 +431,7 @@ struct ChecklistsView: View {
     private func deleteItem(_ item: ChecklistItem) {
         withAnimation {
             do {
-                try ChecklistManager.shared.deleteItem(item)
+                ChecklistManager.shared.deleteItem(item)
                 try viewContext.save()
                 Task {
                     await ChecklistManager.shared.syncChecklistsToSupabase()
@@ -452,7 +452,7 @@ struct ChecklistsView: View {
         item.id = UUID()
         item.title = newItemTitle.trimmingCharacters(in: .whitespaces)
         item.completed = false
-        item.sortOrder = Int32(allChecklistItems.count)
+        item.sortOrder = Int16(allChecklistItems.count)
         item.createdAt = Date()
         item.checklist = checklist
 
