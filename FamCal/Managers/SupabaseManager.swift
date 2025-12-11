@@ -1835,7 +1835,7 @@ class SupabaseManager: @unchecked Sendable {
             path: "rest/v1/event_checklists",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
+            extraHeaders: ["Prefer": "return=representation,resolution=merge-duplicates"]
         )
 
         guard statusCode == 200 || statusCode == 201 else {
@@ -1885,7 +1885,7 @@ class SupabaseManager: @unchecked Sendable {
             path: "rest/v1/checklist_items",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
+            extraHeaders: ["Prefer": "return=representation,resolution=merge-duplicates"]
         )
 
         guard statusCode == 200 || statusCode == 201 else {
