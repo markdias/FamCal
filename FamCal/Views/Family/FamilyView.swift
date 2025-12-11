@@ -154,6 +154,7 @@ struct FamilyView: View {
     @State private var currentTime = Date()
     @State private var showingSettings = false
     @State private var showingSearch = false
+    @State private var showingChecklists = false
     @State private var showingAddEvent = false
     @State private var availableCalendars: [EKCalendar] = []
     @State private var showingLinkedDeleteDialog = false
@@ -261,6 +262,10 @@ struct FamilyView: View {
         }
         .sheet(isPresented: $showingSearch) {
             EventSearchView()
+                .environment(\.managedObjectContext, viewContext)
+        }
+        .sheet(isPresented: $showingChecklists) {
+            ChecklistsView()
                 .environment(\.managedObjectContext, viewContext)
         }
         .sheet(isPresented: $showingAddEvent) {
@@ -388,6 +393,12 @@ struct FamilyView: View {
                 }
             }, theme: theme)
             .accessibilityLabel("Search events")
+
+            ControlCircleButton(imageName: "checkmark.circle.fill", action: {
+                showingChecklists = true
+            }, theme: theme)
+            .accessibilityLabel("View all checklists")
+            .accessibilityHint("Open the checklists view to see all items")
 
             ControlCircleButton(imageName: "calendar", action: {
                 onChangeViewRequested?()
