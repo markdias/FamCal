@@ -628,18 +628,14 @@ struct EventDetailView: View {
     }
 
     private func deleteChecklistItem(_ item: ChecklistItem) {
-        do {
-            ChecklistManager.shared.deleteItem(item)
+        ChecklistManager.shared.deleteItem(item)
 
-            // Trigger view refresh to update UI
-            checklistRefresh.toggle()
+        // Trigger view refresh to update UI
+        checklistRefresh.toggle()
 
-            // Sync to Supabase
-            Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
-            }
-        } catch {
-            print("❌ Error deleting checklist item: \(error)")
+        // Sync to Supabase
+        Task {
+            await ChecklistManager.shared.syncChecklistsToSupabase()
         }
     }
 
