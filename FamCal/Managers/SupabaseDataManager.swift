@@ -1629,6 +1629,52 @@ class SupabaseDataManager: ObservableObject {
         }
     }
 
+    /// Fetch ALL checklists from Supabase (for ChecklistsView)
+    /// This downloads all checklists including standalone ones
+    func syncAllChecklistsFromSupabase() async {
+        guard !authManager.isGuest else {
+            print("ℹ️ Guest mode - skipping checklist sync from Supabase")
+            return
+        }
+
+        guard let context = managedObjectContext else {
+            return
+        }
+
+        do {
+            print("📥 Fetching all checklists from Supabase...")
+
+            // Fetch all checklists
+            let dtos = try await supabaseManager.fetchAllChecklists()
+            guard !dtos.isEmpty else {
+                print("ℹ️ No checklists found in Supabase")
+                return
+            }
+
+            print("📋 Found \(dtos.count) checklists in Supabase")
+
+            let checklistIds = dtos.map { $0.id }
+            let itemDtos = try await supabaseManager.fetchChecklistItems(for: checklistIds)
+
+            // Convert DTOs to Core Data and merge
+            try context.performAndWait {
+                for dto in dtos {
+                    _ = try convertChecklistDTOToEntity(dto, in: context)
+                }
+
+                for itemDto in itemDtos {
+                    _ = try convertChecklistItemDTOToEntity(itemDto, in: context)
+                }
+
+                try context.save()
+            }
+
+            print("✅ Synced \(dtos.count) checklists and \(itemDtos.count) items from Supabase")
+        } catch {
+            print("⚠️ Error fetching all checklists from Supabase: \(error)")
+        }
+    }
+
     /// Sync checklists from Core Data to Supabase
     @MainActor
     func syncChecklistsToSupabase() async {

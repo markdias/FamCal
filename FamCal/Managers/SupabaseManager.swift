@@ -1810,6 +1810,25 @@ class SupabaseManager: @unchecked Sendable {
         return checklists.first
     }
 
+    /// Fetch all checklists (including standalone ones)
+    func fetchAllChecklists(token: String? = nil) async throws -> [ChecklistDTO] {
+        let userToken = token ?? authManager.accessToken
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/event_checklists",
+            queryItems: [],
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "fetchAllChecklists")
+            throw NSError(domain: "FetchAllChecklists", code: statusCode)
+        }
+
+        return try JSONDecoder().decode([ChecklistDTO].self, from: data)
+    }
+
     /// Create or update a checklist
     func upsertChecklist(_ dto: ChecklistDTO, token: String? = nil) async throws -> ChecklistDTO {
         let userToken = token ?? authManager.accessToken

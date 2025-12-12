@@ -228,6 +228,12 @@ struct ChecklistsView: View {
                 editItemSheet(item)
             }
         }
+        .onAppear {
+            Task {
+                // Fetch all checklists from Supabase when view appears
+                await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
+            }
+        }
     }
 
     // MARK: - Views
