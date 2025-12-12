@@ -630,21 +630,9 @@ struct SettingsView: View {
         do {
             try viewContext.save()
             print("✅ Core Data cleared successfully")
+            print("   Data will be synced from Supabase when you navigate to the main views")
         } catch {
             print("❌ Error saving cleared Core Data: \(error)")
-            return
-        }
-
-        // Now sync all data from Supabase
-        print("📥 Syncing all data from Supabase...")
-        Task {
-            // Sync families, members, events, etc.
-            await dataManager.fetchUserData()
-
-            // Also sync checklists
-            await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
-
-            print("✅ Data sync completed")
         }
     }
 }
