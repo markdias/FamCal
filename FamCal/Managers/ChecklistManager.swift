@@ -32,7 +32,6 @@ class ChecklistManager: ObservableObject {
         let dateStr = dateFormatter.string(from: startDate)
 
         let combined = "\(title)|\(dateStr)"
-        print("🔐 Generating stable ID (new): title=\(title), date=\(dateStr)")
 
         // Use SHA256 hash for stable, consistent identifier
         guard let data = combined.data(using: .utf8) else {
@@ -45,9 +44,7 @@ class ChecklistManager: ObservableObject {
         }
 
         let hexStr = digest.map { String(format: "%02x", $0) }.joined()
-        let result = "event_\(hexStr)"
-        print("   → Generated stable ID (new): \(result)")
-        return result
+        return "event_\(hexStr)"
     }
 
     /// Generate OLD stable identifier format (for backward compatibility)
@@ -80,25 +77,21 @@ class ChecklistManager: ObservableObject {
                                        calendarID: String) -> Bool {
         // Direct match (old format or same device)
         if checklistEventIdentifier == eventKitID {
-            print("✅ Matched checklist via direct EventKit ID")
             return true
         }
 
         // Match with NEW stable identifier (title + date only)
         let newStableID = generateStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
         if checklistEventIdentifier == newStableID {
-            print("✅ Matched checklist via new stable identifier")
             return true
         }
 
         // Match with OLD stable identifier (title + date + calendarID) - for backward compatibility
         let oldStableID = generateOldStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
         if checklistEventIdentifier == oldStableID {
-            print("✅ Matched checklist via old stable identifier (backward compat)")
             return true
         }
 
-        print("❌ No match - checklist ID: \(checklistEventIdentifier), eventKit ID: \(eventKitID), new stable ID: \(newStableID), old stable ID: \(oldStableID)")
         return false
     }
 
@@ -108,7 +101,6 @@ class ChecklistManager: ObservableObject {
     func getOrCreateChecklist(for eventIdentifier: String, eventGroupId: UUID?, eventTitle: String? = nil) throws -> Checklist {
         // Check if checklist already exists
         if let existing = fetchChecklist(for: eventIdentifier) {
-            print("✅ Found existing checklist with eventIdentifier: \(eventIdentifier)")
             return existing
         }
 
@@ -123,11 +115,6 @@ class ChecklistManager: ObservableObject {
 
         do {
             try context.save()
-            print("✅ Created checklist:")
-            print("   ID: \(checklist.id?.uuidString ?? "unknown")")
-            print("   eventIdentifier: \(eventIdentifier)")
-            print("   eventTitle: \(eventTitle ?? "nil")")
-            print("   eventGroupId: \(eventGroupId?.uuidString ?? "nil")")
             return checklist
         } catch {
             print("❌ Error creating checklist: \(error)")
@@ -145,20 +132,7 @@ class ChecklistManager: ObservableObject {
 
         do {
             let results = try context.fetch(fetchRequest)
-            if let found = results.first {
-                print("✅ Found checklist with eventIdentifier: \(eventIdentifier)")
-                return found
-            } else {
-                print("⚠️ No checklist found for eventIdentifier: \(eventIdentifier)")
-                // List all checklists to debug
-                let allRequest: NSFetchRequest<Checklist> = Checklist.fetchRequest()
-                let allChecklists = try context.fetch(allRequest)
-                print("   Available checklists:")
-                for c in allChecklists {
-                    print("   - ID: \(c.id?.uuidString ?? "nil"), eventIdentifier: \(c.eventIdentifier ?? "nil"), eventTitle: \(c.eventTitle ?? "nil")")
-                }
-                return nil
-            }
+            return results.first
         } catch {
             print("❌ Error fetching checklist: \(error)")
             return nil
