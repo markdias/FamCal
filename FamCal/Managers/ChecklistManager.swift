@@ -378,11 +378,23 @@ class ChecklistManager: ObservableObject {
             return
         }
 
+        // Validate that item has a valid parent checklist
+        guard let parentChecklist = item.checklist, let checklistId = parentChecklist.id else {
+            print("⚠️ Cannot sync update: item has no valid parent checklist relationship")
+            return
+        }
+
+        // Don't sync if parent checklist is deleted
+        if parentChecklist.deletedAt != nil {
+            print("⏭️ Skipping item update sync: parent checklist is deleted")
+            return
+        }
+
         // Convert item to DTO and sync
         let formatter = ISO8601DateFormatter()
         let dto = ChecklistItemDTO(
             id: itemId,
-            checklist_id: item.checklist?.id?.uuidString ?? "",
+            checklist_id: checklistId.uuidString,
             title: item.title ?? "",
             due_date: item.dueDate.map { formatter.string(from: $0) },
             completed: item.completed,
