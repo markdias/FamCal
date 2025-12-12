@@ -592,7 +592,8 @@ class SupabaseDataManager: ObservableObject {
                     name: safeName,
                     color_hex: member.colorHex ?? "#007AFF",
                     is_driver: member.isDriver,
-                    created_at: nil
+                    created_at: nil,
+                    updated_at: nil
                 )
             }
 
@@ -613,7 +614,8 @@ class SupabaseDataManager: ObservableObject {
                     user_id: "",
                     calendar_name: calendar.calendarName ?? "Unknown",
                     calendar_color_hex: calendar.calendarColorHex ?? "#007AFF",
-                    created_at: nil
+                    created_at: nil,
+                    updated_at: nil
                 )
             }
 
@@ -628,7 +630,8 @@ class SupabaseDataManager: ObservableObject {
                             calendar_name: calendar.calendarName ?? "Unknown",
                             calendar_color_hex: calendar.calendarColorHex ?? "#007AFF",
                             is_auto_linked: calendar.isAutoLinked,
-                            created_at: nil
+                            created_at: nil,
+                            updated_at: nil
                         ))
                     }
                 }
@@ -650,7 +653,8 @@ class SupabaseDataManager: ObservableObject {
                     show_in_upcoming: calendar.showInUpcoming,
                     show_in_month: calendar.showInMonth,
                     show_in_day: calendar.showInDay,
-                    created_at: nil
+                    created_at: nil,
+                    updated_at: nil
                 )
             }
             print("📦 Loaded \(cachedPersonalCalendars.count) personal calendars from CoreData cache")
@@ -1011,7 +1015,8 @@ class SupabaseDataManager: ObservableObject {
                 user_id: "",
                 calendar_name: calendarName,
                 calendar_color_hex: calendarColorHex,
-                created_at: nil
+                created_at: nil,
+                updated_at: nil
             )
         } catch {
             print("❌ Error adding shared calendar locally: \(error)")
@@ -1136,7 +1141,8 @@ class SupabaseDataManager: ObservableObject {
                 show_in_upcoming: true,
                 show_in_month: true,
                 show_in_day: true,
-                created_at: nil
+                created_at: nil,
+                updated_at: nil
             )
         } catch {
             print("❌ Error adding personal calendar locally: \(error)")
@@ -1180,7 +1186,8 @@ class SupabaseDataManager: ObservableObject {
                 show_in_upcoming: showInUpcoming,
                 show_in_month: showInMonth,
                 show_in_day: showInDay,
-                created_at: updated.created_at
+                created_at: updated.created_at,
+                updated_at: nil
             )
             personalCalendars[index] = updated
 
@@ -1707,6 +1714,17 @@ class SupabaseDataManager: ObservableObject {
                                 continue
                             }
 
+                            // If checklist exists locally and is NOT soft-deleted, check if local data is newer
+                            if let localChecklist = localChecklists.first, localChecklist.deletedAt == nil {
+                                if let localModified = localChecklist.modifiedAt,
+                                   let remoteModifiedStr = dto.modified_at,
+                                   let remoteModified = ISO8601DateFormatter().date(from: remoteModifiedStr),
+                                   localModified >= remoteModified {
+                                    print("⏭️  Skipping checklist \(dto.id): local data is newer")
+                                    continue
+                                }
+                            }
+
                             _ = try convertChecklistDTOToEntity(dto, in: context)
                         }
 
@@ -1722,6 +1740,17 @@ class SupabaseDataManager: ObservableObject {
                             if let localItem = localItems.first, localItem.deletedAt != nil {
                                 print("⏭️  Skipping item \(itemDto.id) - locally soft-deleted, preserving deletion")
                                 continue
+                            }
+
+                            // If item exists locally and is NOT soft-deleted, check if local data is newer
+                            if let localItem = localItems.first, localItem.deletedAt == nil {
+                                if let localModified = localItem.modifiedAt,
+                                   let remoteModifiedStr = itemDto.modified_at,
+                                   let remoteModified = ISO8601DateFormatter().date(from: remoteModifiedStr),
+                                   localModified >= remoteModified {
+                                    print("⏭️  Skipping item \(itemDto.id): local data is newer")
+                                    continue
+                                }
                             }
 
                             _ = try convertChecklistItemDTOToEntity(itemDto, in: context)

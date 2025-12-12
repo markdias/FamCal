@@ -12,6 +12,27 @@ import EventKit
 class SupabaseDataSync {
     static let shared = SupabaseDataSync()
 
+    /// Compare timestamps and determine if local data should be preserved
+    /// Returns true if local data is newer and should NOT be overwritten
+    private func shouldPreserveLocalData(
+        localModifiedAt: Date?,
+        remoteUpdatedAt: String?
+    ) -> Bool {
+        guard let localTime = localModifiedAt else {
+            // No local timestamp - allow update
+            return false
+        }
+
+        guard let remoteTimeStr = remoteUpdatedAt,
+              let remoteTime = ISO8601DateFormatter().date(from: remoteTimeStr) else {
+            // No remote timestamp - allow update (fail-safe)
+            return false
+        }
+
+        // Preserve local if it's newer or equal
+        return localTime >= remoteTime
+    }
+
     /// Syncs Supabase family members to local CoreData
     /// This bridges the gap during migration from CoreData to Supabase
     func syncFamilyMembersFromSupabase(
@@ -58,6 +79,16 @@ class SupabaseDataSync {
 
                 let member: FamilyMember
                 if let existingMember = matches.first {
+                    // Check if local data is newer - if so, skip update to preserve local changes
+                    if shouldPreserveLocalData(
+                        localModifiedAt: existingMember.modifiedAt,
+                        remoteUpdatedAt: supabaseDTO.updated_at
+                    ) {
+                        print("⏭️ Skipping member '\(supabaseDTO.name)': local data is newer")
+                        member = existingMember
+                        continue
+                    }
+
                     // Update existing member
                     member = existingMember
                     // Only update name if Supabase provides a non-empty value - preserve existing name otherwise
@@ -231,11 +262,10 @@ class SupabaseDataSync {
                 let calendar: SharedCalendar
                 let isNewCalendar: Bool
                 if let existingCalendar = matches.first {
-                    // Update existing calendar
+                    // SharedCalendar doesn't track modifiedAt, so just reuse existing
+                    print("⏭️ Reusing existing shared calendar '\(supabaseDTO.calendar_name)'")
                     calendar = existingCalendar
                     isNewCalendar = false
-                    calendar.calendarName = supabaseDTO.calendar_name
-                    calendar.calendarColorHex = supabaseDTO.calendar_color_hex
                 } else {
                     // Create new calendar
                     calendar = SharedCalendar(context: context)
@@ -323,6 +353,17 @@ class SupabaseDataSync {
                 let calendar: PersonalCalendar
                 let isNewCalendar: Bool
                 if let existingCalendar = matches.first {
+                    // Check if local data is newer - if so, skip update to preserve local changes
+                    if shouldPreserveLocalData(
+                        localModifiedAt: existingCalendar.modifiedAt,
+                        remoteUpdatedAt: supabaseDTO.updated_at
+                    ) {
+                        print("⏭️ Skipping personal calendar '\(supabaseDTO.calendar_name)': local data is newer")
+                        calendar = existingCalendar
+                        isNewCalendar = false
+                        continue
+                    }
+
                     // Update existing calendar
                     calendar = existingCalendar
                     isNewCalendar = false
@@ -395,6 +436,15 @@ class SupabaseDataSync {
 
                 let driver: Driver
                 if let existing = matches.first {
+                    // Check if local data is newer - if so, skip update to preserve local changes
+                    if shouldPreserveLocalData(
+                        localModifiedAt: existing.modifiedAt,
+                        remoteUpdatedAt: dto.updated_at
+                    ) {
+                        print("⏭️ Skipping driver '\(dto.name ?? "unknown")': local data is newer")
+                        continue
+                    }
+
                     driver = existing
                 } else {
                     driver = Driver(context: context)
@@ -446,6 +496,15 @@ class SupabaseDataSync {
 
                 let address: SavedAddress
                 if let existing = matches.first {
+                    // Check if local data is newer - if so, skip update to preserve local changes
+                    if shouldPreserveLocalData(
+                        localModifiedAt: existing.modifiedAt,
+                        remoteUpdatedAt: dto.updated_at
+                    ) {
+                        print("⏭️ Skipping saved address '\(dto.name ?? "unknown")': local data is newer")
+                        continue
+                    }
+
                     address = existing
                 } else {
                     address = SavedAddress(context: context)
@@ -490,6 +549,8 @@ class SupabaseDataSync {
 
                 let familyEvent: FamilyEvent
                 if let existing = matches.first {
+                    // FamilyEvent doesn't track modifiedAt, so just reuse existing
+                    print("⏭️ Reusing existing event metadata for '\(meta.event_identifier)'")
                     familyEvent = existing
                 } else {
                     familyEvent = FamilyEvent(context: context)

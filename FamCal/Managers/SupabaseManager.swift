@@ -979,7 +979,8 @@ class SupabaseManager: @unchecked Sendable {
                 user_id: "",
                 calendar_name: uniqueCalendarName,
                 calendar_color_hex: calendarColorHex,
-                created_at: nil
+                created_at: nil,
+                updated_at: nil
             )
         }
 
@@ -2061,9 +2062,10 @@ struct FamilyMemberDTO: Codable {
     let color_hex: String
     let is_driver: Bool?
     let created_at: String?
+    let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, family_id, linked_user_id, name, color_hex, is_driver, created_at
+        case id, user_id, family_id, linked_user_id, name, color_hex, is_driver, created_at, updated_at
     }
 }
 
@@ -2074,9 +2076,10 @@ struct FamilyMemberCalendarDTO: Codable {
     let calendar_color_hex: String
     let is_auto_linked: Bool
     let created_at: String?
+    let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, family_member_id, calendar_name, calendar_color_hex, is_auto_linked, created_at
+        case id, family_member_id, calendar_name, calendar_color_hex, is_auto_linked, created_at, updated_at
     }
 }
 
@@ -2086,9 +2089,10 @@ struct SharedCalendarDTO: Codable {
     let calendar_name: String
     let calendar_color_hex: String
     let created_at: String?
+    let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, calendar_name, calendar_color_hex, created_at
+        case id, user_id, calendar_name, calendar_color_hex, created_at, updated_at
     }
 }
 
@@ -2103,9 +2107,10 @@ struct PersonalCalendarDTO: Codable {
     let show_in_month: Bool?
     let show_in_day: Bool?
     let created_at: String?
+    let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, calendar_name, calendar_color_hex, show_in_next, show_in_spotlight, show_in_upcoming, show_in_month, show_in_day, created_at
+        case id, user_id, calendar_name, calendar_color_hex, show_in_next, show_in_spotlight, show_in_upcoming, show_in_month, show_in_day, created_at, updated_at
     }
 }
 
