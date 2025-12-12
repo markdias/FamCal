@@ -1727,8 +1727,30 @@ struct FamilyView: View {
                     updatedColors.append(event.memberColor)
                 }
 
-                // Get checklist data
-                let checklistData = getChecklistData(for: event)
+                // Get checklist data - create temporary GroupedEvent for lookup
+                let tempEvent = GroupedEvent(
+                    id: event.id,
+                    eventIdentifier: event.eventIdentifier,
+                    title: event.title,
+                    timeRange: event.timeRange,
+                    location: event.location,
+                    meetingLink: event.meetingLink,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    memberNames: [event.memberName],
+                    memberColor: event.memberColor,
+                    calendarColor: event.calendarColor,
+                    calendarTitle: event.calendarTitle,
+                    calendarID: event.calendarID,
+                    memberColors: [event.memberColor],
+                    hasRecurrence: event.hasRecurrence,
+                    isAllDay: event.isAllDay,
+                    driverName: event.driverName,
+                    isImportant: event.isImportant,
+                    hasChecklist: false,
+                    checklistProgress: nil
+                )
+                let checklistData = getChecklistData(for: tempEvent)
 
                 // Create new merged event
                 grouped[key] = GroupedEvent(
@@ -1754,8 +1776,30 @@ struct FamilyView: View {
                     checklistProgress: checklistData.progress
                 )
             } else {
-                // Get checklist data
-                let checklistData = getChecklistData(for: event)
+                // Get checklist data - create temporary GroupedEvent for lookup
+                let tempEvent = GroupedEvent(
+                    id: event.id,
+                    eventIdentifier: event.eventIdentifier,
+                    title: event.title,
+                    timeRange: event.timeRange,
+                    location: event.location,
+                    meetingLink: event.meetingLink,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    memberNames: [event.memberName],
+                    memberColor: event.memberColor,
+                    calendarColor: event.calendarColor,
+                    calendarTitle: event.calendarTitle,
+                    calendarID: event.calendarID,
+                    memberColors: [event.memberColor],
+                    hasRecurrence: event.hasRecurrence,
+                    isAllDay: event.isAllDay,
+                    driverName: event.driverName,
+                    isImportant: event.isImportant,
+                    hasChecklist: false,
+                    checklistProgress: nil
+                )
+                let checklistData = getChecklistData(for: tempEvent)
 
                 grouped[key] = GroupedEvent(
                     id: event.id,
