@@ -88,18 +88,36 @@ struct EventDetailView: View {
         let eventId = event.id
         print("🔍 EventDetailView.eventChecklist: Looking for checklist for event")
         print("   Event ID: '\(eventId)'")
-        print("   Event ID type: \(type(of: eventId))")
+        print("   Event title: '\(event.title)', Date: \(event.startDate), Calendar: '\(event.calendarID)'")
         print("   Available checklists: \(allChecklists.count)")
-        for checklist in allChecklists {
-            let match = checklist.eventIdentifier == eventId
-            print("   - Checklist eventIdentifier: '\(checklist.eventIdentifier ?? "nil")', Match: \(match)")
+
+        let result = allChecklists.first { checklist in
+            guard let checklistEventId = checklist.eventIdentifier else { return false }
+            let match = ChecklistManager.canMatchEventIdentifier(
+                checklistEventId,
+                toEventKitID: eventId,
+                eventTitle: event.title,
+                startDate: event.startDate,
+                calendarID: event.calendarID
+            )
+            if match {
+                print("   ✅ Checklist match found! ID: '\(checklistEventId)'")
+            }
+            return match
         }
-        let result = allChecklists.first { $0.eventIdentifier == eventId }
+
         if let result = result {
             let items = result.items as? Set<ChecklistItem>
             print("   ✅ Found checklist with \(items?.count ?? 0) items")
         } else {
             print("   ❌ No matching checklist found")
+            print("   Debug: Trying stable ID match...")
+            let stableId = ChecklistManager.generateStableEventIdentifier(
+                title: event.title,
+                startDate: event.startDate,
+                calendarID: event.calendarID
+            )
+            print("   Generated stable ID: '\(stableId)'")
         }
         return result
     }
@@ -683,9 +701,22 @@ struct EventDetailView: View {
             if let existing = eventChecklist {
                 targetChecklist = existing
             } else {
-                // Get eventGroupId if it's a recurring event
+                // For recurring events: use eventGroupId (created once per recurrence group)
+                // For single events: use stable identifier based on title+date+calendar (works cross-device)
+                let eventIdentifier: String
+                if event.hasRecurrence {
+                    // Recurring events use device-specific ID + UUID group
+                    eventIdentifier = event.id
+                } else {
+                    // Single events use stable hash-based ID for cross-device compatibility
+                    eventIdentifier = ChecklistManager.generateStableEventIdentifier(
+                        title: event.title,
+                        startDate: event.startDate,
+                        calendarID: event.calendarID
+                    )
+                }
                 let groupId = event.hasRecurrence ? UUID() : nil
-                targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(for: event.id, eventGroupId: groupId)
+                targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(for: eventIdentifier, eventGroupId: groupId)
             }
 
             let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)

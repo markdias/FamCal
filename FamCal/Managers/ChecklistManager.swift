@@ -9,6 +9,7 @@ import Foundation
 import Combine
 import CoreData
 import UserNotifications
+import CommonCrypto
 
 class ChecklistManager: ObservableObject {
     static let shared = ChecklistManager()
@@ -17,6 +18,51 @@ class ChecklistManager: ObservableObject {
     private let notificationCenter = UNUserNotificationCenter.current()
 
     private init() {}
+
+    // MARK: - Device-Independent Event Identification
+
+    /// Generate a stable, device-independent identifier for an event
+    /// Uses title, date, and calendar ID to create a hash that's consistent across devices
+    static func generateStableEventIdentifier(title: String, startDate: Date, calendarID: String) -> String {
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let dateStr = dateFormatter.string(from: startDate)
+
+        let combined = "\(title)|\(dateStr)|\(calendarID)"
+
+        // Use SHA256 hash for stable, consistent identifier
+        guard let data = combined.data(using: .utf8) else {
+            return "event_unknown"
+        }
+
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_SHA256(buffer.baseAddress, CC_LONG(data.count), &digest)
+        }
+
+        let hexStr = digest.map { String(format: "%02x", $0) }.joined()
+        return "event_\(hexStr)"
+    }
+
+    /// For backwards compatibility: try matching with old EventKit ID first, then stable ID
+    static func canMatchEventIdentifier(_ checklistEventIdentifier: String,
+                                       toEventKitID eventKitID: String,
+                                       eventTitle: String,
+                                       startDate: Date,
+                                       calendarID: String) -> Bool {
+        // Direct match (old format or same device)
+        if checklistEventIdentifier == eventKitID {
+            return true
+        }
+
+        // Match with stable identifier
+        let stableID = generateStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
+        if checklistEventIdentifier == stableID {
+            return true
+        }
+
+        return false
+    }
 
     // MARK: - Checklist Operations
 
