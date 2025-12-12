@@ -42,7 +42,7 @@ struct ChecklistsView: View {
 
     // MARK: - Computed Properties
 
-    /// Get all items from all checklists, filtered by completion status
+    /// Get all items from all checklists, filtered by completion status and deletion status
     private var allItems: [ChecklistItem] {
         var items: [ChecklistItem] = []
         for checklist in allChecklists {
@@ -51,6 +51,10 @@ struct ChecklistsView: View {
             }
         }
         let filtered = items.filter { item in
+            // First, exclude deleted items
+            guard item.deletedAt == nil else { return false }
+
+            // Then filter by completion status
             switch completionFilter {
             case .all:
                 return true
@@ -651,8 +655,19 @@ struct ChecklistsView: View {
     private func deleteItem(_ item: ChecklistItem) {
         withAnimation {
             do {
+                print("🗑️ Deleting item: \(item.title ?? "untitled")")
+                print("   Item ID: \(item.id?.uuidString ?? "unknown")")
+                print("   Item deletedAt before: \(item.deletedAt?.description ?? "nil")")
+
                 ChecklistManager.shared.deleteItem(item)
+
+                print("   Item deletedAt after: \(item.deletedAt?.description ?? "nil")")
+                print("   Saving view context...")
+
                 try viewContext.save()
+
+                print("✅ Item deleted and saved")
+
                 Task {
                     await ChecklistManager.shared.syncChecklistsToSupabase()
                 }
