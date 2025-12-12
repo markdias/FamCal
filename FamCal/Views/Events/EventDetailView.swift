@@ -673,9 +673,17 @@ struct EventDetailView: View {
 
         // Sync only this item's deletion to Supabase (targeted operation)
         Task {
+            print("🗑️ Starting deletion sync for item: \(item.title ?? "untitled")")
             await ChecklistManager.shared.syncItemDeletion(item)
-            // After syncing deletion, sync down to ensure ChecklistsView picks up the change
+            print("✅ Deletion synced, waiting before syncing down...")
+
+            // Wait a brief moment to ensure Supabase has processed the deletion
+            // This prevents race conditions where we sync down before deletion is recorded
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            print("🔄 Now syncing FROM Supabase to verify deletion...")
             await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
+            print("✅ Sync down complete - deleted item should be removed")
         }
     }
 
