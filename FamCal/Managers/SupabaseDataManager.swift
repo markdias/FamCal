@@ -1884,6 +1884,13 @@ class SupabaseDataManager: ObservableObject {
     /// Convert ChecklistItem entity to DTO for Supabase
     private func convertChecklistItemEntityToDTO(_ item: ChecklistItem) -> ChecklistItemDTO {
         let formatter = ISO8601DateFormatter()
+
+        // Validate that item has a parent checklist
+        if item.checklist?.id?.uuidString == nil {
+            print("⚠️ WARNING: ChecklistItem \(item.id?.uuidString ?? "unknown") has no parent checklist!")
+            print("   This will fail RLS validation in Supabase")
+        }
+
         return ChecklistItemDTO(
             id: item.id?.uuidString ?? UUID().uuidString,
             checklist_id: item.checklist?.id?.uuidString ?? "",
