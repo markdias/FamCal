@@ -108,12 +108,13 @@ class ChecklistManager: ObservableObject {
 
     @MainActor
     func getOrCreateChecklist(for eventIdentifier: String, eventGroupId: UUID?, eventTitle: String? = nil) throws -> Checklist {
-        // Check if checklist already exists
+        // Check if checklist already exists locally
         if let existing = fetchChecklist(for: eventIdentifier) {
+            print("✅ Found existing checklist locally for eventIdentifier: \(eventIdentifier)")
             return existing
         }
 
-        // Create new checklist
+        // Create new checklist with a temporary UUID
         let checklist = Checklist(context: context)
         checklist.id = UUID()
         checklist.eventIdentifier = eventIdentifier
@@ -124,6 +125,7 @@ class ChecklistManager: ObservableObject {
 
         do {
             try context.save()
+            print("✅ Created new checklist with ID: \(checklist.id?.uuidString ?? "unknown") for eventIdentifier: \(eventIdentifier)")
             return checklist
         } catch {
             print("❌ Error creating checklist: \(error)")

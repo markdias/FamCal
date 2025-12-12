@@ -1663,10 +1663,42 @@ class SupabaseDataManager: ObservableObject {
                 do {
                     try context.performAndWait {
                         for dto in dtos {
-                            // Check if this checklist is locally soft-deleted
+                            // Check if this checklist exists locally by ID first
                             let localRequest = Checklist.fetchRequest()
                             localRequest.predicate = NSPredicate(format: "id == %@", dto.id)
-                            let localChecklists = try context.fetch(localRequest)
+                            var localChecklists = try context.fetch(localRequest)
+
+                            // If not found by ID, check by event_identifier (handles duplicate creation case)
+                            // This happens when two devices create separate checklists for the same event
+                            if localChecklists.isEmpty && !dto.event_identifier.isEmpty {
+                                let eventRequest = Checklist.fetchRequest()
+                                eventRequest.predicate = NSPredicate(format: "eventIdentifier == %@ AND deletedAt == nil", dto.event_identifier)
+                                localChecklists = try context.fetch(eventRequest)
+
+                                if let existingChecklist = localChecklists.first {
+                                    print("🔄 Found local checklist with same eventIdentifier but different UUID!")
+                                    print("   Local UUID: \(existingChecklist.id?.uuidString ?? "nil")")
+                                    print("   Supabase UUID: \(dto.id)")
+                                    print("   Event: \(dto.event_identifier)")
+                                    print("   Merging: updating local checklist with Supabase UUID")
+
+                                    // Update the local checklist to use the Supabase UUID
+                                    // This prevents duplicate checklists from different phones
+                                    existingChecklist.id = UUID(uuidString: dto.id) ?? UUID()
+                                    existingChecklist.eventIdentifier = dto.event_identifier
+                                    existingChecklist.eventTitle = dto.event_title
+                                    existingChecklist.eventGroupId = dto.event_group_id.flatMap { UUID(uuidString: $0) }
+
+                                    if let deletedAtStr = dto.deleted_at {
+                                        existingChecklist.deletedAt = ISO8601DateFormatter().date(from: deletedAtStr)
+                                    }
+                                    existingChecklist.deletionReason = dto.deletion_reason
+
+                                    try context.save()
+                                    print("✅ Merged duplicate checklists")
+                                    continue
+                                }
+                            }
 
                             // If checklist exists locally and is soft-deleted, preserve the deletion
                             // Don't overwrite with Supabase data
