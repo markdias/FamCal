@@ -12,6 +12,7 @@ import EventKit
 struct MainTabView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
+    @ScaledMetric(relativeTo: .headline) private var todayButtonBaseFontSize: CGFloat = 12
 
     private enum ActiveView: String {
         case events
@@ -46,25 +47,40 @@ struct MainTabView: View {
         themeManager.selectedTheme
     }
 
+    private var isUltraCompactWidth: Bool { UIScreen.main.bounds.width < 330 }
+
     private var todayButtonFont: Font {
+        .system(size: todayButtonFontSize, weight: .semibold)
+    }
+
+    private var todayButtonFontSize: CGFloat {
         let width = UIScreen.main.bounds.width
-        let size: CGFloat
         switch width {
-        case ..<340:
-            size = 10
-        case ..<380:
-            size = 11
+        case ..<330:
+            return todayButtonBaseFontSize * 0.72
+        case ..<360:
+            return todayButtonBaseFontSize * 0.82
+        case ..<400:
+            return todayButtonBaseFontSize * 0.9
         default:
-            size = 12
+            return todayButtonBaseFontSize
         }
-        return .system(size: size, weight: .semibold)
     }
 
     private var todayButtonHorizontalPadding: CGFloat {
         let width = UIScreen.main.bounds.width
-        if width < 340 { return 10 }
-        if width < 380 { return 11 }
+        if width < 330 { return 7 }
+        if width < 360 { return 9 }
+        if width < 400 { return 10 }
         return 12
+    }
+
+    private var todayButtonScaleFactor: CGFloat {
+        UIScreen.main.bounds.width < 360 ? 0.5 : 0.75
+    }
+
+    private var todayButtonLabel: String {
+        isUltraCompactWidth ? "Now" : "Today"
     }
 
     var body: some View {
@@ -191,11 +207,15 @@ struct MainTabView: View {
             Button(action: {
                 calendarTodayTrigger = UUID()
             }) {
-                Text("Today")
+                Text(todayButtonLabel)
                     .font(todayButtonFont)
+                    .lineLimit(1)
+                    .minimumScaleFactor(todayButtonScaleFactor)
+                    .allowsTightening(true)
+                    .fixedSize(horizontal: true, vertical: false)
                     .foregroundColor(.white)
                     .padding(.horizontal, todayButtonHorizontalPadding)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, isUltraCompactWidth ? 7 : 8)
                     .background(
                         Capsule()
                             .fill(theme.accentFillStyle())

@@ -49,8 +49,27 @@ struct EventSearchView: View {
         return formatter
     }()
 
-    private func getChecklistData(for eventIdentifier: String) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
-        let checklist = checklists.first { $0.eventIdentifier == eventIdentifier && $0.deletedAt == nil }
+    private func getChecklistData(for event: UpcomingCalendarEvent) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
+        // Use the same matching logic as FamilyView
+        // Try to find a checklist that matches this event using multiple identifier strategies
+        let checklist = checklists.first { candidate in
+            guard candidate.deletedAt == nil, let checklistEventId = candidate.eventIdentifier else { return false }
+
+            // Try direct match first (EventKit ID)
+            if checklistEventId == event.id {
+                return true
+            }
+
+            // Try stable identifier matching
+            return ChecklistManager.canMatchEventIdentifier(
+                checklistEventId,
+                toEventKitID: event.id,
+                eventTitle: event.title,
+                startDate: event.startDate,
+                calendarID: event.calendarID
+            )
+        }
+
         let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
         // Only show checklist if it has items (not empty)
         let hasChecklist = progress?.isEmpty == false
@@ -204,7 +223,7 @@ struct EventSearchView: View {
                 }
 
                 // Checklist indicator
-                let checklistData = getChecklistData(for: result.event.id)
+                let checklistData = getChecklistData(for: result.event)
                 if checklistData.hasChecklist, let progress = checklistData.progress {
                     Spacer()
                     HStack(spacing: 4) {

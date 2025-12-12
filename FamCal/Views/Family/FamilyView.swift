@@ -861,7 +861,7 @@ struct FamilyView: View {
                     }
 
                 // Checklist indicator
-                let checklistData = getChecklistData(for: event.eventIdentifier)
+                let checklistData = getChecklistData(for: event)
 
                 if checklistData.hasChecklist, let progress = checklistData.progress {
                     HStack(spacing: 4) {
@@ -1659,18 +1659,35 @@ struct FamilyView: View {
         return nil
     }
 
-    private func getChecklistData(for eventIdentifier: String) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
-        let checklist = checklists.first { $0.eventIdentifier == eventIdentifier && $0.deletedAt == nil }
+    private func getChecklistData(for event: GroupedEvent) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
+        // Use the same matching logic as EventDetailView
+        // Try to find a checklist that matches this event using multiple identifier strategies
+        let checklist = checklists.first { candidate in
+            guard candidate.deletedAt == nil, let checklistEventId = candidate.eventIdentifier else { return false }
+
+            // Try direct match first (EventKit ID)
+            if checklistEventId == event.eventIdentifier {
+                return true
+            }
+
+            // Try stable identifier matching
+            return ChecklistManager.canMatchEventIdentifier(
+                checklistEventId,
+                toEventKitID: event.eventIdentifier,
+                eventTitle: event.title,
+                startDate: event.startDate,
+                calendarID: event.calendarID
+            )
+        }
+
         let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
         // Only show checklist if it has items (not empty)
         let hasChecklist = progress?.isEmpty == false
 
         if let progress = progress {
-            print("✅ Checklist found for \(eventIdentifier): \(progress.completed)/\(progress.total) items")
-        } else if checklists.first(where: { $0.eventIdentifier == eventIdentifier }) != nil {
-            print("⚠️ Checklist exists but has no items for \(eventIdentifier)")
-        } else {
-            print("❌ No checklist found for \(eventIdentifier) (Total checklists: \(checklists.count))")
+            print("✅ Checklist found for \(event.title) (\(event.eventIdentifier)): \(progress.completed)/\(progress.total) items")
+        } else if checklists.first(where: { $0.eventIdentifier == event.eventIdentifier && $0.deletedAt == nil }) != nil {
+            print("⚠️ Checklist exists but has no items for \(event.title)")
         }
 
         return (hasChecklist, progress)
@@ -1678,7 +1695,7 @@ struct FamilyView: View {
 
     /// Refresh checklist status for an event using the latest CoreData fetch results
     private func refreshedGroupedEvent(_ event: GroupedEvent) -> GroupedEvent {
-        let checklistData = getChecklistData(for: event.eventIdentifier)
+        let checklistData = getChecklistData(for: event)
 
         if checklistData.hasChecklist == event.hasChecklist,
            checklistData.progress?.completed == event.checklistProgress?.completed,
@@ -1711,7 +1728,7 @@ struct FamilyView: View {
                 }
 
                 // Get checklist data
-                let checklistData = getChecklistData(for: event.eventIdentifier)
+                let checklistData = getChecklistData(for: event)
 
                 // Create new merged event
                 grouped[key] = GroupedEvent(
@@ -1738,7 +1755,7 @@ struct FamilyView: View {
                 )
             } else {
                 // Get checklist data
-                let checklistData = getChecklistData(for: event.eventIdentifier)
+                let checklistData = getChecklistData(for: event)
 
                 grouped[key] = GroupedEvent(
                     id: event.id,
