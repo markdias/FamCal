@@ -699,7 +699,7 @@ struct EventDetailView: View {
 
             let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
 
-            let newItem = try ChecklistManager.shared.addItem(
+            _ = try ChecklistManager.shared.addItem(
                 to: targetChecklist,
                 title: title,
                 dueDate: dueDate,
