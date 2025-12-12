@@ -1940,14 +1940,15 @@ class SupabaseManager: @unchecked Sendable {
             let notification_id: String?
         }
 
+        // Enforce constraint: if completed=false, completed_at and completed_by must be null
         let body = UpsertBody(
             id: dto.id,
             checklist_id: dto.checklist_id,
             title: dto.title,
             due_date: dto.due_date,
             completed: dto.completed,
-            completed_at: dto.completed_at,
-            completed_by: dto.completed_by,
+            completed_at: dto.completed ? dto.completed_at : nil,
+            completed_by: dto.completed ? dto.completed_by : nil,
             sort_order: dto.sort_order,
             created_at: dto.created_at,
             modified_at: dto.modified_at,
@@ -1969,10 +1970,38 @@ class SupabaseManager: @unchecked Sendable {
         // If we got 409, fall back to PATCH update
         if statusCode == 409 {
             print("⚠️ POST got 409, attempting PATCH update for item \(dto.id)")
+
+            // For PATCH, we need to handle the completed logic constraint:
+            // If completed=false, completed_at and completed_by MUST be null
+            struct PatchBody: Encodable {
+                let title: String
+                let due_date: String?
+                let completed: Bool
+                let completed_at: String?
+                let completed_by: String?
+                let sort_order: Int
+                let modified_at: String?
+                let deleted_at: String?
+                let notification_id: String?
+            }
+
+            // When unchecking (completed=false), ensure completed_at and completed_by are null
+            let patchBody = PatchBody(
+                title: dto.title,
+                due_date: dto.due_date,
+                completed: dto.completed,
+                completed_at: dto.completed ? dto.completed_at : nil,
+                completed_by: dto.completed ? dto.completed_by : nil,
+                sort_order: dto.sort_order,
+                modified_at: dto.modified_at,
+                deleted_at: dto.deleted_at,
+                notification_id: dto.notification_id
+            )
+
             let (patchData, patchStatusCode) = try await makeRequest(
                 "PATCH",
                 path: "rest/v1/checklist_items?id=eq.\(dto.id)",
-                body: body,
+                body: patchBody,
                 userToken: userToken,
                 extraHeaders: ["Prefer": "return=representation"]
             )
