@@ -340,4 +340,53 @@ class ChecklistManager: ObservableObject {
     func syncChecklistsToSupabase() async {
         await SupabaseDataManager.shared.syncChecklistsToSupabase()
     }
+
+    /// Sync a single item deletion to Supabase (targeted operation)
+    func syncItemDeletion(_ item: ChecklistItem) async {
+        guard let itemId = item.id?.uuidString else {
+            print("❌ Cannot sync deletion: item has no ID")
+            return
+        }
+
+        do {
+            print("🗑️ Syncing item deletion to Supabase: \(item.title ?? "untitled")")
+            try await SupabaseDataManager.shared.supabaseManager.deleteChecklistItem(id: itemId)
+            print("✅ Item deletion synced to Supabase")
+        } catch {
+            print("❌ Error syncing item deletion: \(error)")
+        }
+    }
+
+    /// Sync a single item update to Supabase (targeted operation)
+    func syncItemUpdate(_ item: ChecklistItem) async {
+        guard let itemId = item.id?.uuidString else {
+            print("❌ Cannot sync update: item has no ID")
+            return
+        }
+
+        // Convert item to DTO and sync
+        let formatter = ISO8601DateFormatter()
+        let dto = ChecklistItemDTO(
+            id: itemId,
+            checklist_id: item.checklist?.id?.uuidString ?? "",
+            title: item.title ?? "",
+            due_date: item.dueDate.map { formatter.string(from: $0) },
+            completed: item.completed,
+            completed_at: item.completedAt.map { formatter.string(from: $0) },
+            completed_by: item.completedBy?.uuidString,
+            sort_order: Int(item.sortOrder),
+            created_at: item.createdAt.map { formatter.string(from: $0) },
+            modified_at: formatter.string(from: Date()),
+            deleted_at: item.deletedAt.map { formatter.string(from: $0) },
+            notification_id: item.notificationId
+        )
+
+        do {
+            print("📤 Syncing item update to Supabase: \(item.title ?? "untitled")")
+            _ = try await SupabaseDataManager.shared.supabaseManager.upsertChecklistItem(dto)
+            print("✅ Item update synced to Supabase")
+        } catch {
+            print("❌ Error syncing item update: \(error)")
+        }
+    }
 }

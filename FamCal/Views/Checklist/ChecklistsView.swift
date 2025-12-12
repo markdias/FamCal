@@ -643,8 +643,9 @@ struct ChecklistsView: View {
             do {
                 try ChecklistManager.shared.toggleItemCompletion(item, completedBy: UUID())
                 try viewContext.save()
+                // Sync only this item's update to Supabase (targeted operation)
                 Task {
-                    await ChecklistManager.shared.syncChecklistsToSupabase()
+                    await ChecklistManager.shared.syncItemUpdate(item)
                 }
             } catch {
                 print("❌ Error toggling item: \(error)")
@@ -668,8 +669,9 @@ struct ChecklistsView: View {
 
                 print("✅ Item deleted and saved")
 
+                // Sync only this item's deletion to Supabase (targeted operation)
                 Task {
-                    await ChecklistManager.shared.syncChecklistsToSupabase()
+                    await ChecklistManager.shared.syncItemDeletion(item)
                 }
             } catch {
                 print("❌ Error deleting item: \(error)")
@@ -719,8 +721,9 @@ struct ChecklistsView: View {
             print("   Item ID: \(item.id?.uuidString ?? "nil")")
             print("   Item checklist relationship: \(item.checklist?.id?.uuidString ?? "nil")")
             print("   Checklist items count: \(checklist.items?.count ?? 0)")
+            // Sync only this item's creation to Supabase (targeted operation)
             Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
+                await ChecklistManager.shared.syncItemUpdate(item)
             }
             newItemTitle = ""
             newItemHasDueDate = false

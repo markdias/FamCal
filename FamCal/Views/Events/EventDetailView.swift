@@ -660,9 +660,9 @@ struct EventDetailView: View {
             // Trigger view refresh to update UI
             checklistRefresh.toggle()
 
-            // Sync to Supabase
+            // Sync only this item's update to Supabase (targeted operation)
             Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
+                await ChecklistManager.shared.syncItemUpdate(item)
             }
         } catch {
             print("❌ Error toggling checklist item: \(error)")
@@ -675,9 +675,9 @@ struct EventDetailView: View {
         // Trigger view refresh to update UI
         checklistRefresh.toggle()
 
-        // Sync to Supabase
+        // Sync only this item's deletion to Supabase (targeted operation)
         Task {
-            await ChecklistManager.shared.syncChecklistsToSupabase()
+            await ChecklistManager.shared.syncItemDeletion(item)
         }
     }
 
@@ -725,7 +725,7 @@ struct EventDetailView: View {
 
             let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
 
-            _ = try ChecklistManager.shared.addItem(
+            let newItem = try ChecklistManager.shared.addItem(
                 to: targetChecklist,
                 title: title,
                 dueDate: dueDate,
@@ -739,9 +739,9 @@ struct EventDetailView: View {
             // Trigger view refresh to update UI
             checklistRefresh.toggle()
 
-            // Sync checklist to Supabase
+            // Sync only this item to Supabase (targeted operation)
             Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
+                await ChecklistManager.shared.syncItemUpdate(newItem)
             }
 
             // Apply to all future occurrences if requested
