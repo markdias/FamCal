@@ -1956,71 +1956,47 @@ class SupabaseManager: @unchecked Sendable {
             notification_id: dto.notification_id
         )
 
-        // POST with merge-duplicates for automatic conflict handling
+        print("📤 Upserting item: completed=\(dto.completed), completed_at=\(body.completed_at ?? "nil"), completed_by=\(body.completed_by ?? "nil")")
+
+        // Always use PATCH for updates to respect constraint checks properly
+        // PATCH is more reliable than POST with merge-duplicates for constraint handling
         let (data, statusCode) = try await makeRequest(
-            "POST",
-            path: "rest/v1/checklist_items",
+            "PATCH",
+            path: "rest/v1/checklist_items?id=eq.\(dto.id)",
             body: body,
             userToken: userToken,
-            extraHeaders: [
-                "Prefer": "return=representation,resolution=merge-duplicates"
-            ]
+            extraHeaders: ["Prefer": "return=representation"]
         )
 
-        // If we got 409, fall back to PATCH update
-        if statusCode == 409 {
-            print("⚠️ POST got 409, attempting PATCH update for item \(dto.id)")
+        // If we got 404, the item doesn't exist - try INSERT
+        if statusCode == 404 {
+            print("ℹ️ Item not found via PATCH, attempting INSERT via POST for item \(dto.id)")
 
-            // For PATCH, we need to handle the completed logic constraint:
-            // If completed=false, completed_at and completed_by MUST be null
-            struct PatchBody: Encodable {
-                let title: String
-                let due_date: String?
-                let completed: Bool
-                let completed_at: String?
-                let completed_by: String?
-                let sort_order: Int
-                let modified_at: String?
-                let deleted_at: String?
-                let notification_id: String?
-            }
-
-            // When unchecking (completed=false), ensure completed_at and completed_by are null
-            let patchBody = PatchBody(
-                title: dto.title,
-                due_date: dto.due_date,
-                completed: dto.completed,
-                completed_at: dto.completed ? dto.completed_at : nil,
-                completed_by: dto.completed ? dto.completed_by : nil,
-                sort_order: dto.sort_order,
-                modified_at: dto.modified_at,
-                deleted_at: dto.deleted_at,
-                notification_id: dto.notification_id
-            )
-
-            let (patchData, patchStatusCode) = try await makeRequest(
-                "PATCH",
-                path: "rest/v1/checklist_items?id=eq.\(dto.id)",
-                body: patchBody,
+            let (insertData, insertStatusCode) = try await makeRequest(
+                "POST",
+                path: "rest/v1/checklist_items",
+                body: body,
                 userToken: userToken,
-                extraHeaders: ["Prefer": "return=representation"]
+                extraHeaders: [
+                    "Prefer": "return=representation"
+                ]
             )
 
-            guard patchStatusCode == 200 else {
-                logErrorResponse(patchData, statusCode: patchStatusCode, operation: "upsertChecklistItem (PATCH)")
-                throw NSError(domain: "UpsertChecklistItem", code: patchStatusCode)
+            guard insertStatusCode == 200 || insertStatusCode == 201 else {
+                logErrorResponse(insertData, statusCode: insertStatusCode, operation: "upsertChecklistItem (POST insert)")
+                throw NSError(domain: "UpsertChecklistItem", code: insertStatusCode)
             }
 
-            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: patchData)
+            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: insertData)
             guard let item = items.first else {
-                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "No item returned from PATCH"])
+                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "No item returned from POST insert"])
             }
-            print("✅ Item updated via PATCH: \(dto.id)")
+            print("✅ Item inserted via POST: \(dto.id)")
             return item
         }
 
-        guard statusCode == 200 || statusCode == 201 else {
-            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem")
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem (PATCH)")
             throw NSError(domain: "UpsertChecklistItem", code: statusCode)
         }
 
