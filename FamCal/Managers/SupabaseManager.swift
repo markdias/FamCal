@@ -1749,7 +1749,11 @@ class SupabaseManager: @unchecked Sendable {
 
         // For PostgREST in() operator with text fields, wrap each string in double quotes
         let quotedIds = eventIdentifiers.map { "\"\($0)\"" }.joined(separator: ",")
-        let queryItems = [URLQueryItem(name: "event_identifier", value: "in.(\(quotedIds))")]
+        // Filter out soft-deleted checklists (deleted_at IS NULL)
+        let queryItems = [
+            URLQueryItem(name: "event_identifier", value: "in.(\(quotedIds))"),
+            URLQueryItem(name: "deleted_at", value: "is.null")
+        ]
         let userToken = token ?? authManager.accessToken
 
         let (data, statusCode) = try await makeRequest(
@@ -1772,7 +1776,11 @@ class SupabaseManager: @unchecked Sendable {
         guard !checklistIds.isEmpty else { return [] }
 
         let ids = checklistIds.joined(separator: ",")
-        let queryItems = [URLQueryItem(name: "checklist_id", value: "in.(\(ids))")]
+        // Filter out soft-deleted items (deleted_at IS NULL)
+        let queryItems = [
+            URLQueryItem(name: "checklist_id", value: "in.(\(ids))"),
+            URLQueryItem(name: "deleted_at", value: "is.null")
+        ]
         let userToken = token ?? authManager.accessToken
 
         let (data, statusCode) = try await makeRequest(
@@ -1792,7 +1800,11 @@ class SupabaseManager: @unchecked Sendable {
 
     /// Fetch a single checklist by ID
     func fetchChecklist(id: String, token: String? = nil) async throws -> ChecklistDTO? {
-        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        // Filter out soft-deleted checklists (deleted_at IS NULL)
+        let queryItems = [
+            URLQueryItem(name: "id", value: "eq.\(id)"),
+            URLQueryItem(name: "deleted_at", value: "is.null")
+        ]
         let userToken = token ?? authManager.accessToken
 
         let (data, statusCode) = try await makeRequest(
@@ -1815,10 +1827,13 @@ class SupabaseManager: @unchecked Sendable {
     func fetchAllChecklists(token: String? = nil) async throws -> [ChecklistDTO] {
         let userToken = token ?? authManager.accessToken
 
+        // Filter out soft-deleted checklists (deleted_at IS NULL)
+        let queryItems = [URLQueryItem(name: "deleted_at", value: "is.null")]
+
         let (data, statusCode) = try await makeRequest(
             "GET",
             path: "rest/v1/event_checklists",
-            queryItems: [],
+            queryItems: queryItems,
             userToken: userToken
         )
 
