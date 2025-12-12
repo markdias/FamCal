@@ -1882,6 +1882,11 @@ class SupabaseDataManager: ObservableObject {
             }
 
             print("✅ Synced \(syncedChecklistCount) checklists and \(syncedItemCount) items to Supabase")
+
+            // After syncing UP, immediately sync DOWN to catch any duplicates created by other devices
+            // This ensures if another phone created a checklist for the same event, we'll merge the UUIDs
+            print("🔄 Syncing FROM Supabase to detect and merge any duplicate checklists...")
+            await syncAllChecklistsFromSupabase()
         } catch {
             print("⚠️ Error syncing checklists to Supabase: \(error)")
         }
