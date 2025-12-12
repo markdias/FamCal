@@ -780,10 +780,16 @@ struct FamilyView: View {
                     .lineLimit(1)
 
                 // Event title
-                Text(event.title)
-                    .font(.system(size: titleSize, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
+                HStack(spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: titleSize, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    if event.hasRecurrence {
+                        RecurrenceIcon(color: barColor, fontSize: 10.0)
+                    }
+                }
+                .lineLimit(2)
 
                 Spacer(minLength: 6)
 
@@ -951,10 +957,15 @@ struct FamilyView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     // Title with start time on the right
                     HStack(alignment: .top, spacing: 8) {
-                        Text(event.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
+                        HStack(spacing: 6) {
+                            Text(event.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                            if event.hasRecurrence {
+                                RecurrenceIcon(color: Color(uiColor: event.memberColor), fontSize: 11.0)
+                            }
+                        }
 
                         Spacer(minLength: 0)
 
@@ -1143,10 +1154,15 @@ struct FamilyView: View {
                     }
                 }
 
-                Text(event.title)
-                    .font(.system(size: titleSize, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
+                HStack(spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: titleSize, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    if event.hasRecurrence {
+                        RecurrenceIcon(color: stripeColor, fontSize: 10.0)
+                    }
+                }
 
                 Spacer(minLength: 6)
 
@@ -2436,10 +2452,15 @@ private struct CompactCardStyle1: View {
                         .frame(width: 50, alignment: .leading)
                 }
 
-                Text(event.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    if event.hasRecurrence {
+                        RecurrenceIcon(color: Color(uiColor: event.calendarColor), fontSize: 10.0)
+                    }
+                }
 
                 Spacer(minLength: 0)
 
@@ -2512,6 +2533,10 @@ private struct CompactCardStyle3: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.primary)
                             .lineLimit(1)
+
+                        if event.hasRecurrence {
+                            RecurrenceIcon(color: Color(uiColor: event.calendarColor), fontSize: 9.0)
+                        }
 
                         if event.isImportant {
                             Image(systemName: "star.fill")
@@ -2595,6 +2620,10 @@ private struct CompactCardStyle4: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.primary)
                         .lineLimit(1)
+
+                    if event.hasRecurrence {
+                        RecurrenceIcon(color: Color(uiColor: event.calendarColor), fontSize: 9.0)
+                    }
 
                     if event.isImportant {
                         Image(systemName: "star.fill")

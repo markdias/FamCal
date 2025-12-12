@@ -423,10 +423,15 @@ struct SpotlightView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .top, spacing: 8) {
-                        Text(event.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
+                        HStack(spacing: 4) {
+                            Text(event.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                            if event.hasRecurrence {
+                                RecurrenceIcon(color: Color(uiColor: event.memberColor), fontSize: 11.0)
+                            }
+                        }
 
                         Spacer(minLength: 0)
 

@@ -2035,19 +2035,14 @@ class SupabaseManager: @unchecked Sendable {
     func deleteChecklistItem(id: String, token: String? = nil) async throws {
         let userToken = token ?? authManager.accessToken
 
-        struct DeleteBody: Encodable {
-            let deleted_at: String
-        }
+        print("🗑️ Hard deleting item from Supabase: \(id)")
 
-        let now = ISO8601DateFormatter().string(from: Date())
-        let body = DeleteBody(deleted_at: now)
-
+        // Use DELETE (hard delete) instead of PATCH (soft delete)
         let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
         let (data, statusCode) = try await makeRequest(
-            "PATCH",
+            "DELETE",
             path: "rest/v1/checklist_items",
             queryItems: queryItems,
-            body: body,
             userToken: userToken,
             extraHeaders: ["Prefer": "return=minimal"]
         )
@@ -2056,6 +2051,8 @@ class SupabaseManager: @unchecked Sendable {
             logErrorResponse(data, statusCode: statusCode, operation: "deleteChecklistItem")
             throw NSError(domain: "DeleteChecklistItem", code: statusCode)
         }
+
+        print("✅ Item hard deleted from Supabase")
     }
 }
 

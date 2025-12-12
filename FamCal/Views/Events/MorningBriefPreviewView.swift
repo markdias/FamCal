@@ -165,10 +165,12 @@ struct MorningBriefPreviewView: View {
                     .frame(width: 28, height: 28)
                     .background(Circle().fill(theme.accentColor))
 
-                // Event title
-                Text(event.title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(theme.textPrimary)
+                // Event title with recurrence icon
+                HStack(spacing: 6) {
+                    Text(event.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(theme.textPrimary)
+                }
 
                 Spacer()
 

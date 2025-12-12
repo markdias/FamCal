@@ -243,10 +243,13 @@ struct CompactCardOption1: View {
                     .foregroundColor(.secondary)
                     .frame(width: 50, alignment: .leading)
 
-                // Title
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
+                // Title with recurrence icon placeholder
+                HStack(spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    // Note: recurrence icon would go here if data was available
+                }
 
                 Spacer(minLength: 0)
             }
@@ -297,10 +300,13 @@ struct CompactCardOption2: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
 
-            // Title
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
+            // Title with recurrence icon placeholder
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                // Note: recurrence icon would go here if data was available
+            }
 
             Spacer(minLength: 0)
         }
@@ -340,9 +346,12 @@ struct CompactCardOption3: View {
                 .frame(width: 32)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(title)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        // Note: recurrence icon would go here if data was available
+                    }
 
                     Text(time)
                         .font(.system(size: 11, weight: .regular))
@@ -386,9 +395,12 @@ struct CompactCardOption4: View {
             .cornerRadius(6)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    // Note: recurrence icon would go here if data was available
+                }
 
                 Text(time)
                     .font(.system(size: 11, weight: .regular))
@@ -436,11 +448,13 @@ struct CompactCardOption5: View {
             }
             .frame(width: 55, alignment: .leading)
 
-            // Title with location indicator
+            // Title with location and recurrence indicators
             HStack(spacing: 4) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
+
+                // Note: recurrence icon would go here if data was available
 
                 if hasLocation {
                     Image(systemName: "location.fill")
@@ -503,9 +517,12 @@ struct DetailedEventCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .top, spacing: 8) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(2)
+                        HStack(spacing: 4) {
+                            Text(title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .lineLimit(2)
+                            // Note: recurrence icon would go here if data was available
+                        }
 
                         Spacer(minLength: 0)
 

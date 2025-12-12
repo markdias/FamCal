@@ -592,14 +592,19 @@ struct CalendarView: View {
                     .frame(width: spacerWidth)
                     .frame(height: 36)
 
-                // Compact title only
-                Text(groupedEvent.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .opacity(isPast ? 0.5 : 1.0)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Compact title only with recurrence icon
+                HStack(spacing: 4) {
+                    Text(groupedEvent.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    if groupedEvent.hasRecurrence {
+                        RecurrenceIcon(color: .primary, fontSize: 10.0)
+                    }
+                }
+                .opacity(isPast ? 0.5 : 1.0)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer(minLength: 0)
 
@@ -704,12 +709,17 @@ struct CalendarView: View {
                         .frame(maxHeight: .infinity)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        // Title
-                        Text(groupedEvent.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                            .opacity(isPast ? 0.5 : 1.0)
+                        // Title with recurrence icon
+                        HStack(spacing: 6) {
+                            Text(groupedEvent.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                            if groupedEvent.hasRecurrence {
+                                RecurrenceIcon(color: .primary, fontSize: 11.0)
+                            }
+                        }
+                        .opacity(isPast ? 0.5 : 1.0)
 
                         // Family members (if more than 1)
                         if groupedEvent.memberNames.count > 1 {
@@ -1208,10 +1218,15 @@ struct CalendarView: View {
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color(uiColor: event.color))
                         .frame(width: 2)
-                    Text(event.title)
-                        .font(.system(size: 8))
-                        .lineLimit(1)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 2) {
+                        Text(event.title)
+                            .font(.system(size: 8))
+                            .lineLimit(1)
+                            .foregroundColor(.primary)
+                        if event.hasRecurrence {
+                            RecurrenceIcon(color: Color(uiColor: event.color), fontSize: 8.0)
+                        }
+                    }
                     Spacer(minLength: 0)
                 }
                 .frame(height: 10)

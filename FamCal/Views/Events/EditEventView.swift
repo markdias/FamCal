@@ -83,6 +83,7 @@ struct EditEventView: View {
     // Calendar info for updating
     @State private var calendarId: String? = nil
     @State private var selectedMemberCalendars: [NSManagedObjectID: String] = [:] // Track calendar per member
+    @State private var availableCalendars: [AvailableCalendar] = []
 
     // Driver selection
     @State private var selectedDriver: DriverWrapper?
@@ -93,7 +94,6 @@ struct EditEventView: View {
     @State private var selectedAttendees: Set<NSManagedObjectID> = []
     @State private var selectEveryone: Bool = false
     @State private var showingAttendeePicker: Bool = false
-    @State private var showingCalendarPicker = false // For "Everyone" calendar picker
 
     // UI state
     @State private var activeTimePicker: TimePicker = .none
@@ -150,6 +150,46 @@ struct EditEventView: View {
     private var meetingLinkValue: String? {
         let trimmed = meetingLink.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var selectedCalendarName: String {
+        let activeId = calendarId ?? upcomingEvent.calendarID
+        if let match = availableCalendars.first(where: { $0.id == activeId }) {
+            return match.title
+        }
+        return upcomingEvent.calendarTitle
+    }
+
+    private var relevantCalendarOptions: [AvailableCalendar] {
+        var calendarIDs = Set<String>()
+
+        for member in familyMembers {
+            if let memberCals = member.memberCalendars?.allObjects as? [FamilyMemberCalendar] {
+                for cal in memberCals {
+                    if let calId = cal.calendarID {
+                        calendarIDs.insert(calId)
+                    }
+                }
+            }
+
+            if let personalCals = member.personalCalendars?.allObjects as? [PersonalCalendar] {
+                for cal in personalCals {
+                    if let calId = cal.calendarID {
+                        calendarIDs.insert(calId)
+                    }
+                }
+            }
+
+            if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
+                for cal in sharedCals {
+                    if let calId = cal.calendarID {
+                        calendarIDs.insert(calId)
+                    }
+                }
+            }
+        }
+
+        return availableCalendars.filter { calendarIDs.contains($0.id) }
     }
 
     private var attendeesSummary: String {
@@ -301,11 +341,115 @@ struct EditEventView: View {
                 fetchDriver()
                 loadExistingAlertOption()
                 loadLinkedFamilyEvents()
+                loadAvailableCalendars()
                 let validMemberIDs = Set(familyMembers.map { $0.objectID })
                 selectedMemberCalendars = selectedMemberCalendars.filter { validMemberIDs.contains($0.key) }
                 loadExistingAttendees()
             }
+            .onChange(of: selectEveryone) { _, newValue in
+                if newValue {
+                    selectedAttendees.removeAll()
+                }
+            }
+            .onChange(of: selectedAttendees) { _, _ in
+                applyCalendarSelectionForSingleAttendee()
+            }
+            .sheet(isPresented: $showingAttendeePicker) {
+                attendeePicker
+            }
             .tint(accentColor)
+            }
+    }
+
+    @ViewBuilder
+    private var attendeePicker: some View {
+        NavigationStack {
+            Form {
+                Section("Invitees") {
+                    Toggle("Everyone", isOn: $selectEveryone)
+                    if !selectEveryone {
+                        ForEach(familyMembers, id: \.objectID) { member in
+                            Button {
+                                toggleAttendee(member)
+                            } label: {
+                                HStack {
+                                    Text(member.name ?? "Unknown")
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    if selectedAttendees.contains(member.objectID) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !selectEveryone, let member = singleSelectedMember {
+                    let calendars = buildCombinedCalendarList(
+                        memberCalendars: (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set(),
+                        personalCalendars: (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
+                    )
+                    if !calendars.isEmpty {
+                        Section("Calendar") {
+                            Menu {
+                                ForEach(calendars.indices, id: \.self) { index in
+                                    let item = calendars[index]
+                                    let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID
+                                    Button {
+                                        updateSelectedCalendarForMemberCombined(member: member, calendarID: calendarID, type: item.type)
+                                        applyCalendarSelectionForSingleAttendee()
+                                    } label: {
+                                        HStack {
+                                            Circle()
+                                                .fill(Color.fromHex(item.colorHex))
+                                                .frame(width: 10, height: 10)
+                                            Text(item.name)
+                                            if isCalendarSelectedForMemberCombined(member: member, calendarID: calendarID, type: item.type) {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack {
+                                    if let (selectedID, selectedColor) = getSelectedCalendarForMemberCombined(member: member) {
+                                        Circle()
+                                            .fill(Color.fromHex(selectedColor))
+                                            .frame(width: 10, height: 10)
+                                        if let memberCal = (member.memberCalendars as? Set<FamilyMemberCalendar>)?.first(where: { $0.calendarID == selectedID }) {
+                                            Text(memberCal.calendarName ?? "Unknown")
+                                        } else if let personalCal = (member.personalCalendars as? Set<PersonalCalendar>)?.first(where: { $0.calendarID == selectedID }) {
+                                            Text(personalCal.calendarName ?? "Unknown")
+                                        } else {
+                                            Text("Select Calendar")
+                                        }
+                                    } else {
+                                        Text("Select Calendar")
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.down")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Invitees")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingAttendeePicker = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        applyCalendarSelectionForSingleAttendee()
+                        showingAttendeePicker = false
+                    }
+                }
+            }
         }
     }
 
@@ -495,6 +639,44 @@ struct EditEventView: View {
         calendarId = upcomingEvent.calendarID
     }
 
+    private func loadAvailableCalendars() {
+        availableCalendars = CalendarManager.shared.fetchAvailableCalendars()
+    }
+
+    private func moveEventToCalendarIfNeeded(newCalendarId: String) -> Bool {
+        let currentId = upcomingEvent.calendarID
+        if newCalendarId == currentId {
+            return true
+        }
+
+        let store = EKEventStore()
+        guard let event = store.event(withIdentifier: upcomingEvent.id),
+              let targetCalendar = store.calendar(withIdentifier: newCalendarId) else {
+            print("❌ Unable to move event - missing event or calendar")
+            return false
+        }
+
+        do {
+            event.calendar = targetCalendar
+            try store.save(event, span: .thisEvent, commit: true)
+            updateStoredCalendarId(newCalendarId)
+            print("✅ Moved event to calendar \(targetCalendar.title)")
+            return true
+        } catch {
+            print("❌ Failed to move event: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func updateStoredCalendarId(_ calendarId: String) {
+        let fetchRequest = FamilyEvent.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", upcomingEvent.id)
+        if let familyEvent = try? viewContext.fetch(fetchRequest).first {
+            familyEvent.calendarId = calendarId
+            try? viewContext.save()
+        }
+    }
+
     private func attendeeInfoForNotification() -> (memberIds: [UUID], memberNames: [String]) {
         let fetchRequest = FamilyEvent.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", upcomingEvent.id)
@@ -634,9 +816,41 @@ struct EditEventView: View {
         }
     }
 
+    private var singleSelectedMember: FamilyMember? {
+        guard !selectEveryone, selectedAttendees.count == 1, let id = selectedAttendees.first else { return nil }
+        return familyMembers.first(where: { $0.objectID == id })
+    }
+
+    private func toggleAttendee(_ member: FamilyMember) {
+        if selectedAttendees.contains(member.objectID) {
+            selectedAttendees.remove(member.objectID)
+        } else {
+            selectedAttendees.insert(member.objectID)
+        }
+        selectEveryone = false
+    }
+
+    private func applyCalendarSelectionForSingleAttendee() {
+        guard let member = singleSelectedMember else { return }
+        if let selectedID = selectedMemberCalendars[member.objectID] {
+            calendarId = selectedID
+            return
+        }
+        if let selection = getSelectedCalendarForMemberCombined(member: member) {
+            calendarId = selection.id
+        }
+    }
+
     private func loadExistingAttendees() {
         var attendeeIDs = Set<NSManagedObjectID>()
         let store = EKEventStore()
+
+        // Check if this was originally an "Everyone" event
+        let fetchRequest = FamilyEvent.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", upcomingEvent.id)
+        if let familyEvent = try? viewContext.fetch(fetchRequest).first {
+            selectEveryone = familyEvent.isSharedCalendarEvent
+        }
 
         // First, find all linked event identifiers (events with the same title)
         var linkedEventIdentifiers = Set<String>()
@@ -744,6 +958,7 @@ struct EditEventView: View {
         selectedAttendees = attendeeIDs
         originalAttendees = attendeeIDs  // Track the original attendees for comparison
         print("📋 Loaded \(selectedAttendees.count) total attendees from all linked events")
+        applyCalendarSelectionForSingleAttendee()
     }
 
     private func applyDriverChange(span: EKSpan) {
@@ -1079,6 +1294,18 @@ struct EditEventView: View {
         let recurrenceRule = selectedRecurrenceRule(startDate: eventStartDate)
         let updateSpan: EKSpan = (upcomingEvent.hasRecurrence || recurrenceRule != nil) ? .futureEvents : .thisEvent
 
+        if calId != upcomingEvent.calendarID {
+            let moved = moveEventToCalendarIfNeeded(newCalendarId: calId)
+            if !moved {
+                await MainActor.run {
+                    errorMessage = "Could not move the event to the selected calendar. Please check calendar permissions and try again."
+                    showingError = true
+                    isSaving = false
+                }
+                return
+            }
+        }
+
         let success = CalendarManager.shared.updateEvent(
             withIdentifier: upcomingEvent.id,
             occurrenceStartDate: upcomingEvent.startDate,
@@ -1200,6 +1427,8 @@ struct EditEventView: View {
 
             // Update the modified event in CoreData
             familyEvent.createdAt = Date() // Update timestamp
+            familyEvent.calendarId = calendarId ?? upcomingEvent.calendarID
+            familyEvent.isSharedCalendarEvent = selectEveryone
 
             // Handle driver assignment
             if let driverWrapper = selectedDriver {
@@ -1959,128 +2188,65 @@ struct EditEventView: View {
         .cornerRadius(12)
     }
 
-
     @ViewBuilder
     private var whoCard: some View {
         VStack(spacing: 0) {
-            // Invitees
-            QuickRow(icon: "person.2.fill", title: attendeesSummary.isEmpty ? "Invitees" : attendeesSummary, showChevron: true, color: .green) {
-                Button("Edit") {
+            QuickRow(icon: "person.2.fill", title: "Invitees", showChevron: true, color: .green) {
+                Button {
                     showingAttendeePicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(attendeesSummary)
+                            .foregroundColor(attendeesSummary == "None" ? .secondary : .primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .foregroundColor(attendeesSummary.isEmpty ? .secondary : .primary)
             }
 
-
-            if !selectEveryone {
-                 // List individual attendees if needed, but the summary above handles the text.
-                 // AddEventView lists them. Let's see if we want to list them.
-                 // AddEventView lists them with avatars.
-                 // For now, I'll stick to just the summary row and the picker, unless strict alignment requires the list.
-                 // AddEventView:
-                 /*
-                 if !selectEveryone {
-                     ForEach(selectedMembers, id: \.id) { member in
-                         Divider().padding(.leading, 44)
-                         QuickRow...
-                     }
-                 }
-                 */
-                 // EditEventView logic for adding/removing is complex.
-                 // I'll stick to the "Edit" button opening the picker which is safer.
-            }
-            
             Divider().padding(.leading, 44)
-            
-            // Calendar
-            if selectEveryone {
-                QuickRow(icon: "calendar", title: "Calendar", showChevron: true, color: .red) {
-                    if let (_, _) = getSelectedCalendarForMemberCombined(member: familyMembers.first ?? FamilyMember()) { // Hacky fallback?
-                        // Actually EditEventView handling of 'selectEveryone' calendar is tricky.
-                        // EditEventView usually iterates all members.
-                        // I'll use the logic for single calendar if 'Everyone' logic applies, or just list per member if not.
-                        // EditEventView doesn't seem to have 'selectEveryone' logic fully exposed in the old UI.
-                        // Ah, `AddEventView` has `selectEveryone` toggle.
-                        // `EditEventView` has `selectEveryone` state? Yes.
-                        // If `selectEveryone` is true, we need a single calendar picker.
-                        // I will add a simplified calendar picker or reuse existing logic.
-                        Button(action: { showingCalendarPicker = true }) {
-                            Text(upcomingEvent.calendarTitle) // Placeholder
+
+            QuickRow(icon: "calendar", title: "Calendar", showChevron: true, color: .red) {
+                let currentColor = CalendarManager.shared
+                    .getCalendar(withIdentifier: calendarId ?? upcomingEvent.calendarID)?
+                    .cgColor
+                let color = currentColor.map { Color(UIColor(cgColor: $0)) } ?? Color(uiColor: upcomingEvent.calendarColor)
+
+                Menu {
+                    ForEach(relevantCalendarOptions, id: \.id) { calendar in
+                        Button {
+                            calendarId = calendar.id
+                        } label: {
+                            HStack {
+                                Circle()
+                                    .fill(Color(uiColor: calendar.color))
+                                    .frame(width: 10, height: 10)
+                                Text(calendar.title)
+                                if calendar.id == (calendarId ?? upcomingEvent.calendarID) {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
                         }
-                    } else {
-                         Text("Calendar")
                     }
-                }
-                // Actually, I'll stick to iterating members for calendar selection as `EditEventView` did before.
-                // The old `calendarSection` just showed `memberCalendarSelector(for: member)` if `getEventMember()` found one.
-                // This implies editing is usually for a single member's event copy?
-                // The prompt says "Consolidate event details...".
-                // If the event is linked, `EditEventView` might be viewing one instance.
-                // I'll use `calendarSection` logic adapted to `QuickRow`.
-                
-                if let member = getEventMember() {
-                     // Check if member has multiple calendars
-                     let allCalendars = buildCombinedCalendarList(
-                         memberCalendars: (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set(),
-                         personalCalendars: (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
-                     )
-                     let writableCount = allCalendars.filter { item in
-                         if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
-                             if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
-                                 return ekCalendar.allowsContentModifications
-                             }
-                         }
-                         return true
-                     }.count
-                     
-                     // Only show if member has more than one calendar
-                     if writableCount > 1 {
-                         QuickRow(icon: "calendar", title: "Calendar", showChevron: true, color: .red) {
-                              memberCalendarSelector(for: member)
-                         }
-                     }
-                } else {
-                    // Fallback
-                    QuickRow(icon: "calendar", title: "Calendar", showChevron: false, color: .red) {
-                        Text(upcomingEvent.calendarTitle)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } else {
-                // If we want to allow changing calendars for multiple people?
-                // `EditEventView` typically edits ONE event instance unless it propagates.
-                // I'll stick to `getEventMember()` logic which seems to find the owner of THIS event instance.
-                 if let member = getEventMember() {
-                     // Check if member has multiple calendars
-                     let allCalendars = buildCombinedCalendarList(
-                         memberCalendars: (member.memberCalendars as? Set<FamilyMemberCalendar>) ?? Set(),
-                         personalCalendars: (member.personalCalendars as? Set<PersonalCalendar>) ?? Set()
-                     )
-                     let writableCount = allCalendars.filter { item in
-                         if let calendarID = (item.calendar as? FamilyMemberCalendar)?.calendarID ?? (item.calendar as? PersonalCalendar)?.calendarID {
-                             if let ekCalendar = CalendarManager.shared.getCalendar(withIdentifier: calendarID) {
-                                 return ekCalendar.allowsContentModifications
-                             }
-                         }
-                         return true
-                     }.count
-                     
-                     // Only show if member has more than one calendar
-                     if writableCount > 1 {
-                         QuickRow(icon: "calendar", title: "Calendar", showChevron: true, color: .red) {
-                              memberCalendarSelector(for: member)
-                         }
-                     }
-                } else {
-                     QuickRow(icon: "calendar", title: "Calendar", showChevron: false, color: .red) {
-                        Text(upcomingEvent.calendarTitle)
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 10, height: 10)
+                        Text(selectedCalendarName)
+                            .foregroundColor(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
                 }
             }
-            
+
             Divider().padding(.leading, 44)
-            
+
             // Driver
             QuickRow(icon: "car.fill", title: "Driver", showChevron: true, color: .orange) {
                 Menu {
@@ -2117,7 +2283,7 @@ struct EditEventView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            
+
             if let driver = selectedDriver, driver.isFamilyMember {
                 Divider().padding(.leading, 44)
                 QuickRow(icon: "timer", title: "Travel Time", showChevron: true, color: .orange) {
@@ -2134,9 +2300,9 @@ struct EditEventView: View {
                     }
                 }
             }
-            
+
             Divider().padding(.leading, 44)
-            
+
             // Alert
             QuickRow(icon: "bell.fill", title: "Alert", showChevron: true, color: .red) {
                 Menu {

@@ -19,8 +19,13 @@ struct EventDetailCompactDesign: View {
             VStack(spacing: 14) {
                 // Title Card
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(event.title)
-                        .font(.system(size: 22, weight: .semibold))
+                    HStack(spacing: 8) {
+                        Text(event.title)
+                            .font(.system(size: 22, weight: .semibold))
+                        if event.hasRecurrence {
+                            RecurrenceIcon(color: .blue, fontSize: 14.0)
+                        }
+                    }
 
                     // Date & Time in one compact row
                     HStack(spacing: 16) {

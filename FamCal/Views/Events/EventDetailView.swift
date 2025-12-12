@@ -662,28 +662,17 @@ struct EventDetailView: View {
     }
 
     private func deleteChecklistItem(_ item: ChecklistItem) {
+        // Hard delete from Core Data (immediate)
         ChecklistManager.shared.deleteItem(item)
 
-        // Force Core Data refresh to immediately remove deleted items from all views
-        viewContext.processPendingChanges()
-        viewContext.refreshAllObjects()
-
-        // Trigger view refresh to update UI
+        // Trigger immediate UI refresh
         checklistRefresh.toggle()
 
-        // Sync only this item's deletion to Supabase (targeted operation)
+        // Sync deletion to Supabase (async, fire and forget)
         Task {
-            print("🗑️ Starting deletion sync for item: \(item.title ?? "untitled")")
+            print("📤 Syncing deletion to Supabase for: \(item.title ?? "untitled")")
             await ChecklistManager.shared.syncItemDeletion(item)
-            print("✅ Deletion synced, waiting before syncing down...")
-
-            // Wait a brief moment to ensure Supabase has processed the deletion
-            // This prevents race conditions where we sync down before deletion is recorded
-            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
-            print("🔄 Now syncing FROM Supabase to verify deletion...")
-            await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
-            print("✅ Sync down complete - deleted item should be removed")
+            print("✅ Deletion synced to Supabase")
         }
     }
 

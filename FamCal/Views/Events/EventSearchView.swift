@@ -155,9 +155,14 @@ struct EventSearchView: View {
                     .foregroundColor(.gray)
             }
 
-            Text(result.event.title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.primary)
+            HStack(spacing: 6) {
+                Text(result.event.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.primary)
+                if result.event.hasRecurrence {
+                    RecurrenceIcon(color: Color(uiColor: result.event.calendarColor))
+                }
+            }
 
             if let location = result.event.location, !location.isEmpty {
                 Text(location)

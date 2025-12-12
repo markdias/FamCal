@@ -255,9 +255,16 @@ class ChecklistManager: ObservableObject {
     }
 
     func deleteItem(_ item: ChecklistItem) {
-        item.deletedAt = Date()
-        item.modifiedAt = Date()
-        item.checklist?.modifiedAt = Date()
+        print("🗑️ Hard deleting checklist item: \(item.title ?? "untitled")")
+
+        // Get the checklist before we delete the item
+        let checklist = item.checklist
+
+        // Hard delete from Core Data
+        context.delete(item)
+
+        // Update parent checklist modification time
+        checklist?.modifiedAt = Date()
 
         // Cancel notifications
         Task {
@@ -266,7 +273,7 @@ class ChecklistManager: ObservableObject {
 
         do {
             try context.save()
-            print("✅ Soft deleted checklist item")
+            print("✅ Hard deleted checklist item from Core Data")
         } catch {
             print("❌ Error deleting checklist item: \(error)")
         }

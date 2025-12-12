@@ -114,10 +114,12 @@ struct MorningBriefEventRow: View {
             // Time and Title
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(event.title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.black)
-                        .lineLimit(2)
+                    HStack(spacing: 6) {
+                        Text(event.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.black)
+                            .lineLimit(2)
+                    }
 
                     HStack(spacing: 4) {
                         Image(systemName: "clock.fill")

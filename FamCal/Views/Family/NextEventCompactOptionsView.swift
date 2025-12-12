@@ -133,9 +133,12 @@ private struct StripeCard: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
 
-                Text(event.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(event.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(2)
+                    // Note: hasRecurrence not available in sample data for this preview
+                }
 
                 HStack(spacing: 8) {
                     Text(event.dateText)
@@ -195,9 +198,12 @@ private struct PillCard: View {
                 .frame(width: 12, height: 12)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(event.title)
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(event.title)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .lineLimit(1)
+                    // Note: hasRecurrence not available in sample data for this preview
+                }
                 HStack(spacing: 8) {
                     Text(event.dateText)
                         .font(.system(size: 11, weight: .semibold))
@@ -263,9 +269,12 @@ private struct StackedBadgeCard: View {
                     .foregroundColor(event.statusColor)
             }
 
-            Text(event.title)
-                .font(.system(size: 13.5, weight: .semibold))
-                .lineLimit(2)
+            HStack(spacing: 6) {
+                Text(event.title)
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .lineLimit(2)
+                // Note: hasRecurrence not available in sample data for this preview
+            }
 
             HStack(spacing: 8) {
                 Text(event.dateText)

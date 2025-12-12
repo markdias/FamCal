@@ -527,10 +527,16 @@ struct DailyEventsView: View {
                     .opacity(isPast ? 0.6 : 1.0)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(event.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .opacity(isPast ? 0.7 : 1.0)
+                    HStack(spacing: 4) {
+                        Text(event.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .opacity(isPast ? 0.7 : 1.0)
+                        if event.hasRecurrence {
+                            RecurrenceIcon(color: Color(event.color), fontSize: 10.0)
+                                .opacity(isPast ? 0.6 : 1.0)
+                        }
+                    }
                     HStack(spacing: 4) {
                         Text(event.memberNames.joined(separator: ", "))
                             .font(.system(size: 11, weight: .regular))
@@ -629,11 +635,17 @@ struct DailyEventsView: View {
 
         return ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: isShortEvent ? 0 : 2) {
-                Text(event.title)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(isShortEvent ? 1 : 2)
-                    .opacity(isPast ? 0.7 : 1.0)
+                HStack(spacing: 4) {
+                    Text(event.title)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(isShortEvent ? 1 : 2)
+                        .opacity(isPast ? 0.7 : 1.0)
+                    if event.hasRecurrence {
+                        RecurrenceIcon(color: .white, fontSize: 10.0)
+                            .opacity(isPast ? 0.6 : 1.0)
+                    }
+                }
 
                 if !isShortEvent {
                     Text(event.timeRange ?? "")

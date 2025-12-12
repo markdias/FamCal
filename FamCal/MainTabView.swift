@@ -46,6 +46,27 @@ struct MainTabView: View {
         themeManager.selectedTheme
     }
 
+    private var todayButtonFont: Font {
+        let width = UIScreen.main.bounds.width
+        let size: CGFloat
+        switch width {
+        case ..<340:
+            size = 10
+        case ..<380:
+            size = 11
+        default:
+            size = 12
+        }
+        return .system(size: size, weight: .semibold)
+    }
+
+    private var todayButtonHorizontalPadding: CGFloat {
+        let width = UIScreen.main.bounds.width
+        if width < 340 { return 10 }
+        if width < 380 { return 11 }
+        return 12
+    }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Group {
@@ -171,9 +192,9 @@ struct MainTabView: View {
                 calendarTodayTrigger = UUID()
             }) {
                 Text("Today")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(todayButtonFont)
                     .foregroundColor(.white)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, todayButtonHorizontalPadding)
                     .padding(.vertical, 8)
                     .background(
                         Capsule()
