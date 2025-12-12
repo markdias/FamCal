@@ -1981,9 +1981,9 @@ class SupabaseManager: @unchecked Sendable {
 
         // If 409, item already exists - update instead
         if statusCode == 409 {
-            print("ℹ️ Item exists (409), attempting update via direct PUT")
+            print("ℹ️ Item exists (409), attempting update via PATCH")
             let (updateData, updateStatusCode) = try await makeRequest(
-                "PUT",
+                "PATCH",
                 path: "rest/v1/checklist_items?id=eq.\(dto.id)",
                 body: body,
                 userToken: userToken,
@@ -1993,13 +1993,13 @@ class SupabaseManager: @unchecked Sendable {
             )
 
             guard updateStatusCode == 200 else {
-                logErrorResponse(updateData, statusCode: updateStatusCode, operation: "upsertChecklistItem (PUT update)")
+                logErrorResponse(updateData, statusCode: updateStatusCode, operation: "upsertChecklistItem (PATCH update)")
                 throw NSError(domain: "UpsertChecklistItem", code: updateStatusCode)
             }
 
             let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: updateData)
             guard let item = items.first else {
-                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after update"])
+                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned from PATCH update"])
             }
             print("✅ Item updated: \(dto.id)")
             return item
