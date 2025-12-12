@@ -16,11 +16,11 @@ struct ChecklistsView: View {
     @EnvironmentObject private var appSettingsManager: AppSettingsManager
 
     @FetchRequest(
-        entity: ChecklistItem.entity(),
-        sortDescriptors: [NSSortDescriptor(keyPath: \ChecklistItem.dueDate, ascending: true)],
+        entity: Checklist.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: false)],
         predicate: NSPredicate(format: "deletedAt == nil")
     )
-    private var allChecklistItems: FetchedResults<ChecklistItem>
+    private var allChecklists: FetchedResults<Checklist>
 
     @State private var completionFilter: CompletionFilter = .all
     @State private var showingAddItemSheet = false
@@ -42,8 +42,15 @@ struct ChecklistsView: View {
 
     // MARK: - Computed Properties
 
-    private var filteredItems: [ChecklistItem] {
-        allChecklistItems.filter { item in
+    /// Get all items from all checklists, filtered by completion status
+    private var allItems: [ChecklistItem] {
+        var items: [ChecklistItem] = []
+        for checklist in allChecklists {
+            if let checklistItems = checklist.items as? Set<ChecklistItem> {
+                items.append(contentsOf: checklistItems)
+            }
+        }
+        return items.filter { item in
             switch completionFilter {
             case .all:
                 return true
@@ -55,32 +62,33 @@ struct ChecklistsView: View {
         }
     }
 
+    /// Group items by section (Overdue, Today, Upcoming, Completed)
     private var itemsBySection: [(title: String, items: [ChecklistItem])] {
         let now = Date()
         let calendar = Calendar.current
 
-        let overdue = filteredItems.filter { item in
+        let overdue = allItems.filter { item in
             if let dueDate = item.dueDate {
                 return !item.completed && dueDate < now
             }
             return false
         }.sorted { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }
 
-        let today = filteredItems.filter { item in
+        let today = allItems.filter { item in
             if let dueDate = item.dueDate {
                 return !item.completed && calendar.isDateInToday(dueDate)
             }
             return false
         }.sorted { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }
 
-        let upcoming = filteredItems.filter { item in
+        let upcoming = allItems.filter { item in
             if let dueDate = item.dueDate {
                 return !item.completed && dueDate > now && !calendar.isDateInToday(dueDate)
             }
             return false
         }.sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
 
-        let completed = filteredItems.filter { item in
+        let completed = allItems.filter { item in
             item.completed
         }.sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
 
@@ -103,29 +111,29 @@ struct ChecklistsView: View {
     }
 
     private var isEmptyState: Bool {
-        filteredItems.isEmpty
+        allItems.isEmpty
     }
 
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack(alignment: .bottomTrailing) {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
                     // Header
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Checklists")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.primary)
 
-                        Text("\(filteredItems.count) item\(filteredItems.count == 1 ? "" : "s")")
-                            .font(.subheadline)
+                        Text("\(allItems.count) item\(allItems.count == 1 ? "" : "s")")
+                            .font(.system(size: 15, weight: .regular))
                             .foregroundColor(.secondary)
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 16)
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -254,17 +262,16 @@ struct ChecklistsView: View {
     private func checklistItemView(_ item: ChecklistItem) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Main row with checkbox and title
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 // Checkbox
                 Button(action: { toggleItem(item) }) {
                     Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(item.completed ? .blue : .secondary)
                 }
-                .padding(.top, 10)
-                .padding(.bottom, 10)
+                .padding(.vertical, 10)
 
-                // Title
+                // Title and event
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.title ?? "Untitled")
                         .font(.system(size: 15, weight: .semibold))
@@ -290,8 +297,7 @@ struct ChecklistsView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.red)
                 }
-                .padding(.top, 10)
-                .padding(.bottom, 10)
+                .padding(.vertical, 10)
             }
             .padding(.horizontal, 12)
 
@@ -368,7 +374,7 @@ struct ChecklistsView: View {
     }
 
     private var addItemSheet: some View {
-        NavigationView {
+        NavigationStack {
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
@@ -448,9 +454,17 @@ struct ChecklistsView: View {
                     .padding(16)
                 }
             }
-            .navigationBarHidden(true)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showingAddItemSheet = false }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
         }
-        .navigationViewStyle(.stack)
     }
 
     private func editItemSheet(_ item: ChecklistItem) -> some View {
@@ -459,7 +473,7 @@ struct ChecklistsView: View {
             set: { item.dueDate = $0 }
         )
 
-        return NavigationView {
+        return NavigationStack {
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
@@ -585,9 +599,17 @@ struct ChecklistsView: View {
                     .padding(16)
                 }
             }
-            .navigationBarHidden(true)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showingEditSheet = false }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
         }
-        .navigationViewStyle(.stack)
     }
 
     // MARK: - Actions
@@ -621,16 +643,32 @@ struct ChecklistsView: View {
     }
 
     private func addNewItem() {
-        let checklist = Checklist(context: viewContext)
-        checklist.id = UUID()
-        checklist.eventIdentifier = "standalone"
-        checklist.createdAt = Date()
+        let itemTitle = newItemTitle.trimmingCharacters(in: .whitespaces)
+        guard !itemTitle.isEmpty else { return }
 
+        // Get or create standalone checklist
+        let standalonePredicate = NSPredicate(format: "eventIdentifier == %@", "standalone")
+        let fetchRequest = Checklist.fetchRequest()
+        fetchRequest.predicate = standalonePredicate
+
+        let existingChecklists = (try? viewContext.fetch(fetchRequest)) ?? []
+        let checklist: Checklist
+
+        if let existing = existingChecklists.first {
+            checklist = existing
+        } else {
+            checklist = Checklist(context: viewContext)
+            checklist.id = UUID()
+            checklist.eventIdentifier = "standalone"
+            checklist.createdAt = Date()
+        }
+
+        // Create new item
         let item = ChecklistItem(context: viewContext)
         item.id = UUID()
-        item.title = newItemTitle.trimmingCharacters(in: .whitespaces)
+        item.title = itemTitle
         item.completed = false
-        item.sortOrder = Int16(allChecklistItems.count)
+        item.sortOrder = Int16((checklist.items?.count) ?? 0)
         item.createdAt = Date()
         item.checklist = checklist
 
@@ -640,6 +678,7 @@ struct ChecklistsView: View {
 
         do {
             try viewContext.save()
+            print("✅ Added checklist item: \(itemTitle)")
             Task {
                 await ChecklistManager.shared.syncChecklistsToSupabase()
             }
