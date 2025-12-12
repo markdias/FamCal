@@ -187,6 +187,7 @@ struct ChecklistsView: View {
                                     }
                                     Spacer()
                                 }
+                                .frame(height: 32)
                                 .padding(.horizontal, 16)
 
                                 // Sections

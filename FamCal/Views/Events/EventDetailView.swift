@@ -929,6 +929,10 @@ struct EventDetailView: View {
                 // Sync checklists from Supabase
                 Task {
                     await SupabaseDataManager.shared.syncChecklistsFromSupabase(for: [event.id])
+                    // Refresh the view to pick up newly synced checklist items
+                    await MainActor.run {
+                        checklistRefresh.toggle()
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
