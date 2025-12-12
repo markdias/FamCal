@@ -1770,7 +1770,7 @@ class SupabaseManager: @unchecked Sendable {
     func fetchChecklistItems(for checklistIds: [String], token: String? = nil) async throws -> [ChecklistItemDTO] {
         guard !checklistIds.isEmpty else { return [] }
 
-        let ids = checklistIds.map { "'\($0)'" }.joined(separator: ",")
+        let ids = checklistIds.joined(separator: ",")
         let queryItems = [URLQueryItem(name: "checklist_id", value: "in.(\(ids))")]
         let userToken = token ?? authManager.accessToken
 

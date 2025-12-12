@@ -30,7 +30,7 @@ struct ChecklistsView: View {
     @State private var editingItem: ChecklistItem?
     @State private var showingEditSheet = false
 
-    enum CompletionFilter: String, CaseIterable {
+    enum CompletionFilter: String, CaseIterable, Hashable {
         case all = "All"
         case completed = "Completed"
         case uncompleted = "Uncompleted"
@@ -165,7 +165,7 @@ struct ChecklistsView: View {
                             VStack(alignment: .leading, spacing: 16) {
                                 // Filter buttons
                                 HStack(spacing: 8) {
-                                    ForEach(CompletionFilter.allCases, id: \.rawValue) { filter in
+                                    ForEach(CompletionFilter.allCases, id: \.self) { filter in
                                         Button(action: { completionFilter = filter }) {
                                             Text(filter.rawValue)
                                                 .font(.system(size: 12, weight: .semibold))
