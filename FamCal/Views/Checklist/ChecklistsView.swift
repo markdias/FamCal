@@ -721,9 +721,9 @@ struct ChecklistsView: View {
             print("   Item ID: \(item.id?.uuidString ?? "nil")")
             print("   Item checklist relationship: \(item.checklist?.id?.uuidString ?? "nil")")
             print("   Checklist items count: \(checklist.items?.count ?? 0)")
-            // Sync only this item's creation to Supabase (targeted operation)
+            // For new items, sync the entire checklist to ensure parent exists in Supabase first
             Task {
-                await ChecklistManager.shared.syncItemUpdate(item)
+                await ChecklistManager.shared.syncChecklistsToSupabase()
             }
             newItemTitle = ""
             newItemHasDueDate = false

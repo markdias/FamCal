@@ -739,9 +739,9 @@ struct EventDetailView: View {
             // Trigger view refresh to update UI
             checklistRefresh.toggle()
 
-            // Sync only this item to Supabase (targeted operation)
+            // For new items, sync the entire checklist to ensure parent exists in Supabase first
             Task {
-                await ChecklistManager.shared.syncItemUpdate(newItem)
+                await ChecklistManager.shared.syncChecklistsToSupabase()
             }
 
             // Apply to all future occurrences if requested
