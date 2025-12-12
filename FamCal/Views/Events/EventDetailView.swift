@@ -88,6 +88,11 @@ struct EventDetailView: View {
         let eventId = event.id
         print("🔍 Looking for checklist for event: \(event.title), allChecklists count: \(allChecklists.count)")
 
+        // Debug: List all available checklists
+        for checklist in allChecklists {
+            print("   📋 Stored checklist: eventIdentifier='\(checklist.eventIdentifier ?? "nil")', eventTitle='\(checklist.eventTitle ?? "nil")'")
+        }
+
         let result = allChecklists.first { checklist in
             guard let checklistEventId = checklist.eventIdentifier else { return false }
             let match = ChecklistManager.canMatchEventIdentifier(

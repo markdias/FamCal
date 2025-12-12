@@ -29,6 +29,7 @@ class ChecklistManager: ObservableObject {
         // This ensures the same hash on different devices with different calendar IDs
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd" // Date only, no time or timezone
+        dateFormatter.timeZone = TimeZone(abbreviation: "UTC")! // Force UTC to avoid timezone drift across devices
         let dateStr = dateFormatter.string(from: startDate)
 
         let combined = "\(title)|\(dateStr)"
@@ -51,7 +52,7 @@ class ChecklistManager: ObservableObject {
     /// Old format included: title + ISO8601 date with time + calendarID
     private static func generateOldStableEventIdentifier(title: String, startDate: Date, calendarID: String) -> String {
         let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime]
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let dateStr = dateFormatter.string(from: startDate)
 
         let combined = "\(title)|\(dateStr)|\(calendarID)"
@@ -77,21 +78,29 @@ class ChecklistManager: ObservableObject {
                                        calendarID: String) -> Bool {
         // Direct match (old format or same device)
         if checklistEventIdentifier == eventKitID {
+            print("✅ Matched checklist via direct EventKit ID: \(checklistEventIdentifier)")
             return true
         }
 
         // Match with NEW stable identifier (title + date only)
         let newStableID = generateStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
         if checklistEventIdentifier == newStableID {
+            print("✅ Matched checklist via new stable identifier")
             return true
         }
 
         // Match with OLD stable identifier (title + date + calendarID) - for backward compatibility
         let oldStableID = generateOldStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
         if checklistEventIdentifier == oldStableID {
+            print("✅ Matched checklist via old stable identifier (backward compat)")
             return true
         }
 
+        print("❌ No match - checklist ID: \(checklistEventIdentifier)")
+        print("   - EventKit ID: \(eventKitID)")
+        print("   - New stable ID: \(newStableID)")
+        print("   - Old stable ID: \(oldStableID)")
+        print("   - Event: title='\(eventTitle)', date=\(DateFormatter().string(from: startDate)), calendarID=\(calendarID)")
         return false
     }
 
