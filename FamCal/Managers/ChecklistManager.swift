@@ -348,8 +348,22 @@ class ChecklistManager: ObservableObject {
             return
         }
 
+        // Validate that item has a valid parent checklist
+        guard let parentChecklist = item.checklist, let checklistId = parentChecklist.id else {
+            print("⚠️ Cannot sync deletion: item has no valid parent checklist relationship")
+            return
+        }
+
+        // Don't try to sync deletion if parent checklist is deleted
+        // When checklist is deleted, all items cascade-delete automatically
+        if parentChecklist.deletedAt != nil {
+            print("⏭️ Skipping item deletion sync: parent checklist is already deleted (cascade delete)")
+            return
+        }
+
         do {
             print("🗑️ Syncing item deletion to Supabase: \(item.title ?? "untitled")")
+            print("   Parent checklist ID: \(checklistId.uuidString)")
             try await SupabaseDataManager.shared.supabaseManager.deleteChecklistItem(id: itemId)
             print("✅ Item deletion synced to Supabase")
         } catch {
