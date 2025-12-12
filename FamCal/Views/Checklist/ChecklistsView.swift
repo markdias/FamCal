@@ -249,7 +249,11 @@ struct ChecklistsView: View {
     // MARK: - Views
 
     private func sectionView(title: String, items: [ChecklistItem]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        print("📍 sectionView: \(title) section has \(items.count) items")
+        for (index, item) in items.enumerated() {
+            print("   🔹 Item \(index): \(item.title ?? "untitled")")
+        }
+        return VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.secondary)

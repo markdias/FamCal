@@ -1638,6 +1638,7 @@ class SupabaseDataManager: ObservableObject {
         }
 
         guard let context = managedObjectContext else {
+            print("⚠️ No managed object context available")
             return
         }
 
@@ -1655,23 +1656,32 @@ class SupabaseDataManager: ObservableObject {
 
             let checklistIds = dtos.map { $0.id }
             let itemDtos = try await supabaseManager.fetchChecklistItems(for: checklistIds)
+            print("📦 Found \(itemDtos.count) items in Supabase")
 
-            // Convert DTOs to Core Data and merge
-            try context.performAndWait {
-                for dto in dtos {
-                    _ = try convertChecklistDTOToEntity(dto, in: context)
+            // Convert DTOs to Core Data and merge on main thread
+            await MainActor.run {
+                do {
+                    try context.performAndWait {
+                        for dto in dtos {
+                            _ = try convertChecklistDTOToEntity(dto, in: context)
+                        }
+
+                        print("🔗 Linking \(itemDtos.count) items to checklists...")
+                        for itemDto in itemDtos {
+                            _ = try convertChecklistItemDTOToEntity(itemDto, in: context)
+                        }
+
+                        try context.save()
+                        print("💾 Saved changes to Core Data")
+                    }
+                } catch {
+                    print("❌ Error converting DTOs or saving: \(error)")
                 }
-
-                for itemDto in itemDtos {
-                    _ = try convertChecklistItemDTOToEntity(itemDto, in: context)
-                }
-
-                try context.save()
             }
 
             print("✅ Synced \(dtos.count) checklists and \(itemDtos.count) items from Supabase")
         } catch {
-            print("⚠️ Error fetching all checklists from Supabase: \(error)")
+            print("⚠️ Error fetching checklists from Supabase: \(error)")
         }
     }
 
@@ -1791,11 +1801,18 @@ class SupabaseDataManager: ObservableObject {
 
         item.id = UUID(uuidString: dto.id) ?? UUID()
 
-        // Find the checklist
-        let checklistRequest = Checklist.fetchRequest()
-        checklistRequest.predicate = NSPredicate(format: "id == %@", dto.checklist_id)
-        if let checklist = try context.fetch(checklistRequest).first {
-            item.checklist = checklist
+        // Find the checklist - need to convert checklist_id string to UUID for proper matching
+        if let checklistUUID = UUID(uuidString: dto.checklist_id) {
+            let checklistRequest = Checklist.fetchRequest()
+            checklistRequest.predicate = NSPredicate(format: "id == %@", checklistUUID as CVarArg)
+            if let checklist = try context.fetch(checklistRequest).first {
+                item.checklist = checklist
+                print("✅ Linked item \(item.title ?? "untitled") to checklist \(checklist.id?.uuidString ?? "unknown")")
+            } else {
+                print("⚠️ Could not find checklist with id \(dto.checklist_id) for item \(item.title ?? "untitled")")
+            }
+        } else {
+            print("❌ Invalid checklist_id format: \(dto.checklist_id) for item \(item.title ?? "untitled")")
         }
 
         item.title = dto.title
