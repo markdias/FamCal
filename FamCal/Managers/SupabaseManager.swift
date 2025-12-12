@@ -1940,7 +1940,7 @@ class SupabaseManager: @unchecked Sendable {
             let notification_id: String?
         }
 
-        // Enforce constraint: if completed=false, completed_at and completed_by must be null
+        // Enforce constraint: if completed=false, completed_at and completed_by MUST be null
         let body = UpsertBody(
             id: dto.id,
             checklist_id: dto.checklist_id,
@@ -1958,23 +1958,33 @@ class SupabaseManager: @unchecked Sendable {
 
         print("📤 Upserting item: completed=\(dto.completed), completed_at=\(body.completed_at ?? "nil"), completed_by=\(body.completed_by ?? "nil")")
 
-        // Always use PATCH for updates to respect constraint checks properly
-        // PATCH is more reliable than POST with merge-duplicates for constraint handling
+        // Try POST (insert new item)
         let (data, statusCode) = try await makeRequest(
-            "PATCH",
-            path: "rest/v1/checklist_items?id=eq.\(dto.id)",
+            "POST",
+            path: "rest/v1/checklist_items",
             body: body,
             userToken: userToken,
-            extraHeaders: ["Prefer": "return=representation"]
+            extraHeaders: [
+                "Prefer": "return=representation"
+            ]
         )
 
-        // If we got 404, the item doesn't exist - try INSERT
-        if statusCode == 404 {
-            print("ℹ️ Item not found via PATCH, attempting INSERT via POST for item \(dto.id)")
+        // If 201 or 200, insert succeeded
+        if statusCode == 200 || statusCode == 201 {
+            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: data)
+            guard let item = items.first else {
+                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after insert"])
+            }
+            print("✅ Item inserted: \(dto.id)")
+            return item
+        }
 
-            let (insertData, insertStatusCode) = try await makeRequest(
-                "POST",
-                path: "rest/v1/checklist_items",
+        // If 409, item already exists - update instead
+        if statusCode == 409 {
+            print("ℹ️ Item exists (409), attempting update via direct PUT")
+            let (updateData, updateStatusCode) = try await makeRequest(
+                "PUT",
+                path: "rest/v1/checklist_items?id=eq.\(dto.id)",
                 body: body,
                 userToken: userToken,
                 extraHeaders: [
@@ -1982,30 +1992,25 @@ class SupabaseManager: @unchecked Sendable {
                 ]
             )
 
-            guard insertStatusCode == 200 || insertStatusCode == 201 else {
-                logErrorResponse(insertData, statusCode: insertStatusCode, operation: "upsertChecklistItem (POST insert)")
-                throw NSError(domain: "UpsertChecklistItem", code: insertStatusCode)
+            guard updateStatusCode == 200 else {
+                logErrorResponse(updateData, statusCode: updateStatusCode, operation: "upsertChecklistItem (PUT update)")
+                throw NSError(domain: "UpsertChecklistItem", code: updateStatusCode)
             }
 
-            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: insertData)
+            let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: updateData)
             guard let item = items.first else {
-                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "No item returned from POST insert"])
+                throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after update"])
             }
-            print("✅ Item inserted via POST: \(dto.id)")
+            print("✅ Item updated: \(dto.id)")
             return item
         }
 
-        guard statusCode == 200 else {
-            logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem (PATCH)")
-            throw NSError(domain: "UpsertChecklistItem", code: statusCode)
+        // Any other status is an error
+        if statusCode == 400 {
+            print("⚠️ Constraint violation - completed=\(body.completed), completed_at=\(body.completed_at ?? "null"), completed_by=\(body.completed_by ?? "null")")
         }
-
-        let items = try JSONDecoder().decode([ChecklistItemDTO].self, from: data)
-        guard let item = items.first else {
-            throw NSError(domain: "UpsertChecklistItem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Checklist item not returned after upsert"])
-        }
-        print("✅ Item synced: \(dto.id)")
-        return item
+        logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem")
+        throw NSError(domain: "UpsertChecklistItem", code: statusCode)
     }
 
     /// Delete (soft delete) a checklist
