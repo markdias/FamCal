@@ -1747,8 +1747,9 @@ class SupabaseManager: @unchecked Sendable {
     func fetchChecklists(for eventIdentifiers: [String], token: String? = nil) async throws -> [ChecklistDTO] {
         guard !eventIdentifiers.isEmpty else { return [] }
 
-        let ids = eventIdentifiers.map { "'\($0)'" }.joined(separator: ",")
-        let queryItems = [URLQueryItem(name: "event_identifier", value: "in.(\(ids))")]
+        // For PostgREST in() operator with text fields, wrap each string in double quotes
+        let quotedIds = eventIdentifiers.map { "\"\($0)\"" }.joined(separator: ",")
+        let queryItems = [URLQueryItem(name: "event_identifier", value: "in.(\(quotedIds))")]
         let userToken = token ?? authManager.accessToken
 
         let (data, statusCode) = try await makeRequest(
