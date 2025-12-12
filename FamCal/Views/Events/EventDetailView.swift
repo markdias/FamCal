@@ -86,6 +86,7 @@ struct EventDetailView: View {
 
     private var eventChecklist: Checklist? {
         let eventId = event.id
+        print("🔍 Looking for checklist for event: \(event.title), allChecklists count: \(allChecklists.count)")
 
         let result = allChecklists.first { checklist in
             guard let checklistEventId = checklist.eventIdentifier else { return false }
@@ -99,6 +100,11 @@ struct EventDetailView: View {
             return match
         }
 
+        if let result = result {
+            print("✅ Found checklist with \(result.items?.count ?? 0) items")
+        } else {
+            print("❌ No checklist found for event")
+        }
         return result
     }
 
@@ -624,6 +630,7 @@ struct EventDetailView: View {
     private var checklistProgress: (completed: Int, total: Int) {
         let total = checklistItems.count
         let completed = checklistItems.filter { $0.completed }.count
+        print("📊 checklistProgress calculated: \(completed)/\(total) items")
         return (completed, total)
     }
 
@@ -694,7 +701,7 @@ struct EventDetailView: View {
                     )
                 }
                 let groupId = event.hasRecurrence ? UUID() : nil
-                targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(for: eventIdentifier, eventGroupId: groupId)
+                targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(for: eventIdentifier, eventGroupId: groupId, eventTitle: event.title)
             }
 
             let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)
@@ -758,7 +765,8 @@ struct EventDetailView: View {
                 // Get or create checklist for this occurrence
                 let targetChecklist = try ChecklistManager.shared.getOrCreateChecklist(
                     for: occurrence.eventIdentifier,
-                    eventGroupId: eventChecklist?.eventGroupId
+                    eventGroupId: eventChecklist?.eventGroupId,
+                    eventTitle: occurrence.title
                 )
 
                 let nextSortOrder = Int16((targetChecklist.items as? Set<ChecklistItem>)?.count ?? 0)

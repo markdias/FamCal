@@ -67,7 +67,7 @@ class ChecklistManager: ObservableObject {
     // MARK: - Checklist Operations
 
     @MainActor
-    func getOrCreateChecklist(for eventIdentifier: String, eventGroupId: UUID?) throws -> Checklist {
+    func getOrCreateChecklist(for eventIdentifier: String, eventGroupId: UUID?, eventTitle: String? = nil) throws -> Checklist {
         // Check if checklist already exists
         if let existing = fetchChecklist(for: eventIdentifier) {
             return existing
@@ -78,6 +78,7 @@ class ChecklistManager: ObservableObject {
         checklist.id = UUID()
         checklist.eventIdentifier = eventIdentifier
         checklist.eventGroupId = eventGroupId
+        checklist.eventTitle = eventTitle
         checklist.createdAt = Date()
         checklist.modifiedAt = Date()
 

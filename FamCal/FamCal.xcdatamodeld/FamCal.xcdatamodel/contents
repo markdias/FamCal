@@ -118,6 +118,7 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="eventIdentifier" optional="YES" attributeType="String"/>
         <attribute name="eventGroupId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="eventTitle" optional="YES" attributeType="String"/>
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>

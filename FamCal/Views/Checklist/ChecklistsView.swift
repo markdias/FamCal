@@ -303,13 +303,11 @@ struct ChecklistsView: View {
                         .lineLimit(2)
 
                     // Event title if linked
-                    if let eventId = item.checklist?.eventIdentifier, eventId != "standalone" {
-                        if let eventTitle = getEventTitle(eventId) {
-                            Text(eventTitle)
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
+                    if let eventTitle = item.checklist?.eventTitle {
+                        Text(eventTitle)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -743,14 +741,6 @@ struct ChecklistsView: View {
 
     private func isOverdue(_ date: Date) -> Bool {
         date < Date() && !Calendar.current.isDateInToday(date)
-    }
-
-    private func getEventTitle(_ eventIdentifier: String) -> String? {
-        let ekEventStore = EKEventStore()
-        if let event = ekEventStore.event(withIdentifier: eventIdentifier) {
-            return event.title
-        }
-        return nil
     }
 }
 
