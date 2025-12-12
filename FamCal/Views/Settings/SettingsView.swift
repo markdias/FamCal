@@ -389,6 +389,36 @@ struct SettingsView: View {
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 12)
                                 }
+
+                                Divider().padding(.leading, 56)
+
+                                Button(action: {
+                                    SupabaseDataManager.shared.diagnosticCheckChecklistItems()
+                                }) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "stethoscope")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(.blue)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Checklist Diagnostics")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Check item-checklist relationships")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
                             }
                             .padding(.vertical, 8)
                         }
