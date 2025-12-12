@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.event_checklists (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     event_identifier TEXT NOT NULL,
     event_group_id UUID,
+    event_title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     modified_at TIMESTAMPTZ,
     deleted_at TIMESTAMPTZ,
