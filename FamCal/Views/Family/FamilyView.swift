@@ -357,6 +357,22 @@ struct FamilyView: View {
         .onChange(of: memberCalendarLinks.count) { _, _ in triggerDebouncedReload() }
         .onChange(of: personalCalendars.count) { _, _ in triggerDebouncedReload() }
         .onChange(of: familyEvents.count) { _, _ in triggerDebouncedReload() }
+        .onChange(of: checklists.count) { _, _ in
+            // When checklists load or change, refresh event display to show/update checklist indicators
+            if !memberEvents.isEmpty {
+                // Update existing events with fresh checklist data
+                memberEvents = memberEvents.map { group in
+                    MemberEventGroup(
+                        id: group.id,
+                        memberName: group.memberName,
+                        sortOrder: group.sortOrder,
+                        memberColor: group.memberColor,
+                        nextEvent: group.nextEvent.map { refreshedGroupedEvent($0) },
+                        upcomingEvents: group.upcomingEvents.map { refreshedGroupedEvent($0) }
+                    )
+                }
+            }
+        }
         .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents(showLoadingState: false) }
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: currentTime) { _, _ in /* Trigger re-render for status updates */ }

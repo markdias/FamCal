@@ -164,6 +164,10 @@ struct CalendarView: View {
             .onChange(of: familyMembers.count) { _, _ in triggerDebouncedReload() }
             .onChange(of: memberCalendarLinks.count) { _, _ in triggerDebouncedReload() }
             .onChange(of: personalCalendars.count) { _, _ in triggerDebouncedReload() }
+            .onChange(of: checklists.count) { _, _ in
+                // When checklists load or change, refresh the calendar view to show/update checklist indicators
+                loadEvents()
+            }
             .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
             .onChange(of: verticalSizeClass) { _, newValue in
                 if newValue == .compact {
