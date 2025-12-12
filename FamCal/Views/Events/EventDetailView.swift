@@ -86,7 +86,22 @@ struct EventDetailView: View {
 
     private var eventChecklist: Checklist? {
         let eventId = event.id
-        return allChecklists.first { $0.eventIdentifier == eventId }
+        print("🔍 EventDetailView.eventChecklist: Looking for checklist for event")
+        print("   Event ID: '\(eventId)'")
+        print("   Event ID type: \(type(of: eventId))")
+        print("   Available checklists: \(allChecklists.count)")
+        for checklist in allChecklists {
+            let match = checklist.eventIdentifier == eventId
+            print("   - Checklist eventIdentifier: '\(checklist.eventIdentifier ?? "nil")', Match: \(match)")
+        }
+        let result = allChecklists.first { $0.eventIdentifier == eventId }
+        if let result = result {
+            let items = result.items as? Set<ChecklistItem>
+            print("   ✅ Found checklist with \(items?.count ?? 0) items")
+        } else {
+            print("   ❌ No matching checklist found")
+        }
+        return result
     }
 
     private var driverFamilyMembers: [FamilyMember] {
@@ -599,10 +614,15 @@ struct EventDetailView: View {
 
     private var checklistItems: [ChecklistItem] {
         guard let checklist = eventChecklist,
-              let items = checklist.items as? Set<ChecklistItem> else { return [] }
-        return items
+              let items = checklist.items as? Set<ChecklistItem> else {
+            print("   📭 No checklist items found (checklist: \(eventChecklist != nil), items: \(eventChecklist?.items != nil))")
+            return []
+        }
+        let filtered = items
             .filter { $0.deletedAt == nil }
             .sorted { $0.sortOrder < $1.sortOrder }
+        print("   📋 Checklist items: \(filtered.count) items")
+        return filtered
     }
 
     private var checklistProgress: (completed: Int, total: Int) {
