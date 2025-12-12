@@ -22,15 +22,17 @@ class ChecklistManager: ObservableObject {
     // MARK: - Device-Independent Event Identification
 
     /// Generate a stable, device-independent identifier for an event
-    /// Uses title, date, and calendar ID to create a hash that's consistent across devices
+    /// Uses ONLY title and date (day only) - excludes calendar ID and time to ensure consistency across devices
+    /// Calendar IDs differ per device, and times can have timezone differences
     static func generateStableEventIdentifier(title: String, startDate: Date, calendarID: String) -> String {
-        // Use a consistent ISO8601 format WITHOUT fractional seconds to avoid precision issues across devices
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime] // No fractional seconds
+        // Use ONLY title and date (day only, no time or timezone)
+        // This ensures the same hash on different devices with different calendar IDs
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd" // Date only, no time or timezone
         let dateStr = dateFormatter.string(from: startDate)
 
-        let combined = "\(title)|\(dateStr)|\(calendarID)"
-        print("🔐 Generating stable ID: title=\(title), date=\(dateStr), calendarID=\(calendarID)")
+        let combined = "\(title)|\(dateStr)"
+        print("🔐 Generating stable ID: title=\(title), date=\(dateStr)")
 
         // Use SHA256 hash for stable, consistent identifier
         guard let data = combined.data(using: .utf8) else {
@@ -114,7 +116,20 @@ class ChecklistManager: ObservableObject {
 
         do {
             let results = try context.fetch(fetchRequest)
-            return results.first
+            if let found = results.first {
+                print("✅ Found checklist with eventIdentifier: \(eventIdentifier)")
+                return found
+            } else {
+                print("⚠️ No checklist found for eventIdentifier: \(eventIdentifier)")
+                // List all checklists to debug
+                let allRequest: NSFetchRequest<Checklist> = Checklist.fetchRequest()
+                let allChecklists = try context.fetch(allRequest)
+                print("   Available checklists:")
+                for c in allChecklists {
+                    print("   - ID: \(c.id?.uuidString ?? "nil"), eventIdentifier: \(c.eventIdentifier ?? "nil"), eventTitle: \(c.eventTitle ?? "nil")")
+                }
+                return nil
+            }
         } catch {
             print("❌ Error fetching checklist: \(error)")
             return nil
