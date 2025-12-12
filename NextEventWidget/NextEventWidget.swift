@@ -32,7 +32,9 @@ struct NextEventWidget: Widget {
         startDate: Date(timeIntervalSinceNow: 1800),
         endDate: Date(timeIntervalSinceNow: 5400),
         location: "Conference Room A",
-        colorHex: "#007AFF"
+        colorHex: "#007AFF",
+        checklistCompleted: 2,
+        checklistTotal: 5
     )
 
     let mockMember = FamilyMemberData(

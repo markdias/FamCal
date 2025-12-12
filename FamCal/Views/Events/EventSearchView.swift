@@ -25,6 +25,12 @@ struct EventSearchView: View {
     )
     private var memberCalendarLinks: FetchedResults<FamilyMemberCalendar>
 
+    @FetchRequest(
+        entity: Checklist.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \Checklist.createdAt, ascending: true)]
+    )
+    private var checklists: FetchedResults<Checklist>
+
     @State private var searchText: String = ""
     @State private var allEvents: [SearchEvent] = []
     @State private var isLoading = false
@@ -42,6 +48,14 @@ struct EventSearchView: View {
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
+
+    private func getChecklistData(for eventIdentifier: String) -> (hasChecklist: Bool, progress: ChecklistProgress?) {
+        let checklist = checklists.first { $0.eventIdentifier == eventIdentifier && $0.deletedAt == nil }
+        let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
+        // Only show checklist if it has items (not empty)
+        let hasChecklist = progress?.isEmpty == false
+        return (hasChecklist, progress)
+    }
 
     private var filteredEvents: [SearchEvent] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -187,6 +201,21 @@ struct EventSearchView: View {
                         .font(.system(size: 13))
                         .foregroundColor(.gray)
                         .lineLimit(1)
+                }
+
+                // Checklist indicator
+                let checklistData = getChecklistData(for: result.event.id)
+                if checklistData.hasChecklist, let progress = checklistData.progress {
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                        Text(progress.displayString)
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                    }
                 }
             }
         }

@@ -147,10 +147,26 @@ struct NextEventWidgetView: View {
 
                     Spacer(minLength: 6)
 
-                    if let timeLabel {
-                        Text(timeLabel.text)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(timeLabel.foreground)
+                    HStack(spacing: 8) {
+                        // Checklist indicator
+                        if let completed = event.checklistCompleted, let total = event.checklistTotal, total > 0 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.square")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                Text("\(completed)/\(total)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if let timeLabel {
+                            Text(timeLabel.text)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(timeLabel.foreground)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -357,7 +373,9 @@ extension View {
         startDate: Date(timeIntervalSinceNow: 1800),
         endDate: Date(timeIntervalSinceNow: 5400),
         location: "Conference Room A",
-        colorHex: "#007AFF"
+        colorHex: "#007AFF",
+        checklistCompleted: 2,
+        checklistTotal: 5
     )
 
     let mockMember = FamilyMemberData(

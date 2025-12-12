@@ -9,10 +9,10 @@ import SwiftUI
 
 struct NextEventCompactOptionsView: View {
     private let samples: [SampleNextEvent] = [
-        SampleNextEvent(name: "Alex", title: "Math Club Presentation", dateText: "Today", timeText: "4:00–5:00 PM", status: "In 35 min", statusColor: .blue, location: "Room 204", hasMeetingLink: false, color: .blue),
-        SampleNextEvent(name: "Chris", title: "Soccer Practice", dateText: "Today", timeText: "5:30–7:00 PM", status: "Starts in 2h", statusColor: .green, location: "Memorial Field", hasMeetingLink: false, color: .green),
-        SampleNextEvent(name: "Dana", title: "Parent-Teacher Conference", dateText: "Tomorrow", timeText: "9:00–9:30 AM", status: "Tomorrow", statusColor: .orange, location: nil, hasMeetingLink: true, color: .orange),
-        SampleNextEvent(name: "Jamie", title: "Dentist Appointment", dateText: "Fri 14 Mar", timeText: "All Day", status: "All day", statusColor: .purple, location: "Downtown Dental", hasMeetingLink: false, color: .purple)
+        SampleNextEvent(name: "Alex", title: "Math Club Presentation", dateText: "Today", timeText: "4:00–5:00 PM", status: "In 35 min", statusColor: .blue, location: "Room 204", hasMeetingLink: false, color: .blue, checklistProgress: ChecklistProgress(completed: 2, total: 5)),
+        SampleNextEvent(name: "Chris", title: "Soccer Practice", dateText: "Today", timeText: "5:30–7:00 PM", status: "Starts in 2h", statusColor: .green, location: "Memorial Field", hasMeetingLink: false, color: .green, checklistProgress: nil),
+        SampleNextEvent(name: "Dana", title: "Parent-Teacher Conference", dateText: "Tomorrow", timeText: "9:00–9:30 AM", status: "Tomorrow", statusColor: .orange, location: nil, hasMeetingLink: true, color: .orange, checklistProgress: ChecklistProgress(completed: 1, total: 1)),
+        SampleNextEvent(name: "Jamie", title: "Dentist Appointment", dateText: "Fri 14 Mar", timeText: "All Day", status: "All day", statusColor: .purple, location: "Downtown Dental", hasMeetingLink: false, color: .purple, checklistProgress: nil)
     ]
 
     private let styles: [CompactNextEventStyle] = CompactNextEventStyle.allCases
@@ -113,6 +113,7 @@ private struct SampleNextEvent: Identifiable {
     let location: String?
     let hasMeetingLink: Bool
     let color: Color
+    let checklistProgress: ChecklistProgress?
 }
 
 // MARK: - Cards
@@ -174,9 +175,23 @@ private struct StripeCard: View {
                     }
                 }
 
-                Text(event.status)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(event.statusColor)
+                HStack(spacing: 6) {
+                    Text(event.status)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(event.statusColor)
+
+                    // Checklist indicator
+                    if let progress = event.checklistProgress, !progress.isEmpty {
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark.square")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Text(progress.displayString)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
 
             Spacer(minLength: 0)
@@ -223,18 +238,39 @@ private struct PillCard: View {
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
+                    // Checklist indicator
+                    if let progress = event.checklistProgress, !progress.isEmpty {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
             Spacer(minLength: 0)
 
-            Text(event.status)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(event.statusColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(event.statusColor.opacity(0.12))
-                .cornerRadius(10)
+            if let progress = event.checklistProgress, !progress.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.square")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(event.statusColor)
+                    Text(progress.displayString)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(event.statusColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(event.statusColor.opacity(0.12))
+                        .cornerRadius(10)
+                }
+            } else {
+                Text(event.status)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(event.statusColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(event.statusColor.opacity(0.12))
+                    .cornerRadius(10)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -264,9 +300,20 @@ private struct StackedBadgeCard: View {
                     .foregroundColor(event.color)
                     .cornerRadius(8)
 
-                Text(event.status)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(event.statusColor)
+                if let progress = event.checklistProgress, !progress.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(event.statusColor)
+                        Text(progress.displayString)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(event.statusColor)
+                    }
+                } else {
+                    Text(event.status)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(event.statusColor)
+                }
             }
 
             HStack(spacing: 6) {

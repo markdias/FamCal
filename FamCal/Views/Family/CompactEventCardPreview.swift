@@ -252,6 +252,18 @@ struct CompactCardOption1: View {
                 }
 
                 Spacer(minLength: 0)
+
+                // Sample checklist indicator
+                if title.contains("Standup") {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.square")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Text("2/3")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
