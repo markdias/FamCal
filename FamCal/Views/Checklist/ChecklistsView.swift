@@ -50,7 +50,7 @@ struct ChecklistsView: View {
                 items.append(contentsOf: checklistItems)
             }
         }
-        return items.filter { item in
+        let filtered = items.filter { item in
             switch completionFilter {
             case .all:
                 return true
@@ -60,6 +60,8 @@ struct ChecklistsView: View {
                 return !item.completed
             }
         }
+        print("🔍 ChecklistsView.allItems: \(allChecklists.count) checklists, \(items.count) total items, \(filtered.count) filtered items for filter: \(completionFilter.rawValue)")
+        return filtered
     }
 
     /// Group items by section (Overdue, Today, Upcoming, No Due Date, Completed)
@@ -693,6 +695,11 @@ struct ChecklistsView: View {
         do {
             try viewContext.save()
             print("✅ Added checklist item: \(itemTitle)")
+            print("   Checklist ID: \(checklist.id?.uuidString ?? "nil")")
+            print("   Checklist eventIdentifier: \(checklist.eventIdentifier ?? "nil")")
+            print("   Item ID: \(item.id?.uuidString ?? "nil")")
+            print("   Item checklist relationship: \(item.checklist?.id?.uuidString ?? "nil")")
+            print("   Checklist items count: \(checklist.items?.count ?? 0)")
             Task {
                 await ChecklistManager.shared.syncChecklistsToSupabase()
             }
