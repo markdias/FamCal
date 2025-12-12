@@ -467,21 +467,92 @@ notification_id    TEXT
 - **AddEventView cleanup** - Removed checklist creation during event creation (checklists now only managed in EventDetailView)
 - **EditEventView cleanup** - Removed checklist editing from event editing flow (checklists now only managed in EventDetailView)
 
+### Bug Fixes Completed (Phase 2) ✅
+**Date:** December 12, 2025
+
+Completed targeted fixes for three critical reported bugs:
+
+1. **Progress badge (0/1) not appearing immediately**
+   - **Root cause:** FetchRequest updates were asynchronous and timing-dependent
+   - **Fix:** Added aggressive Core Data refresh in EventDetailView:
+     - `viewContext.processPendingChanges()` - Process pending changes
+     - `viewContext.refreshAllObjects()` - Refresh all cached objects
+     - `viewContext.refresh(targetChecklist, mergeChanges: true)` - Refresh specific checklist
+     - `checklistRefresh.toggle()` - Force view rebuild
+   - **Status:** ✅ Deployed
+
+2. **Event names blank in ChecklistsView**
+   - **Root cause:** `event_title` field existed in Core Data but wasn't synced to/from Supabase
+   - **Fixes:**
+     - Added `event_title` field to `ChecklistDTO` struct
+     - Updated `SupabaseManager.upsertChecklist()` to include event_title in upsert body
+     - Added mapping in `SupabaseDataManager.convertChecklistDTOToEntity()` to sync title from Supabase
+     - Added mapping in `SupabaseDataManager.convertChecklistEntityToDTO()` to send title to Supabase
+   - **Status:** ✅ Code complete, requires Supabase migration
+
+3. **Deleted items reappearing after sync**
+   - **Root cause:** `syncAllChecklistsFromSupabase()` was converting all items without checking local soft-delete status
+   - **Fix:** Added preservation logic before converting items:
+     - Skip items where `item.deletedAt != nil` (locally soft-deleted)
+     - Skip checklists where `checklist.deletedAt != nil` (locally soft-deleted)
+     - This ensures local deletions persist across syncs
+   - **Status:** ✅ Deployed
+
+### Cross-Device Event Matching (Phase 2) ✅
+
+**Issue Discovered:** Existing checklists couldn't be matched across devices due to device-specific calendar IDs
+
+**Solution:** Implemented backward-compatible identifier matching in ChecklistManager:
+
+1. **New stable ID format** (device-independent):
+   - Format: SHA256("title|YYYY-MM-DD")
+   - Does NOT include calendar ID or timezone info
+   - Matches same event across different devices
+
+2. **Legacy support** (backward compatibility):
+   - Old format: SHA256("title|ISO8601-date|calendarID")
+   - Still matches existing checklists created before update
+   - Allows seamless transition
+
+3. **Matching priority** (in canMatchEventIdentifier):
+   1. Direct EventKit ID (same device)
+   2. NEW stable ID (different device, new format)
+   3. OLD stable ID (existing data, legacy format)
+   - This ensures all checklists are found regardless of creation date or device
+
+**Status:** ✅ Deployed
+
+### Database Migration Required 🔴
+
+The Supabase `event_checklists` table requires the `event_title` column to be added:
+
+```sql
+ALTER TABLE public.event_checklists
+ADD COLUMN IF NOT EXISTS event_title TEXT;
+```
+
+**User Action Required:**
+1. Log into Supabase console
+2. Go to SQL Editor
+3. Run the migration script
+4. Verify the column exists
+
+See `Documentation/features/CHECKLIST_SETUP_VERIFICATION.md` for detailed setup instructions.
+
 ### What's Next 🔄
-1. Implement Supabase API endpoints (SupabaseManager.swift)
-2. Implement bidirectional sync methods (SupabaseDataManager.swift)
-3. Test end-to-end with multiple devices
-4. Polish and optimize
+1. ⏳ **User Action:** Run Supabase migration to add event_title column
+2. ⏳ **Verification:** Test checklist items sync to Supabase
+3. 🔄 Implement additional Supabase API endpoints if needed
+4. 🔄 Polish and optimize based on production usage
 
 ### Estimated Completion
-- **Phase 1 (Foundation):** ✅ DONE
-- **Phase 2 (Supabase Deployment):** Ready to execute (15 minutes)
-- **Phase 3 (Sync Implementation):** ~2-3 hours
-- **Phase 4 (Calendar Integration):** ~1-2 hours
-- **Phase 5 (Notifications):** ~2-3 hours
-- **Phase 6 (Testing & Polish):** ~2-3 hours
+- **Phase 1 (Foundation):** ✅ DONE (Nov 2025)
+- **Phase 2 (Bug Fixes & Cross-Device):** ✅ DONE (Dec 12, 2025)
+- **Phase 3 (Supabase Migration):** ⏳ Awaiting user action
+- **Phase 4 (Testing & Verification):** ~30 minutes after migration
+- **Phase 5 (Additional features):** Depends on user feedback
 
-**Total Remaining:** ~8-12 hours of development
+**Immediate Next Steps:** User must run Supabase migration
 
 ---
 
