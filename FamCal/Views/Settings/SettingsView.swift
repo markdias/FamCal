@@ -359,6 +359,36 @@ struct SettingsView: View {
                                 }) {
                                     SettingsRowView(iconName: "play.circle", title: "Run Startup Workflow")
                                 }
+
+                                Divider().padding(.leading, 56)
+
+                                Button(action: {
+                                    clearCoreDataAndSync()
+                                }) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "trash.fill")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(.red)
+                                            .frame(width: 24, height: 24)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Clear All Data")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(primaryTextColor)
+                                            Text("Delete local data and sync from Supabase")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(secondaryTextColor)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(secondaryTextColor)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                }
                             }
                             .padding(.vertical, 8)
                         }
@@ -537,6 +567,55 @@ struct SettingsView: View {
             return version
         }
         return "1.0"
+    }
+
+    private func clearCoreDataAndSync() {
+        print("🗑️ Clearing all Core Data...")
+
+        // Delete all entities from Core Data
+        let entities = [
+            "Checklist",
+            "ChecklistItem",
+            "FamilyEvent",
+            "Driver",
+            "FamilyMember",
+            "SavedAddress",
+            "RecentSearch",
+            "SyncMetadata",
+        ]
+
+        for entityName in entities {
+            let fetchRequest = NSFetchRequest<NSFetchRequestResult>(entityName: entityName)
+            let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+
+            do {
+                try viewContext.execute(deleteRequest)
+                print("  ✅ Cleared \(entityName)")
+            } catch {
+                print("  ❌ Error clearing \(entityName): \(error)")
+            }
+        }
+
+        // Save the cleared context
+        do {
+            try viewContext.save()
+            print("✅ Core Data cleared successfully")
+        } catch {
+            print("❌ Error saving cleared Core Data: \(error)")
+            return
+        }
+
+        // Now sync all data from Supabase
+        print("📥 Syncing all data from Supabase...")
+        Task {
+            // Sync families, members, events, etc.
+            await dataManager.fetchUserData()
+
+            // Also sync checklists
+            await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
+
+            print("✅ Data sync completed")
+        }
     }
 }
 
