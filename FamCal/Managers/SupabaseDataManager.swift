@@ -1727,7 +1727,8 @@ class SupabaseDataManager: ObservableObject {
                     // Longer delay to ensure parent checklist is fully committed before syncing items
                     // This prevents RLS policy race conditions on item insertion and gives the
                     // transaction time to propagate through the database
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+                    // Increased to 1 second to account for network latency and database replication
+                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
 
                     // Sync items for this checklist
                     let itemRequest = ChecklistItem.fetchRequest()
@@ -1736,6 +1737,12 @@ class SupabaseDataManager: ObservableObject {
                     print("    📝 Found \(items.count) items to sync")
 
                     for item in items {
+                        // Validate that item has a parent checklist before attempting sync
+                        guard let checklistId = item.checklist?.id?.uuidString, !checklistId.isEmpty else {
+                            print("      ⚠️  Skipping item \(item.id?.uuidString ?? "unknown") - no parent checklist relationship")
+                            continue
+                        }
+
                         do {
                             let itemDto = convertChecklistItemEntityToDTO(item)
                             print("      ↑ Syncing item: \(itemDto.id) - \(itemDto.title)")
@@ -1885,15 +1892,19 @@ class SupabaseDataManager: ObservableObject {
     private func convertChecklistItemEntityToDTO(_ item: ChecklistItem) -> ChecklistItemDTO {
         let formatter = ISO8601DateFormatter()
 
-        // Validate that item has a parent checklist
-        if item.checklist?.id?.uuidString == nil {
-            print("⚠️ WARNING: ChecklistItem \(item.id?.uuidString ?? "unknown") has no parent checklist!")
-            print("   This will fail RLS validation in Supabase")
+        // Get checklist_id, defaulting to empty string if not found
+        // NOTE: Items with empty checklist_id should be skipped before calling this function
+        // to avoid RLS policy violations in Supabase
+        let checklistId = item.checklist?.id?.uuidString ?? ""
+
+        if checklistId.isEmpty {
+            print("❌ ERROR: ChecklistItem \(item.id?.uuidString ?? "unknown") (\"\(item.title ?? "")\") has no parent checklist!")
+            print("   This item CANNOT be synced - skipped in syncChecklistsToSupabase()")
         }
 
         return ChecklistItemDTO(
             id: item.id?.uuidString ?? UUID().uuidString,
-            checklist_id: item.checklist?.id?.uuidString ?? "",
+            checklist_id: checklistId,
             title: item.title ?? "",
             due_date: item.dueDate.map { formatter.string(from: $0) },
             completed: item.completed,
