@@ -13,6 +13,7 @@ struct ChecklistDTO: Codable {
     let id: String
     let event_identifier: String
     let event_group_id: String?
+    let event_title: String?
     let created_at: String?
     let modified_at: String?
     let deleted_at: String?

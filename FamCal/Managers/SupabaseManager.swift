@@ -1853,6 +1853,7 @@ class SupabaseManager: @unchecked Sendable {
             let id: String
             let event_identifier: String
             let event_group_id: String?
+            let event_title: String?
             let deleted_at: String?
             let deletion_reason: String?
         }
@@ -1861,6 +1862,7 @@ class SupabaseManager: @unchecked Sendable {
             id: dto.id,
             event_identifier: dto.event_identifier,
             event_group_id: dto.event_group_id,
+            event_title: dto.event_title,
             deleted_at: dto.deleted_at,
             deletion_reason: dto.deletion_reason
         )

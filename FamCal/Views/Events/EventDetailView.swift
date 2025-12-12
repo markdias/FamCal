@@ -719,13 +719,12 @@ struct EventDetailView: View {
 
             // Refresh the Core Data context to ensure FetchRequest updates
             // This forces the FetchRequest to re-evaluate and display the new item
+            viewContext.processPendingChanges()
+            viewContext.refreshAllObjects()
             viewContext.refresh(targetChecklist, mergeChanges: true)
 
-            // Small delay to allow Core Data to propagate changes to FetchRequest
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                // Trigger view refresh to update UI
-                checklistRefresh.toggle()
-            }
+            // Force an immediate view refresh to ensure the badge appears
+            checklistRefresh.toggle()
 
             // For new items, sync the entire checklist to ensure parent exists in Supabase first
             Task {

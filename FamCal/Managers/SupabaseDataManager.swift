@@ -1663,11 +1663,35 @@ class SupabaseDataManager: ObservableObject {
                 do {
                     try context.performAndWait {
                         for dto in dtos {
+                            // Check if this checklist is locally soft-deleted
+                            let localRequest = Checklist.fetchRequest()
+                            localRequest.predicate = NSPredicate(format: "id == %@", dto.id)
+                            let localChecklists = try context.fetch(localRequest)
+
+                            // If checklist exists locally and is soft-deleted, preserve the deletion
+                            // Don't overwrite with Supabase data
+                            if let localChecklist = localChecklists.first, localChecklist.deletedAt != nil {
+                                print("⏭️  Skipping checklist \(dto.id) - locally soft-deleted, preserving deletion")
+                                continue
+                            }
+
                             _ = try convertChecklistDTOToEntity(dto, in: context)
                         }
 
                         print("🔗 Linking \(itemDtos.count) items to checklists...")
                         for itemDto in itemDtos {
+                            // Check if this item is locally soft-deleted
+                            let localRequest = ChecklistItem.fetchRequest()
+                            localRequest.predicate = NSPredicate(format: "id == %@", itemDto.id)
+                            let localItems = try context.fetch(localRequest)
+
+                            // If item exists locally and is soft-deleted, preserve the deletion
+                            // Don't overwrite with Supabase data
+                            if let localItem = localItems.first, localItem.deletedAt != nil {
+                                print("⏭️  Skipping item \(itemDto.id) - locally soft-deleted, preserving deletion")
+                                continue
+                            }
+
                             _ = try convertChecklistItemDTOToEntity(itemDto, in: context)
                         }
 
@@ -1813,6 +1837,7 @@ class SupabaseDataManager: ObservableObject {
         checklist.id = UUID(uuidString: dto.id) ?? UUID()
         checklist.eventIdentifier = dto.event_identifier
         checklist.eventGroupId = dto.event_group_id.flatMap { UUID(uuidString: $0) }
+        checklist.eventTitle = dto.event_title
 
         if let deletedAtStr = dto.deleted_at {
             checklist.deletedAt = ISO8601DateFormatter().date(from: deletedAtStr)
@@ -1904,6 +1929,7 @@ class SupabaseDataManager: ObservableObject {
             id: checklist.id?.uuidString ?? UUID().uuidString,
             event_identifier: checklist.eventIdentifier ?? "",
             event_group_id: checklist.eventGroupId?.uuidString,
+            event_title: checklist.eventTitle,
             created_at: checklist.createdAt.map { formatter.string(from: $0) },
             modified_at: formatter.string(from: Date()),
             deleted_at: checklist.deletedAt.map { formatter.string(from: $0) },

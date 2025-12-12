@@ -24,11 +24,13 @@ class ChecklistManager: ObservableObject {
     /// Generate a stable, device-independent identifier for an event
     /// Uses title, date, and calendar ID to create a hash that's consistent across devices
     static func generateStableEventIdentifier(title: String, startDate: Date, calendarID: String) -> String {
+        // Use a consistent ISO8601 format WITHOUT fractional seconds to avoid precision issues across devices
         let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        dateFormatter.formatOptions = [.withInternetDateTime] // No fractional seconds
         let dateStr = dateFormatter.string(from: startDate)
 
         let combined = "\(title)|\(dateStr)|\(calendarID)"
+        print("🔐 Generating stable ID: title=\(title), date=\(dateStr), calendarID=\(calendarID)")
 
         // Use SHA256 hash for stable, consistent identifier
         guard let data = combined.data(using: .utf8) else {
@@ -41,7 +43,9 @@ class ChecklistManager: ObservableObject {
         }
 
         let hexStr = digest.map { String(format: "%02x", $0) }.joined()
-        return "event_\(hexStr)"
+        let result = "event_\(hexStr)"
+        print("   → Generated stable ID: \(result)")
+        return result
     }
 
     /// For backwards compatibility: try matching with old EventKit ID first, then stable ID
@@ -52,15 +56,18 @@ class ChecklistManager: ObservableObject {
                                        calendarID: String) -> Bool {
         // Direct match (old format or same device)
         if checklistEventIdentifier == eventKitID {
+            print("✅ Matched checklist via direct EventKit ID")
             return true
         }
 
         // Match with stable identifier
         let stableID = generateStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
         if checklistEventIdentifier == stableID {
+            print("✅ Matched checklist via stable identifier")
             return true
         }
 
+        print("❌ No match - checklist ID: \(checklistEventIdentifier), eventKit ID: \(eventKitID), stable ID: \(stableID)")
         return false
     }
 
@@ -70,6 +77,7 @@ class ChecklistManager: ObservableObject {
     func getOrCreateChecklist(for eventIdentifier: String, eventGroupId: UUID?, eventTitle: String? = nil) throws -> Checklist {
         // Check if checklist already exists
         if let existing = fetchChecklist(for: eventIdentifier) {
+            print("✅ Found existing checklist with eventIdentifier: \(eventIdentifier)")
             return existing
         }
 
@@ -84,7 +92,11 @@ class ChecklistManager: ObservableObject {
 
         do {
             try context.save()
-            print("✅ Created checklist for event: \(eventIdentifier)")
+            print("✅ Created checklist:")
+            print("   ID: \(checklist.id?.uuidString ?? "unknown")")
+            print("   eventIdentifier: \(eventIdentifier)")
+            print("   eventTitle: \(eventTitle ?? "nil")")
+            print("   eventGroupId: \(eventGroupId?.uuidString ?? "nil")")
             return checklist
         } catch {
             print("❌ Error creating checklist: \(error)")
