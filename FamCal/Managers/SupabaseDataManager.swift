@@ -1712,9 +1712,17 @@ class SupabaseDataManager: ObservableObject {
                 do {
                     let dto = convertChecklistEntityToDTO(checklist)
                     print("  ↑ Syncing checklist: \(dto.id) for event: \(dto.event_identifier)")
-                    _ = try await supabaseManager.upsertChecklist(dto)
-                    syncedChecklistCount += 1
-                    print("    ✅ Checklist synced successfully")
+                    print("     Checklist has deletedAt: \(checklist.deletedAt != nil)")
+
+                    // Only sync if checklist is not deleted
+                    if checklist.deletedAt == nil {
+                        _ = try await supabaseManager.upsertChecklist(dto)
+                        syncedChecklistCount += 1
+                        print("    ✅ Checklist synced successfully to Supabase")
+                    } else {
+                        print("    ⏭️  Skipping deleted checklist")
+                        continue
+                    }
 
                     // Longer delay to ensure parent checklist is fully committed before syncing items
                     // This prevents RLS policy race conditions on item insertion and gives the
@@ -1723,7 +1731,7 @@ class SupabaseDataManager: ObservableObject {
 
                     // Sync items for this checklist
                     let itemRequest = ChecklistItem.fetchRequest()
-                    itemRequest.predicate = NSPredicate(format: "checklist == %@", checklist)
+                    itemRequest.predicate = NSPredicate(format: "checklist == %@ AND deletedAt == nil", checklist)
                     let items = try context.fetch(itemRequest)
                     print("    📝 Found \(items.count) items to sync")
 
@@ -1731,16 +1739,20 @@ class SupabaseDataManager: ObservableObject {
                         do {
                             let itemDto = convertChecklistItemEntityToDTO(item)
                             print("      ↑ Syncing item: \(itemDto.id) - \(itemDto.title)")
+                            print("         Item checklist_id: \(itemDto.checklist_id)")
+                            print("         Parent checklist ID: \(checklist.id?.uuidString ?? "nil")")
                             _ = try await supabaseManager.upsertChecklistItem(itemDto)
                             syncedItemCount += 1
                             print("        ✅ Item synced successfully")
                         } catch {
                             print("      ❌ Error syncing item \(item.id?.uuidString ?? "unknown"): \(error)")
+                            print("         Item checklist_id: \(item.checklist?.id?.uuidString ?? "nil")")
                             // Retry once after a longer delay to allow transaction propagation
                             try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
                             do {
                                 let itemDto = convertChecklistItemEntityToDTO(item)
                                 print("      ↻ Retrying item: \(itemDto.id) - \(itemDto.title)")
+                                print("         Item checklist_id: \(itemDto.checklist_id)")
                                 _ = try await supabaseManager.upsertChecklistItem(itemDto)
                                 syncedItemCount += 1
                                 print("        ✅ Item synced successfully (retry)")
