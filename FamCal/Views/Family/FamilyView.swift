@@ -357,20 +357,27 @@ struct FamilyView: View {
         .onChange(of: memberCalendarLinks.count) { _, _ in triggerDebouncedReload() }
         .onChange(of: personalCalendars.count) { _, _ in triggerDebouncedReload() }
         .onChange(of: familyEvents.count) { _, _ in triggerDebouncedReload() }
-        .onChange(of: checklists.count) { _, _ in
+        .onChange(of: checklists.count) { oldValue, newValue in
             // When checklists load or change, refresh event display to show/update checklist indicators
+            print("📋 Checklists changed: \(oldValue) → \(newValue)")
             if !memberEvents.isEmpty {
+                print("🔄 Refreshing \(memberEvents.count) member groups with checklist data")
                 // Update existing events with fresh checklist data
                 memberEvents = memberEvents.map { group in
-                    MemberEventGroup(
+                    let updatedNextEvent = group.nextEvent.map { refreshedGroupedEvent($0) }
+                    let updatedUpcomingEvents = group.upcomingEvents.map { refreshedGroupedEvent($0) }
+                    print("📝 Updated \(group.memberName): nextEvent hasChecklist=\(updatedNextEvent?.hasChecklist ?? false), upcoming=\(updatedUpcomingEvents.filter { $0.hasChecklist }.count)")
+                    return MemberEventGroup(
                         id: group.id,
                         memberName: group.memberName,
                         sortOrder: group.sortOrder,
                         memberColor: group.memberColor,
-                        nextEvent: group.nextEvent.map { refreshedGroupedEvent($0) },
-                        upcomingEvents: group.upcomingEvents.map { refreshedGroupedEvent($0) }
+                        nextEvent: updatedNextEvent,
+                        upcomingEvents: updatedUpcomingEvents
                     )
                 }
+            } else {
+                print("⚠️ No member events to refresh")
             }
         }
         .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents(showLoadingState: false) }
@@ -853,10 +860,10 @@ struct FamilyView: View {
                         }
                     }
 
-                // Checklist indicator (only in 2-column view)
+                // Checklist indicator
                 let checklistData = getChecklistData(for: event.eventIdentifier)
 
-                if nextEventColumns <= 2, checklistData.hasChecklist, let progress = checklistData.progress {
+                if checklistData.hasChecklist, let progress = checklistData.progress {
                     HStack(spacing: 4) {
                         Image(systemName: "checkmark.square")
                             .font(.system(size: detailSize - 1, weight: .semibold))
@@ -1657,6 +1664,15 @@ struct FamilyView: View {
         let progress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
         // Only show checklist if it has items (not empty)
         let hasChecklist = progress?.isEmpty == false
+
+        if let progress = progress {
+            print("✅ Checklist found for \(eventIdentifier): \(progress.completed)/\(progress.total) items")
+        } else if checklists.first(where: { $0.eventIdentifier == eventIdentifier }) != nil {
+            print("⚠️ Checklist exists but has no items for \(eventIdentifier)")
+        } else {
+            print("❌ No checklist found for \(eventIdentifier) (Total checklists: \(checklists.count))")
+        }
+
         return (hasChecklist, progress)
     }
 
