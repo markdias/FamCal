@@ -721,6 +721,11 @@ struct ChecklistsView: View {
             print("   Item ID: \(item.id?.uuidString ?? "nil")")
             print("   Item checklist relationship: \(item.checklist?.id?.uuidString ?? "nil")")
             print("   Checklist items count: \(checklist.items?.count ?? 0)")
+
+            // Refresh the Core Data context to ensure FetchRequest updates
+            // This forces the FetchRequest to re-evaluate and display the new item
+            viewContext.refresh(checklist, mergeChanges: true)
+
             // For new items, sync the entire checklist to ensure parent exists in Supabase first
             Task {
                 await ChecklistManager.shared.syncChecklistsToSupabase()

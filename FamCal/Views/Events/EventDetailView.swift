@@ -736,6 +736,10 @@ struct EventDetailView: View {
             newChecklistHasDueDate = false
             showingAddChecklistItem = false
 
+            // Refresh the Core Data context to ensure FetchRequest updates
+            // This forces the FetchRequest to re-evaluate and display the new item
+            viewContext.refresh(targetChecklist, mergeChanges: true)
+
             // Trigger view refresh to update UI
             checklistRefresh.toggle()
 
