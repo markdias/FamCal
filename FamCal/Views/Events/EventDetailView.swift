@@ -246,9 +246,15 @@ struct EventDetailView: View {
 
     private var titleCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(event.title)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(.primary)
+            HStack(spacing: 6) {
+                Text(event.title)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(.primary)
+                if event.hasRecurrence {
+                    RecurrenceIcon(color: .blue, fontSize: 11.0)
+                }
+            }
+
 
             HStack(spacing: 16) {
                 Label {
@@ -658,12 +664,18 @@ struct EventDetailView: View {
     private func deleteChecklistItem(_ item: ChecklistItem) {
         ChecklistManager.shared.deleteItem(item)
 
+        // Force Core Data refresh to immediately remove deleted items from all views
+        viewContext.processPendingChanges()
+        viewContext.refreshAllObjects()
+
         // Trigger view refresh to update UI
         checklistRefresh.toggle()
 
         // Sync only this item's deletion to Supabase (targeted operation)
         Task {
             await ChecklistManager.shared.syncItemDeletion(item)
+            // After syncing deletion, sync down to ensure ChecklistsView picks up the change
+            await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
         }
     }
 
@@ -809,8 +821,13 @@ struct EventDetailView: View {
                 // Event information section
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(event.title)
-                            .font(.headline)
+                        HStack(spacing: 6) {
+                            Text(event.title)
+                                .font(.headline)
+                            if event.hasRecurrence {
+                                RecurrenceIcon(color: .blue, fontSize: 11.0)
+                            }
+                        }
                             .foregroundColor(.primary)
 
                         HStack(spacing: 4) {
@@ -976,7 +993,18 @@ struct EventDetailView: View {
 
                 // Sync checklists from Supabase
                 Task {
-                    await SupabaseDataManager.shared.syncChecklistsFromSupabase(for: [event.id])
+                    // For single events, also try the stable identifier (works cross-device)
+                    var eventIdsToSync = [event.id]
+                    if !event.hasRecurrence {
+                        let stableId = ChecklistManager.generateStableEventIdentifier(
+                            title: event.title,
+                            startDate: event.startDate,
+                            calendarID: event.calendarID
+                        )
+                        eventIdsToSync.append(stableId)
+                    }
+
+                    await SupabaseDataManager.shared.syncChecklistsFromSupabase(for: eventIdsToSync)
                     // Refresh the view to pick up newly synced checklist items
                     await MainActor.run {
                         checklistRefresh.toggle()

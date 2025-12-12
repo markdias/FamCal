@@ -1855,6 +1855,8 @@ class SupabaseManager: @unchecked Sendable {
             let event_identifier: String
             let event_group_id: String?
             let event_title: String?
+            let created_at: String?
+            let modified_at: String?
             let deleted_at: String?
             let deletion_reason: String?
         }
@@ -1864,6 +1866,8 @@ class SupabaseManager: @unchecked Sendable {
             event_identifier: dto.event_identifier,
             event_group_id: dto.event_group_id,
             event_title: dto.event_title,
+            created_at: dto.created_at,
+            modified_at: dto.modified_at,
             deleted_at: dto.deleted_at,
             deletion_reason: dto.deletion_reason
         )
@@ -1930,6 +1934,8 @@ class SupabaseManager: @unchecked Sendable {
             let completed_at: String?
             let completed_by: String?
             let sort_order: Int
+            let created_at: String?
+            let modified_at: String?
             let deleted_at: String?
             let notification_id: String?
         }
@@ -1943,6 +1949,8 @@ class SupabaseManager: @unchecked Sendable {
             completed_at: dto.completed_at,
             completed_by: dto.completed_by,
             sort_order: dto.sort_order,
+            created_at: dto.created_at,
+            modified_at: dto.modified_at,
             deleted_at: dto.deleted_at,
             notification_id: dto.notification_id
         )
