@@ -646,6 +646,10 @@ struct EventDetailView: View {
     private var checklistProgress: (completed: Int, total: Int) {
         let total = checklistItems.count
         let completed = checklistItems.filter { $0.completed }.count
+        print("📊 checklistProgress: \(completed)/\(total) (total items: \(checklistItems.count))")
+        for (index, item) in checklistItems.enumerated() {
+            print("   [\(index)] \(item.title ?? "untitled") - completed: \(item.completed), deleted: \(item.deletedAt != nil)")
+        }
         return (completed, total)
     }
 
