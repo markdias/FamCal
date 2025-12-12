@@ -662,17 +662,25 @@ struct EventDetailView: View {
     }
 
     private func deleteChecklistItem(_ item: ChecklistItem) {
+        // Capture ID before deletion (item object won't be valid after)
+        let itemId = item.id?.uuidString ?? ""
+        let itemTitle = item.title ?? "untitled"
+
         // Hard delete from Core Data (immediate)
         ChecklistManager.shared.deleteItem(item)
 
         // Trigger immediate UI refresh
         checklistRefresh.toggle()
 
-        // Sync deletion to Supabase (async, fire and forget)
+        // Sync deletion to Supabase (async)
         Task {
-            print("📤 Syncing deletion to Supabase for: \(item.title ?? "untitled")")
-            await ChecklistManager.shared.syncItemDeletion(item)
-            print("✅ Deletion synced to Supabase")
+            print("📤 Hard deleting from Supabase: \(itemTitle) (\(itemId))")
+            do {
+                try await SupabaseDataManager.shared.supabaseManager.deleteChecklistItem(id: itemId)
+                print("✅ Item deleted from Supabase")
+            } catch {
+                print("❌ Error deleting from Supabase: \(error)")
+            }
         }
     }
 
