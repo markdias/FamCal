@@ -62,7 +62,7 @@ struct ChecklistsView: View {
         }
     }
 
-    /// Group items by section (Overdue, Today, Upcoming, Completed)
+    /// Group items by section (Overdue, Today, Upcoming, No Due Date, Completed)
     private var itemsBySection: [(title: String, items: [ChecklistItem])] {
         let now = Date()
         let calendar = Calendar.current
@@ -88,6 +88,10 @@ struct ChecklistsView: View {
             return false
         }.sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
 
+        let noDueDate = allItems.filter { item in
+            return !item.completed && item.dueDate == nil
+        }.sorted { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) }
+
         let completed = allItems.filter { item in
             item.completed
         }.sorted { ($0.completedAt ?? .distantPast) < ($1.completedAt ?? .distantPast) }
@@ -102,6 +106,9 @@ struct ChecklistsView: View {
         }
         if !upcoming.isEmpty {
             sections.append(("Upcoming", upcoming))
+        }
+        if !noDueDate.isEmpty {
+            sections.append(("No Due Date", noDueDate))
         }
         if !completed.isEmpty {
             sections.append(("Completed", completed))
