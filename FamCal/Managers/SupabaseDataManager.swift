@@ -1671,6 +1671,29 @@ class SupabaseDataManager: ObservableObject {
                             _ = try convertChecklistItemDTOToEntity(itemDto, in: context)
                         }
 
+                        // IMPORTANT: Hard-delete soft-deleted items from Core Data
+                        // Soft-deleted items should never be kept in Core Data since they're no longer active
+                        print("🗑️ Cleaning up soft-deleted items from Core Data...")
+                        let deletedItemsRequest = ChecklistItem.fetchRequest()
+                        deletedItemsRequest.predicate = NSPredicate(format: "deletedAt != nil")
+                        let softDeletedItems = try context.fetch(deletedItemsRequest)
+                        print("   Found \(softDeletedItems.count) soft-deleted items to remove")
+                        for item in softDeletedItems {
+                            print("   Removing: \(item.title ?? "untitled")")
+                            context.delete(item)
+                        }
+
+                        // Also clean up soft-deleted checklists
+                        print("🗑️ Cleaning up soft-deleted checklists from Core Data...")
+                        let deletedChecklistsRequest = Checklist.fetchRequest()
+                        deletedChecklistsRequest.predicate = NSPredicate(format: "deletedAt != nil")
+                        let softDeletedChecklists = try context.fetch(deletedChecklistsRequest)
+                        print("   Found \(softDeletedChecklists.count) soft-deleted checklists to remove")
+                        for checklist in softDeletedChecklists {
+                            print("   Removing checklist: \(checklist.eventIdentifier ?? "unknown")")
+                            context.delete(checklist)
+                        }
+
                         try context.save()
                         print("💾 Saved changes to Core Data")
                     }
