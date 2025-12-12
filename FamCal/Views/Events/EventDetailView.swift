@@ -86,10 +86,6 @@ struct EventDetailView: View {
 
     private var eventChecklist: Checklist? {
         let eventId = event.id
-        print("🔍 EventDetailView.eventChecklist: Looking for checklist for event")
-        print("   Event ID: '\(eventId)'")
-        print("   Event title: '\(event.title)', Date: \(event.startDate), Calendar: '\(event.calendarID)'")
-        print("   Available checklists: \(allChecklists.count)")
 
         let result = allChecklists.first { checklist in
             guard let checklistEventId = checklist.eventIdentifier else { return false }
@@ -100,25 +96,9 @@ struct EventDetailView: View {
                 startDate: event.startDate,
                 calendarID: event.calendarID
             )
-            if match {
-                print("   ✅ Checklist match found! ID: '\(checklistEventId)'")
-            }
             return match
         }
 
-        if let result = result {
-            let items = result.items as? Set<ChecklistItem>
-            print("   ✅ Found checklist with \(items?.count ?? 0) items")
-        } else {
-            print("   ❌ No matching checklist found")
-            print("   Debug: Trying stable ID match...")
-            let stableId = ChecklistManager.generateStableEventIdentifier(
-                title: event.title,
-                startDate: event.startDate,
-                calendarID: event.calendarID
-            )
-            print("   Generated stable ID: '\(stableId)'")
-        }
         return result
     }
 
@@ -633,23 +613,17 @@ struct EventDetailView: View {
     private var checklistItems: [ChecklistItem] {
         guard let checklist = eventChecklist,
               let items = checklist.items as? Set<ChecklistItem> else {
-            print("   📭 No checklist items found (checklist: \(eventChecklist != nil), items: \(eventChecklist?.items != nil))")
             return []
         }
         let filtered = items
             .filter { $0.deletedAt == nil }
             .sorted { $0.sortOrder < $1.sortOrder }
-        print("   📋 Checklist items: \(filtered.count) items")
         return filtered
     }
 
     private var checklistProgress: (completed: Int, total: Int) {
         let total = checklistItems.count
         let completed = checklistItems.filter { $0.completed }.count
-        print("📊 checklistProgress: \(completed)/\(total) (total items: \(checklistItems.count))")
-        for (index, item) in checklistItems.enumerated() {
-            print("   [\(index)] \(item.title ?? "untitled") - completed: \(item.completed), deleted: \(item.deletedAt != nil)")
-        }
         return (completed, total)
     }
 
