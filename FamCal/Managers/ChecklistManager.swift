@@ -21,7 +21,7 @@ class ChecklistManager: ObservableObject {
 
     // MARK: - Device-Independent Event Identification
 
-    /// Generate a stable, device-independent identifier for an event
+    /// Generate a stable, device-independent identifier for an event (NEW format: title + date only)
     /// Uses ONLY title and date (day only) - excludes calendar ID and time to ensure consistency across devices
     /// Calendar IDs differ per device, and times can have timezone differences
     static func generateStableEventIdentifier(title: String, startDate: Date, calendarID: String) -> String {
@@ -32,7 +32,7 @@ class ChecklistManager: ObservableObject {
         let dateStr = dateFormatter.string(from: startDate)
 
         let combined = "\(title)|\(dateStr)"
-        print("🔐 Generating stable ID: title=\(title), date=\(dateStr)")
+        print("🔐 Generating stable ID (new): title=\(title), date=\(dateStr)")
 
         // Use SHA256 hash for stable, consistent identifier
         guard let data = combined.data(using: .utf8) else {
@@ -46,11 +46,33 @@ class ChecklistManager: ObservableObject {
 
         let hexStr = digest.map { String(format: "%02x", $0) }.joined()
         let result = "event_\(hexStr)"
-        print("   → Generated stable ID: \(result)")
+        print("   → Generated stable ID (new): \(result)")
         return result
     }
 
-    /// For backwards compatibility: try matching with old EventKit ID first, then stable ID
+    /// Generate OLD stable identifier format (for backward compatibility)
+    /// Old format included: title + ISO8601 date with time + calendarID
+    private static func generateOldStableEventIdentifier(title: String, startDate: Date, calendarID: String) -> String {
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime]
+        let dateStr = dateFormatter.string(from: startDate)
+
+        let combined = "\(title)|\(dateStr)|\(calendarID)"
+
+        guard let data = combined.data(using: .utf8) else {
+            return "event_unknown_old"
+        }
+
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_SHA256(buffer.baseAddress, CC_LONG(data.count), &digest)
+        }
+
+        let hexStr = digest.map { String(format: "%02x", $0) }.joined()
+        return "event_\(hexStr)"
+    }
+
+    /// For backwards compatibility: try matching with old EventKit ID first, then new stable ID, then old stable ID
     static func canMatchEventIdentifier(_ checklistEventIdentifier: String,
                                        toEventKitID eventKitID: String,
                                        eventTitle: String,
@@ -62,14 +84,21 @@ class ChecklistManager: ObservableObject {
             return true
         }
 
-        // Match with stable identifier
-        let stableID = generateStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
-        if checklistEventIdentifier == stableID {
-            print("✅ Matched checklist via stable identifier")
+        // Match with NEW stable identifier (title + date only)
+        let newStableID = generateStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
+        if checklistEventIdentifier == newStableID {
+            print("✅ Matched checklist via new stable identifier")
             return true
         }
 
-        print("❌ No match - checklist ID: \(checklistEventIdentifier), eventKit ID: \(eventKitID), stable ID: \(stableID)")
+        // Match with OLD stable identifier (title + date + calendarID) - for backward compatibility
+        let oldStableID = generateOldStableEventIdentifier(title: eventTitle, startDate: startDate, calendarID: calendarID)
+        if checklistEventIdentifier == oldStableID {
+            print("✅ Matched checklist via old stable identifier (backward compat)")
+            return true
+        }
+
+        print("❌ No match - checklist ID: \(checklistEventIdentifier), eventKit ID: \(eventKitID), new stable ID: \(newStableID), old stable ID: \(oldStableID)")
         return false
     }
 
