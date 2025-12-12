@@ -1917,4 +1917,49 @@ class SupabaseDataManager: ObservableObject {
             notification_id: item.notificationId
         )
     }
+
+    /// Diagnostic function to check checklist item relationships
+    func diagnosticCheckChecklistItems() {
+        guard let context = managedObjectContext else {
+            print("❌ No managed object context available")
+            return
+        }
+
+        do {
+            let itemRequest = ChecklistItem.fetchRequest()
+            let items = try context.fetch(itemRequest)
+
+            print("\n📊 Checklist Item Diagnostic Report")
+            print(String(repeating: "=", count: 60))
+            print("Total items in Core Data: \(items.count)")
+
+            var itemsWithChecklist = 0
+            var itemsWithoutChecklist = 0
+
+            for (index, item) in items.enumerated() {
+                let hasChecklist = item.checklist != nil
+                if hasChecklist {
+                    itemsWithChecklist += 1
+                } else {
+                    itemsWithoutChecklist += 1
+                }
+
+                let status = hasChecklist ? "✅" : "❌"
+                let checklistInfo = hasChecklist ?
+                    "(Checklist: \(item.checklist?.id?.uuidString ?? "unknown"))" :
+                    "(NO CHECKLIST)"
+
+                print("\(index + 1). \(status) \(item.title ?? "untitled") \(checklistInfo)")
+                print("   ID: \(item.id?.uuidString ?? "unknown")")
+                print("   Deleted: \(item.deletedAt != nil ? "yes" : "no")")
+            }
+
+            print("\nSummary:")
+            print("  ✅ Items with checklist: \(itemsWithChecklist)")
+            print("  ❌ Items without checklist: \(itemsWithoutChecklist)")
+            print(String(repeating: "=", count: 60) + "\n")
+        } catch {
+            print("❌ Error fetching items for diagnostics: \(error)")
+        }
+    }
 }
