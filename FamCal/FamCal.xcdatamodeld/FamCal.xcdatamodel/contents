@@ -15,6 +15,11 @@
         <attribute name="isInvited" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="linkedUserId" optional="YES" attributeType="String"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="wakeTimeHour" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="7"/>
+        <attribute name="wakeTimeMinute" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
+        <attribute name="bedTimeHour" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="22"/>
+        <attribute name="bedTimeMinute" optional="YES" attributeType="Integer 16" usesScalarValueType="YES" defaultValue="0"/>
+        <attribute name="useCustomSchedule" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <relationship name="memberCalendars" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="FamilyMemberCalendar" inverseName="familyMember" inverseEntity="FamilyMemberCalendar"/>
         <relationship name="sharedCalendars" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="SharedCalendar" inverseName="members" inverseEntity="SharedCalendar"/>
         <relationship name="familyEvents" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="FamilyEvent" inverseName="attendees" inverseEntity="FamilyEvent"/>
@@ -151,7 +156,7 @@
     </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
-        <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="134"/>
+        <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="194"/>
         <element name="FamilyMemberCalendar" positionX="126" positionY="100" width="128" height="119"/>
         <element name="SharedCalendar" positionX="216" positionY="-18" width="128" height="103"/>
         <element name="FamilyInfo" positionX="306" positionY="-18" width="128" height="82"/>

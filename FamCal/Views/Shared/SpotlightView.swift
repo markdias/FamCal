@@ -68,7 +68,15 @@ struct SpotlightView: View {
     @State private var lastTapTime: Date = .distantPast
     @State private var lastTappedEventId: String = ""
     @State private var tapDelayTimer: Timer?
-    @State private var selectedTab: SpotlightTab = .all
+    @State private var selectedTab: SpotlightTab = .analytics
+    @State private var selectedAnalyticsDate: Date = Date()
+    @State private var analytics: TimeAnalytics?
+    @State private var showWakeTimeAdjustment = false
+    @State private var tempWakeHour: Int = 7
+    @State private var tempWakeMinute: Int = 0
+    @State private var tempBedHour: Int = 22
+    @State private var tempBedMinute: Int = 0
+    @State private var selectedEventBlock: BusyBlock?
     @State private var noteInput: String = ""
     @State private var notesContentWidth: CGFloat?
     @State private var editingNoteId: UUID?
@@ -105,6 +113,7 @@ struct SpotlightView: View {
     private enum SpotlightTab: Hashable {
         case all
         case member
+        case analytics
     }
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -429,14 +438,17 @@ struct SpotlightView: View {
                     }
                 }
             }
+        case .analytics:
+            analyticsContent
         }
     }
 
     private var ribbonTabs: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 18) {
-                tabButton(title: "All Events", tab: .all)
+                tabButton(title: "Schedule", tab: .analytics)
                 tabButton(title: "For \(memberName)", tab: .member)
+                tabButton(title: "All Events", tab: .all)
             }
             .padding(.bottom, 4)
             .overlay(
@@ -1511,6 +1523,412 @@ extension SpotlightView {
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(width: notesContentWidth)
+    }
+
+    // MARK: - Analytics
+
+    private var analyticsContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Date selector with custom picker
+                dateSelector
+
+                // Wake/bed time adjustment button
+                wakeTimeAdjustmentButton
+
+                if let analytics = analytics {
+                    // Metrics cards
+                    AnalyticsMetricsView(analytics: analytics)
+
+                    // Interactive timeline visualization
+                    timelineSection(analytics: analytics)
+
+                    // Events list for selected day (filtered by date)
+                    eventsListForSelectedDay(analytics: analytics)
+                } else {
+                    loadingView
+                }
+            }
+            .padding(.vertical, 12)
+        }
+        .onAppear {
+            calculateAnalytics()
+            tempWakeHour = Int(member.wakeTimeHour)
+            tempWakeMinute = Int(member.wakeTimeMinute)
+            tempBedHour = Int(member.bedTimeHour)
+            tempBedMinute = Int(member.bedTimeMinute)
+        }
+        .onChange(of: selectedAnalyticsDate) { _, _ in
+            calculateAnalytics()
+        }
+    }
+
+    private var dateSelector: some View {
+        HStack(spacing: 12) {
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+
+            Picker("Day", selection: $selectedAnalyticsDate) {
+                Text("Today").tag(Date())
+                Text("Tomorrow").tag(tomorrow)
+            }
+            .pickerStyle(.segmented)
+
+            // Custom date picker
+            Menu {
+                DatePicker(
+                    "Select Date",
+                    selection: $selectedAnalyticsDate,
+                    displayedComponents: .date
+                )
+            } label: {
+                Image(systemName: "calendar")
+                    .font(.system(size: 16))
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var wakeTimeAdjustmentButton: some View {
+        VStack(spacing: 12) {
+            Button(action: { showWakeTimeAdjustment.toggle() }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 14))
+                    Text("Adjust Schedule")
+                        .font(.system(size: 14, weight: .medium))
+                    Spacer()
+                    Image(systemName: showWakeTimeAdjustment ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundColor(.blue)
+                .padding(12)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(8)
+            }
+
+            if showWakeTimeAdjustment {
+                VStack(spacing: 12) {
+                    Text("Daily Schedule")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Wake Time").font(.system(size: 12, weight: .medium))
+                            HStack(spacing: 8) {
+                                Picker("Hour", selection: $tempWakeHour) {
+                                    ForEach(0..<24, id: \.self) { hour in
+                                        Text(String(format: "%02d", hour)).tag(hour)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+
+                                Text(":").font(.system(size: 14, weight: .semibold))
+
+                                Picker("Minute", selection: $tempWakeMinute) {
+                                    ForEach(Array(stride(from: 0, to: 60, by: 15)), id: \.self) { minute in
+                                        Text(String(format: "%02d", minute)).tag(minute)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
+
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Bed Time").font(.system(size: 12, weight: .medium))
+                            HStack(spacing: 8) {
+                                Picker("Hour", selection: $tempBedHour) {
+                                    ForEach(0..<24, id: \.self) { hour in
+                                        Text(String(format: "%02d", hour)).tag(hour)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+
+                                Text(":").font(.system(size: 14, weight: .semibold))
+
+                                Picker("Minute", selection: $tempBedMinute) {
+                                    ForEach(Array(stride(from: 0, to: 60, by: 15)), id: \.self) { minute in
+                                        Text(String(format: "%02d", minute)).tag(minute)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
+                    }
+
+                    Button(action: saveWakeTimeChanges) {
+                        Text("Save Changes")
+                            .frame(maxWidth: .infinity)
+                            .padding(10)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(6)
+                    }
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(8)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func timelineSection(analytics: TimeAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Schedule Timeline")
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.horizontal, 16)
+
+            TimelineVisualizationView(
+                analytics: analytics,
+                memberColor: UIColorFromHex(member.colorHex ?? "#007AFF")
+            )
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func eventsListForSelectedDay(analytics: TimeAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !analytics.busyBlocks.isEmpty {
+                Text("Events")
+                    .font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 16)
+
+                VStack(spacing: 8) {
+                    ForEach(analytics.busyBlocks) { busyBlock in
+                        eventBlockCard(busyBlock, isSelected: selectedEventBlock?.id == busyBlock.id)
+                            .onTapGesture {
+                                selectedEventBlock = busyBlock
+                                // Find and open the actual event
+                                if let eventTitle = busyBlock.eventTitles.first {
+                                    openEventDetail(for: eventTitle)
+                                }
+                            }
+                    }
+                }
+                .padding(.horizontal, 16)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray)
+                    Text("No events scheduled")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("All day is free!")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            }
+        }
+    }
+
+    private func eventBlockCard(_ block: BusyBlock, isSelected: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(block.eventTitles.first ?? "Event")
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+
+            HStack(spacing: 8) {
+                Text(timeString(block.start) + " – " + timeString(block.end))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Text(durationString(block.durationMinutes))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(isSelected ? Color.blue.opacity(0.1) : Color(.secondarySystemBackground))
+        .cornerRadius(8)
+        .border(isSelected ? Color.blue : Color.clear, width: 2)
+    }
+
+    private func saveWakeTimeChanges() {
+        member.wakeTimeHour = Int16(tempWakeHour)
+        member.wakeTimeMinute = Int16(tempWakeMinute)
+        member.bedTimeHour = Int16(tempBedHour)
+        member.bedTimeMinute = Int16(tempBedMinute)
+        member.useCustomSchedule = true
+        member.modifiedAt = Date()
+
+        do {
+            try viewContext.save()
+            calculateAnalytics()
+            showWakeTimeAdjustment = false
+
+            // Sync to Supabase
+            Task {
+                try? await SupabaseManager.shared.updateFamilyMemberSchedule(
+                    memberId: member.id?.uuidString ?? "",
+                    wakeTimeHour: tempWakeHour,
+                    wakeTimeMinute: tempWakeMinute,
+                    bedTimeHour: tempBedHour,
+                    bedTimeMinute: tempBedMinute,
+                    useCustomSchedule: true
+                )
+            }
+        } catch {
+            print("Error saving wake time: \(error)")
+        }
+    }
+
+    private func openEventDetail(for eventTitle: String) {
+        // Find the event in the events array that matches the title
+        if let event = events.first(where: { $0.title == eventTitle }) {
+            selectedEvent = UpcomingCalendarEvent(
+                id: event.eventIdentifier,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.meetingLink,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendarID,
+                calendarColor: event.memberColor,
+                calendarTitle: event.calendarTitle,
+                hasRecurrence: event.hasRecurrence,
+                recurrenceRule: nil,
+                isAllDay: event.isAllDay
+            )
+            showingEventDetail = true
+        }
+    }
+
+    private func timeString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func durationString(_ minutes: Int) -> String {
+        let hours = minutes / 60
+        let mins = minutes % 60
+        if hours > 0 && mins > 0 {
+            return "\(hours)h \(mins)m"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(mins)m"
+        }
+    }
+
+    private func calculateAnalytics() {
+        let calculator = TimeAnalyticsCalculator()
+
+        // Get wake/bed times from member (or use defaults)
+        let wakeHour = member.useCustomSchedule ? Int(member.wakeTimeHour) : 7
+        let wakeMinute = member.useCustomSchedule ? Int(member.wakeTimeMinute) : 0
+        let bedHour = member.useCustomSchedule ? Int(member.bedTimeHour) : 22
+        let bedMinute = member.useCustomSchedule ? Int(member.bedTimeMinute) : 0
+
+        // Fetch ALL events for analytics (not limited by spotlightEventsPerPerson)
+        let analyticsEvents = fetchAllEventsForAnalytics()
+
+        analytics = calculator.calculate(
+            for: member.id ?? UUID(),
+            date: selectedAnalyticsDate,
+            wakeTime: (hour: wakeHour, minute: wakeMinute),
+            bedTime: (hour: bedHour, minute: bedMinute),
+            events: analyticsEvents
+        )
+    }
+
+    /// Fetches all events from shared and personal calendars for analytics calculation
+    /// This includes all events, not just the limit shown in spotlight view
+    private func fetchAllEventsForAnalytics() -> [UpcomingCalendarEvent] {
+
+        // Fetch all local calendars for resolution
+        let localCalendars = eventStore.calendars(for: .event)
+        let calendarById = Dictionary(uniqueKeysWithValues: localCalendars.map { ($0.calendarIdentifier, $0) })
+        let calendarByTitle = Dictionary(grouping: localCalendars, by: { $0.title }).mapValues { $0.first! }
+
+        // Get all calendar IDs for this member
+        var calendarIDs = Set<String>()
+
+        // Personal calendars (linked to this member's family member record)
+        if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+            for cal in memberCals {
+                if let storedID = cal.calendarID {
+                    var resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = cal.calendarName, let localCal = calendarByTitle[name] {
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    calendarIDs.insert(resolvedID)
+                }
+            }
+        }
+
+        // Shared calendars (family calendars shared with this member)
+        if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
+            for cal in sharedCals {
+                if let storedID = cal.calendarID {
+                    var resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = cal.calendarName, let localCal = calendarByTitle[name] {
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    calendarIDs.insert(resolvedID)
+                }
+            }
+        }
+
+        // Personal calendars - only include if this member is the logged-in user
+        if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+           member.id?.uuidString.lowercased() == linkedMemberId.lowercased() {
+            for personalCal in personalCalendars {
+                // Only include if toggled for spotlight view (synced to family view)
+                let shouldInclude = personalCal.showInSpotlight
+                guard shouldInclude else { continue }
+
+                var resolvedID: String?
+                if let storedID = personalCal.calendarID {
+                    resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                } else if let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                    resolvedID = localCal.calendarIdentifier
+                }
+
+                if let resolvedID {
+                    calendarIDs.insert(resolvedID)
+                }
+            }
+        }
+
+        guard !calendarIDs.isEmpty else { return [] }
+
+        // Fetch ALL events (no limit) for analytics calculation
+        let upcomingEvents = CalendarManager.shared.fetchNextEvents(
+            for: Array(calendarIDs),
+            limit: 0,
+            pastDays: appSettingsManager.eventsPastDays,
+            futureDays: appSettingsManager.eventsFutureDays
+        )
+
+        return upcomingEvents.map { event in
+            UpcomingCalendarEvent(
+                id: event.id,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.meetingLink,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendarID,
+                calendarColor: event.calendarColor,
+                calendarTitle: event.calendarTitle,
+                hasRecurrence: event.hasRecurrence,
+                recurrenceRule: nil,
+                isAllDay: event.isAllDay
+            )
+        }
     }
 
     // MARK: - Preference Keys

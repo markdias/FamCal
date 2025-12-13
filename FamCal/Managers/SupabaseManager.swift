@@ -523,6 +523,35 @@ class SupabaseManager: @unchecked Sendable {
         }
     }
 
+    /// Update the daily schedule for a family member (wake/bed times).
+    func updateFamilyMemberSchedule(
+        memberId: String,
+        wakeTimeHour: Int,
+        wakeTimeMinute: Int,
+        bedTimeHour: Int,
+        bedTimeMinute: Int,
+        useCustomSchedule: Bool,
+        token: String? = nil
+    ) async throws {
+        let body = FamilyMemberScheduleUpdateDTO(
+            wake_time_hour: wakeTimeHour,
+            wake_time_minute: wakeTimeMinute,
+            bed_time_hour: bedTimeHour,
+            bed_time_minute: bedTimeMinute,
+            use_custom_schedule: useCustomSchedule
+        )
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(memberId)")]
+        let userToken = token ?? authManager.accessToken
+        let (data, statusCode) = try await makeRequest("PATCH", path: "rest/v1/family_members", queryItems: queryItems, body: body, userToken: userToken)
+
+        guard (200...299).contains(statusCode) else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+            print("⚠️ Supabase update family member schedule response (status: \(statusCode)): \(errorMessage)")
+            throw NSError(domain: "UpdateFamilyMemberSchedule", code: statusCode, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+        }
+    }
+
     /// Link the current authenticated user to a family member (sets linked_user_id).
     func linkCurrentUserToFamilyMember(id: String, token: String? = nil) async throws {
         guard let userId = authManager.userId else {
@@ -2213,11 +2242,16 @@ struct FamilyMemberDTO: Codable {
     let name: String
     let color_hex: String
     let is_driver: Bool?
+    let wake_time_hour: Int?
+    let wake_time_minute: Int?
+    let bed_time_hour: Int?
+    let bed_time_minute: Int?
+    let use_custom_schedule: Bool?
     let created_at: String?
     let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, user_id, family_id, linked_user_id, name, color_hex, is_driver, created_at, updated_at
+        case id, user_id, family_id, linked_user_id, name, color_hex, is_driver, wake_time_hour, wake_time_minute, bed_time_hour, bed_time_minute, use_custom_schedule, created_at, updated_at
     }
 }
 
@@ -2338,6 +2372,14 @@ struct DriverDTO: Codable {
         case created_at
         case updated_at
     }
+}
+
+struct FamilyMemberScheduleUpdateDTO: Codable {
+    let wake_time_hour: Int
+    let wake_time_minute: Int
+    let bed_time_hour: Int
+    let bed_time_minute: Int
+    let use_custom_schedule: Bool
 }
 
 struct SavedAddressDTO: Codable {

@@ -592,6 +592,11 @@ class SupabaseDataManager: ObservableObject {
                     name: safeName,
                     color_hex: member.colorHex ?? "#007AFF",
                     is_driver: member.isDriver,
+                    wake_time_hour: Int(member.wakeTimeHour),
+                    wake_time_minute: Int(member.wakeTimeMinute),
+                    bed_time_hour: Int(member.bedTimeHour),
+                    bed_time_minute: Int(member.bedTimeMinute),
+                    use_custom_schedule: member.useCustomSchedule,
                     created_at: nil,
                     updated_at: nil
                 )

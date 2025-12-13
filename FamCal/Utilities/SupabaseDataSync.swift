@@ -108,6 +108,11 @@ class SupabaseDataSync {
                     member.isDriver = supabaseDTO.is_driver ?? false
                     member.linkedUserId = supabaseDTO.linked_user_id
                     member.familyId = UUID(uuidString: supabaseDTO.family_id ?? "") ?? UUID()
+                    member.wakeTimeHour = Int16(supabaseDTO.wake_time_hour ?? 7)
+                    member.wakeTimeMinute = Int16(supabaseDTO.wake_time_minute ?? 0)
+                    member.bedTimeHour = Int16(supabaseDTO.bed_time_hour ?? 22)
+                    member.bedTimeMinute = Int16(supabaseDTO.bed_time_minute ?? 0)
+                    member.useCustomSchedule = supabaseDTO.use_custom_schedule ?? false
                 } else {
                     // Create new member
                     member = FamilyMember(context: context)
@@ -123,6 +128,11 @@ class SupabaseDataSync {
                     member.isDriver = supabaseDTO.is_driver ?? false
                     member.linkedUserId = supabaseDTO.linked_user_id
                     member.familyId = UUID(uuidString: supabaseDTO.family_id ?? "") ?? UUID()
+                    member.wakeTimeHour = Int16(supabaseDTO.wake_time_hour ?? 7)
+                    member.wakeTimeMinute = Int16(supabaseDTO.wake_time_minute ?? 0)
+                    member.bedTimeHour = Int16(supabaseDTO.bed_time_hour ?? 22)
+                    member.bedTimeMinute = Int16(supabaseDTO.bed_time_minute ?? 0)
+                    member.useCustomSchedule = supabaseDTO.use_custom_schedule ?? false
                     syncedCount += 1
                 }
 

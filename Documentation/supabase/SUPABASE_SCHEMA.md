@@ -10,7 +10,7 @@ This document provides a complete mapping of the FamCal Core Data model to a Sup
 
 ### 1. FamilyMember
 
-**Description**: Stores information about family members in the app.
+**Description**: Stores information about family members in the app. Includes daily schedule information for analytics calculations.
 
 | Field Name | Data Type | Nullable | Default | Description |
 |------------|-----------|----------|---------|-------------|
@@ -21,6 +21,11 @@ This document provides a complete mapping of the FamCal Core Data model to a Sup
 | `avatar_initials` | TEXT | Yes | NULL | Initials for avatar display |
 | `is_driver` | BOOLEAN | No | FALSE | Whether this member is a driver |
 | `sort_order` | SMALLINT | No | 0 | Display order in lists |
+| `wake_time_hour` | SMALLINT | No | 7 | Hour member wakes up (0-23) for analytics |
+| `wake_time_minute` | SMALLINT | No | 0 | Minute of wake time (0-59) |
+| `bed_time_hour` | SMALLINT | No | 22 | Hour member goes to bed (0-23) for analytics |
+| `bed_time_minute` | SMALLINT | No | 0 | Minute of bed time (0-59) |
+| `use_custom_schedule` | BOOLEAN | No | FALSE | Whether to use custom wake/bed times |
 | `created_at` | TIMESTAMPTZ | No | `now()` | Record creation timestamp |
 | `updated_at` | TIMESTAMPTZ | No | `now()` | Record update timestamp |
 
@@ -28,6 +33,8 @@ This document provides a complete mapping of the FamCal Core Data model to a Sup
 - One-to-many with `family_member_calendars`
 - Many-to-many with `shared_calendars` (via junction table)
 - Many-to-many with `family_events` (via junction table)
+
+**Analytics Feature**: The schedule columns enable the daily time analytics feature that calculates free vs busy time for each family member based on their wake/bed times and calendar events.
 
 ---
 
@@ -207,6 +214,11 @@ CREATE TABLE family_members (
     avatar_initials TEXT,
     is_driver BOOLEAN NOT NULL DEFAULT FALSE,
     sort_order SMALLINT NOT NULL DEFAULT 0,
+    wake_time_hour SMALLINT NOT NULL DEFAULT 7,
+    wake_time_minute SMALLINT NOT NULL DEFAULT 0,
+    bed_time_hour SMALLINT NOT NULL DEFAULT 22,
+    bed_time_minute SMALLINT NOT NULL DEFAULT 0,
+    use_custom_schedule BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -540,6 +552,11 @@ erDiagram
         text avatar_initials
         boolean is_driver
         smallint sort_order
+        smallint wake_time_hour
+        smallint wake_time_minute
+        smallint bed_time_hour
+        smallint bed_time_minute
+        boolean use_custom_schedule
         timestamptz created_at
         timestamptz updated_at
     }
@@ -610,3 +627,36 @@ erDiagram
         timestamptz created_at
     }
 ```
+
+---
+
+## Daily Time Analytics Feature
+
+The `family_members` table includes schedule-related columns that support the daily time analytics feature. This feature calculates free vs busy time for each family member based on their wake/bed times and calendar events.
+
+### Schedule Columns
+
+- `wake_time_hour` (SMALLINT, default: 7) - Hour member wakes up (0-23)
+- `wake_time_minute` (SMALLINT, default: 0) - Minute of wake time (0-59)
+- `bed_time_hour` (SMALLINT, default: 22) - Hour member goes to bed (0-23)
+- `bed_time_minute` (SMALLINT, default: 0) - Minute of bed time (0-59)
+- `use_custom_schedule` (BOOLEAN, default: FALSE) - Whether to use custom wake/bed times
+
+### Default Values
+
+- **Default wake time**: 7:00 AM (7:0)
+- **Default bed time**: 10:00 PM (22:0)
+- **Available hours per day**: 15 hours (900 minutes)
+
+### Analytics Calculation
+
+The analytics system:
+1. Filters events for a specific date, excluding all-day events
+2. Clamps event times to the member's wake/bed window
+3. Merges overlapping events into consolidated busy blocks
+4. Calculates free time gaps between events
+5. Generates metrics: free time, busy time, percentages, and gap analysis
+
+### Migration Note
+
+The schedule columns were added in migration `20251213220000_add_member_schedule.sql`. Use the Supabase CLI (`supabase db push`) or manually apply the migration via the Supabase SQL Editor to add these columns to existing databases.

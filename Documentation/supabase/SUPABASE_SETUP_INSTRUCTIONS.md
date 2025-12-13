@@ -70,6 +70,29 @@ CREATE INDEX idx_shared_calendars_user_id ON public.shared_calendars(user_id);
 CREATE INDEX idx_calendar_event_metadata_user_event ON public.calendar_event_metadata(user_id, calendar_id, event_identifier);
 ```
 
+## 1.5 Add Daily Schedule Columns (Analytics Feature)
+
+**Note**: If you're setting up a fresh database, the schedule columns below are already included in the `family_members` table definition above. Only run these ALTER TABLE statements if you're upgrading an existing database.
+
+```sql
+-- Add schedule columns to family_members table for daily time analytics
+ALTER TABLE public.family_members
+ADD COLUMN IF NOT EXISTS wake_time_hour INTEGER DEFAULT 7,
+ADD COLUMN IF NOT EXISTS wake_time_minute INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS bed_time_hour INTEGER DEFAULT 22,
+ADD COLUMN IF NOT EXISTS bed_time_minute INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS use_custom_schedule BOOLEAN DEFAULT FALSE;
+
+-- Add comments for documentation
+COMMENT ON COLUMN public.family_members.wake_time_hour IS 'Hour member wakes up (0-23), default 7am';
+COMMENT ON COLUMN public.family_members.wake_time_minute IS 'Minute of wake time (0-59)';
+COMMENT ON COLUMN public.family_members.bed_time_hour IS 'Hour member goes to bed (0-23), default 10pm';
+COMMENT ON COLUMN public.family_members.bed_time_minute IS 'Minute of bed time (0-59)';
+COMMENT ON COLUMN public.family_members.use_custom_schedule IS 'Flag to enable custom schedule times, defaults to false';
+```
+
+These columns enable the daily time analytics feature that calculates free vs busy time for family members based on their wake/bed times and calendar events.
+
 ## 2. Enable Row Level Security (RLS)
 
 Add RLS policies so users can only access their own data:
@@ -196,6 +219,42 @@ After running all the SQL above, verify that:
 2. RLS is enabled on each table
 3. You can see the policies listed under each table's RLS settings
 
-## 5. Update the App
+## 5. Apply Migrations
+
+The project includes migration files in the `supabase/migrations/` directory. These are automatically applied when deploying with the Supabase CLI.
+
+### Using Supabase CLI (Recommended)
+
+If you're using the Supabase CLI:
+
+```bash
+# Navigate to project directory
+cd /path/to/FamCal
+
+# Push migrations to your Supabase project
+supabase db push
+
+# Or, reset the database and reapply all migrations
+supabase db reset
+```
+
+### Manual Migration Application
+
+If you prefer to apply migrations manually via the Supabase dashboard:
+
+1. Go to your Supabase Dashboard
+2. Open the **SQL Editor**
+3. For each migration file in `supabase/migrations/` (in chronological order by filename):
+   - Open the migration file from the repository
+   - Copy all SQL content
+   - Paste into the SQL Editor in Supabase
+   - Click **Run** to execute
+
+**Important**: Always apply migrations in chronological order (by timestamp in filename).
+
+**Current Migrations**:
+- `20251213220000_add_member_schedule.sql` - Adds wake/bed time columns for daily analytics feature
+
+## 6. Update the App
 
 The app is now ready to use the Supabase database for family data. Family members and shared calendars will be stored per user, ensuring data isolation.
