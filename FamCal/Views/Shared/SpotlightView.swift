@@ -46,6 +46,12 @@ struct SpotlightView: View {
     )
     private var checklists: FetchedResults<Checklist>
 
+    @FetchRequest(
+        entity: Note.entity(),
+        sortDescriptors: [NSSortDescriptor(keyPath: \Note.createdAt, ascending: false)]
+    )
+    private var allNotes: FetchedResults<Note>
+
     @State private var isLoadingEvents = false
     @State private var events: [GroupedEvent] = []
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
@@ -62,6 +68,19 @@ struct SpotlightView: View {
     @State private var lastTapTime: Date = .distantPast
     @State private var lastTappedEventId: String = ""
     @State private var tapDelayTimer: Timer?
+    @State private var selectedTab: SpotlightTab = .all
+    @State private var noteInput: String = ""
+    @State private var notesContentWidth: CGFloat?
+    @State private var editingNoteId: UUID?
+    @EnvironmentObject private var supabaseDataManager: SupabaseDataManager
+
+    @Namespace private var tabNamespace
+
+    private var memberName: String { member.name ?? "Member" }
+
+    private var memberNotes: [Note] {
+        allNotes.filter { $0.memberIdentifier == member.id }
+    }
 
     private let calendar = Calendar.current
 
@@ -82,6 +101,11 @@ struct SpotlightView: View {
         formatter.dateFormat = "MMM"
         return formatter
     }()
+
+    private enum SpotlightTab: Hashable {
+        case all
+        case member
+    }
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -107,97 +131,10 @@ struct SpotlightView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
 
-                        // Events list
-                        if events.isEmpty && !isLoadingEvents {
-                            emptyStateView
-                        } else {
-                            let isLandscape = verticalSizeClass == .compact
-                            let columns = isLandscape
-                                ? [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
-                                : [GridItem(.flexible())]
-
-                            LazyVGrid(columns: columns, spacing: 12) {
-                                ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                                    if spotlightShowGapsBetweenEvents,
-                                       index > 0,
-                                       let gapText = gapText(between: events[index - 1], and: event) {
-                                        // In grid, gap label might need to span full width or be handled differently
-                                        // For simplicity in grid, we might hide it or show it in a full-width item
-                                        // But LazyVGrid doesn't support full-width items easily mixed in without Section
-                                        // Let's just show it if not landscape, or try to handle it.
-                                        // For now, let's only show gaps in portrait (list) mode to avoid grid layout issues
-                                        if !isLandscape {
-                                            gapLabel(gapText)
-                                        }
-                                    }
-
-                                    eventCard(event)
-                                        .onTapGesture {
-                                            handleEventTap(event: event)
-                                        }
-                                    .contextMenu {
-                                        let upcomingEvent = UpcomingCalendarEvent(
-                                            id: event.eventIdentifier,
-                                            title: event.title,
-                                            location: event.location,
-                                            meetingLink: event.meetingLink,
-                                            startDate: event.startDate,
-                                            endDate: event.endDate,
-                                            calendarID: event.calendarID,
-                                            calendarColor: event.memberColor,
-                                            calendarTitle: event.calendarTitle,
-                                            hasRecurrence: event.hasRecurrence,
-                                            recurrenceRule: nil,
-                                            isAllDay: event.isAllDay
-                                        )
-
-                                        Button(action: { duplicateEvent(upcomingEvent) }) {
-                                            Label("Duplicate", systemImage: "doc.on.doc")
-                                        }
-
-                                        // Move to calendar
-                                        Menu {
-                                            ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
-                                                Button(action: {
-                                                    moveEventToCalendar(upcomingEvent, calendarID: calendar.calendarIdentifier)
-                                                }) {
-                                                    HStack {
-                                                        Text(calendar.title)
-                                                        if calendar.calendarIdentifier == upcomingEvent.calendarID {
-                                                            Image(systemName: "checkmark")
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } label: {
-                                            Label("Move to Calendar", systemImage: "calendar.badge.plus")
-                                        }
-
-                                        Divider()
-
-                                        // Delete action
-                                        if upcomingEvent.hasRecurrence {
-                                            Menu {
-                                                Button(action: { confirmDelete(upcomingEvent, span: .thisEvent) }) {
-                                                    Label("Delete This Event", systemImage: "trash")
-                                                }
-                                                Button(role: .destructive, action: { confirmDelete(upcomingEvent, span: .futureEvents) }) {
-                                                    Label("Delete This & Future Events", systemImage: "trash")
-                                                }
-                                            } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
-                                        } else {
-                                            Button(role: .destructive, action: { confirmDelete(upcomingEvent, span: .thisEvent) }) {
-                                                Label("Delete", systemImage: "trash")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        ribbonTabs
                             .padding(.horizontal, 16)
-                            .opacity(isLoadingEvents ? 0.6 : 1.0)
-                        }
+
+                        tabContent
                     }
                     .padding(.vertical, 12)
                     .padding(.bottom, 120)
@@ -376,6 +313,158 @@ struct SpotlightView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .all:
+            // Existing spotlight content
+            if events.isEmpty && !isLoadingEvents {
+                emptyStateView
+            } else {
+                let isLandscape = verticalSizeClass == .compact
+                let columns = isLandscape
+                    ? [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+                    : [GridItem(.flexible())]
+
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                        if spotlightShowGapsBetweenEvents,
+                           index > 0,
+                           let gapText = gapText(between: events[index - 1], and: event) {
+                            // In grid, gap label might need to span full width or be handled differently
+                            // For simplicity in grid, we might hide it or show it in a full-width item
+                            // But LazyVGrid doesn't support full-width items easily mixed in without Section
+                            // Let's just show it if not landscape, or try to handle it.
+                            // For now, let's only show gaps in portrait (list) mode to avoid grid layout issues
+                            if !isLandscape {
+                                gapLabel(gapText)
+                            }
+                        }
+
+                        eventCard(event)
+                            .onTapGesture {
+                                handleEventTap(event: event)
+                            }
+                        .contextMenu {
+                            let upcomingEvent = UpcomingCalendarEvent(
+                                id: event.eventIdentifier,
+                                title: event.title,
+                                location: event.location,
+                                meetingLink: event.meetingLink,
+                                startDate: event.startDate,
+                                endDate: event.endDate,
+                                calendarID: event.calendarID,
+                                calendarColor: event.memberColor,
+                                calendarTitle: event.calendarTitle,
+                                hasRecurrence: event.hasRecurrence,
+                                recurrenceRule: nil,
+                                isAllDay: event.isAllDay
+                            )
+
+                            Button(action: { duplicateEvent(upcomingEvent) }) {
+                                Label("Duplicate", systemImage: "doc.on.doc")
+                            }
+
+                            // Move to calendar
+                            Menu {
+                                ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                                    Button(action: {
+                                        moveEventToCalendar(upcomingEvent, calendarID: calendar.calendarIdentifier)
+                                    }) {
+                                        HStack {
+                                            Text(calendar.title)
+                                            if calendar.calendarIdentifier == upcomingEvent.calendarID {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label("Move to Calendar", systemImage: "calendar.badge.plus")
+                            }
+
+                            Divider()
+
+                            // Delete action
+                            if upcomingEvent.hasRecurrence {
+                                Menu {
+                                    Button(action: { confirmDelete(upcomingEvent, span: .thisEvent) }) {
+                                        Label("Delete This Event", systemImage: "trash")
+                                    }
+                                    Button(role: .destructive, action: { confirmDelete(upcomingEvent, span: .futureEvents) }) {
+                                        Label("Delete This & Future Events", systemImage: "trash")
+                                    }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            } else {
+                                Button(role: .destructive, action: { confirmDelete(upcomingEvent, span: .thisEvent) }) {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .opacity(isLoadingEvents ? 0.6 : 1.0)
+            }
+        case .member:
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    notesComposer
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: notesContentWidth)
+                    notesList
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: notesContentWidth)
+                }
+                .padding(.top, 4)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onPreferenceChange(NotesWidthPreference.self) { width in
+                    if width > 0 {
+                        notesContentWidth = width
+                    }
+                }
+            }
+        }
+    }
+
+    private var ribbonTabs: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 18) {
+                tabButton(title: "All Events", tab: .all)
+                tabButton(title: "For \(memberName)", tab: .member)
+            }
+            .padding(.bottom, 4)
+            .overlay(
+                Rectangle()
+                    .fill(Color(.systemGray5))
+                    .frame(height: 1),
+                alignment: .bottom
+            )
+        }
+    }
+
+    private func tabButton(title: String, tab: SpotlightTab) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                selectedTab = tab
+            }
+        } label: {
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(selectedTab == tab ? .primary : Color(.systemGray))
+                Capsule()
+                    .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                    .frame(height: 3)
+                    .matchedGeometryEffect(id: tab, in: tabNamespace)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func eventCard(_ event: GroupedEvent) -> some View {
@@ -1222,6 +1311,216 @@ private struct GroupedEvent: Identifiable {
     let hasRecurrence: Bool
     let isAllDay: Bool
     let driverName: String?
+}
+
+// MARK: - Notes Section
+
+extension SpotlightView {
+    // MARK: - Notes Management
+
+    private func addNote() {
+        let trimmed = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let newNote = Note(context: viewContext)
+        newNote.id = UUID()
+        newNote.familyId = member.familyId
+        newNote.memberIdentifier = member.id
+        newNote.content = trimmed
+        newNote.createdAt = Date()
+        newNote.modifiedAt = Date()
+
+        print("📝 Creating note - familyId: \(member.familyId?.uuidString ?? "nil"), memberId: \(member.id?.uuidString ?? "nil")")
+
+        do {
+            try viewContext.save()
+            noteInput = ""
+            syncNoteToSupabase(newNote)
+        } catch {
+            print("❌ Error saving note: \(error)")
+        }
+    }
+
+    private func updateNote(_ note: Note, with text: String) {
+        note.content = text
+        note.modifiedAt = Date()
+
+        do {
+            try viewContext.save()
+            syncNoteToSupabase(note)
+        } catch {
+            print("❌ Error updating note: \(error)")
+        }
+    }
+
+    private func deleteNote(_ note: Note) {
+        let noteId = note.id?.uuidString ?? ""
+
+        do {
+            viewContext.delete(note)
+            try viewContext.save()
+            syncNoteDeletionToSupabase(noteId)
+        } catch {
+            print("❌ Error deleting note: \(error)")
+        }
+    }
+
+    private func binding(for note: Note) -> Binding<String> {
+        Binding<String>(
+            get: { note.content ?? "" },
+            set: { note.content = $0 }
+        )
+    }
+
+    private func syncNoteToSupabase(_ note: Note) {
+        Task {
+            do {
+                let familyIdString = note.familyId?.uuidString ?? ""
+                let memberIdString = note.memberIdentifier?.uuidString ?? ""
+                print("📤 Syncing note - familyId: \(familyIdString), memberId: \(memberIdString)")
+
+                let dto = NoteDTO(
+                    id: note.id?.uuidString ?? UUID().uuidString,
+                    family_id: familyIdString,
+                    member_identifier: memberIdString,
+                    content: note.content ?? "",
+                    created_at: note.createdAt.map { ISO8601DateFormatter().string(from: $0) },
+                    modified_at: note.modifiedAt.map { ISO8601DateFormatter().string(from: $0) },
+                    created_by: nil
+                )
+                _ = try await SupabaseManager.shared.upsertNote(dto)
+                print("✅ Note synced to Supabase")
+            } catch {
+                print("❌ Error syncing note to Supabase: \(error)")
+            }
+        }
+    }
+
+    private func syncNoteDeletionToSupabase(_ noteId: String) {
+        Task {
+            do {
+                print("🗑️ Syncing note deletion - noteId: \(noteId)")
+                try await SupabaseManager.shared.deleteNote(id: noteId)
+                print("✅ Note deletion synced to Supabase")
+            } catch {
+                print("❌ Error syncing note deletion to Supabase: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Notes Views
+
+    private var notesComposer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Notes")
+                .font(.system(size: 16, weight: .semibold))
+
+            HStack(spacing: 12) {
+                TextField("Write a quick note...", text: $noteInput)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
+                    .onSubmit { addNote() }
+
+                Button(action: addNote) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().fill(Color.accentColor))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: NotesWidthPreference.self, value: proxy.size.width)
+            }
+        )
+    }
+
+    private var notesList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if memberNotes.isEmpty {
+                Text("No notes yet. Add something for \(memberName).")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(memberNotes) { note in
+                    noteRow(note)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: notesContentWidth)
+    }
+
+    private func noteRow(_ note: Note) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            let isEditing = editingNoteId == note.id
+            if isEditing {
+                TextField("Edit note", text: binding(for: note))
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                Text(note.content ?? "")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.primary)
+            }
+
+            HStack(spacing: 16) {
+                Button {
+                    if isEditing {
+                        updateNote(note, with: binding(for: note).wrappedValue)
+                        editingNoteId = nil
+                    } else {
+                        editingNoteId = note.id
+                    }
+                } label: {
+                    Label(isEditing ? "Save" : "Edit", systemImage: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    deleteNote(note)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.accentColor.opacity(0.18), lineWidth: 1)
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: notesContentWidth)
+    }
+
+    // MARK: - Preference Keys
+
+    private struct NotesWidthPreference: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
+    }
 }
 
 #Preview {

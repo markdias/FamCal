@@ -5,6 +5,7 @@
     </entity>
     <entity name="FamilyMember" representedClassName="FamilyMember" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="familyId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="name" optional="YES" attributeType="String"/>
         <attribute name="linkedCalendarID" optional="YES" attributeType="String"/>
         <attribute name="colorHex" optional="YES" attributeType="String"/>
@@ -139,6 +140,15 @@
         <attribute name="notificationId" optional="YES" attributeType="String"/>
         <relationship name="checklist" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Checklist" inverseName="items" inverseEntity="Checklist"/>
     </entity>
+    <entity name="Note" representedClassName="Note" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="familyId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="memberIdentifier" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="content" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdBy" optional="YES" attributeType="String"/>
+    </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
         <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="134"/>
@@ -154,5 +164,6 @@
         <element name="AppSettings" positionX="846" positionY="-18" width="128" height="119"/>
         <element name="Checklist" positionX="936" positionY="-18" width="128" height="149"/>
         <element name="ChecklistItem" positionX="1026" positionY="-18" width="128" height="209"/>
+        <element name="Note" positionX="1116" positionY="-18" width="128" height="134"/>
     </elements>
 </model>

@@ -107,6 +107,7 @@ class SupabaseDataSync {
                     member.colorHex = supabaseDTO.color_hex
                     member.isDriver = supabaseDTO.is_driver ?? false
                     member.linkedUserId = supabaseDTO.linked_user_id
+                    member.familyId = UUID(uuidString: supabaseDTO.family_id ?? "") ?? UUID()
                 } else {
                     // Create new member
                     member = FamilyMember(context: context)
@@ -121,6 +122,7 @@ class SupabaseDataSync {
                     member.avatarInitials = getInitials(from: name)
                     member.isDriver = supabaseDTO.is_driver ?? false
                     member.linkedUserId = supabaseDTO.linked_user_id
+                    member.familyId = UUID(uuidString: supabaseDTO.family_id ?? "") ?? UUID()
                     syncedCount += 1
                 }
 
@@ -579,6 +581,49 @@ class SupabaseDataSync {
             print("✅ Synced \(supabaseMetadata.count) calendar event metadata records to CoreData")
         } catch {
             print("❌ Error syncing calendar event metadata: \(error)")
+        }
+    }
+
+    func syncNotesFromSupabase(supabaseNotes: [NoteDTO], to context: NSManagedObjectContext) {
+        do {
+            print("📝 Syncing \(supabaseNotes.count) notes to CoreData")
+
+            // Fetch existing notes for comparison
+            let fetchRequest = Note.fetchRequest()
+            let existingNotes = try context.fetch(fetchRequest)
+            let existingNoteMap = Dictionary(uniqueKeysWithValues: existingNotes.map { ($0.id?.uuidString ?? "", $0) })
+
+            for dto in supabaseNotes {
+                let noteId = UUID(uuidString: dto.id) ?? UUID()
+
+                var note: Note
+                if let existing = existingNoteMap[dto.id] {
+                    note = existing
+                    print("📝 Updating existing note: \(dto.id)")
+                } else {
+                    note = Note(context: context)
+                    note.id = noteId
+                    print("📝 Creating new note: \(dto.id)")
+                }
+
+                note.familyId = UUID(uuidString: dto.family_id) ?? UUID()
+                note.memberIdentifier = UUID(uuidString: dto.member_identifier) ?? UUID()
+                note.content = dto.content
+                note.createdBy = dto.created_by
+
+                if let createdAtStr = dto.created_at {
+                    note.createdAt = ISO8601DateFormatter().date(from: createdAtStr) ?? Date()
+                }
+
+                if let modifiedAtStr = dto.modified_at {
+                    note.modifiedAt = ISO8601DateFormatter().date(from: modifiedAtStr) ?? Date()
+                }
+            }
+
+            try context.save()
+            print("✅ Synced \(supabaseNotes.count) notes to CoreData")
+        } catch {
+            print("❌ Error syncing notes: \(error)")
         }
     }
 

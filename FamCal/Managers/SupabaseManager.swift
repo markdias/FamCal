@@ -1889,7 +1889,8 @@ class SupabaseManager: @unchecked Sendable {
             print("⚠️ POST got 409, attempting PATCH update")
             let (patchData, patchStatusCode) = try await makeRequest(
                 "PATCH",
-                path: "rest/v1/event_checklists?id=eq.\(dto.id)",
+                path: "rest/v1/event_checklists",
+                queryItems: [URLQueryItem(name: "id", value: "eq.\(dto.id)")],
                 body: body,
                 userToken: userToken,
                 extraHeaders: ["Prefer": "return=representation"]
@@ -1925,38 +1926,39 @@ class SupabaseManager: @unchecked Sendable {
     func upsertChecklistItem(_ dto: ChecklistItemDTO, token: String? = nil) async throws -> ChecklistItemDTO {
         let userToken = token ?? authManager.accessToken
 
-        struct UpsertBody: Encodable {
-            let id: String
-            let checklist_id: String
-            let title: String
-            let due_date: String?
-            let completed: Bool
-            let completed_at: String?
-            let completed_by: String?
-            let sort_order: Int
-            let created_at: String?
-            let modified_at: String?
-            let deleted_at: String?
-            let notification_id: String?
-        }
+        // Enforce constraint: if completed=false, completed_at and completed_by MUST be null.
+        // Use AnyCodable to explicitly send nulls so Supabase clears previous values.
+        let completedAtValue: AnyCodable = {
+            if dto.completed {
+                return dto.completed_at.map { .string($0) } ?? .null
+            }
+            return .null
+        }()
 
-        // Enforce constraint: if completed=false, completed_at and completed_by MUST be null
-        let body = UpsertBody(
-            id: dto.id,
-            checklist_id: dto.checklist_id,
-            title: dto.title,
-            due_date: dto.due_date,
-            completed: dto.completed,
-            completed_at: dto.completed ? dto.completed_at : nil,
-            completed_by: dto.completed ? dto.completed_by : nil,
-            sort_order: dto.sort_order,
-            created_at: dto.created_at,
-            modified_at: dto.modified_at,
-            deleted_at: dto.deleted_at,
-            notification_id: dto.notification_id
-        )
+        let completedByValue: AnyCodable = {
+            if dto.completed {
+                return dto.completed_by.map { .string($0) } ?? .null
+            }
+            return .null
+        }()
 
-        print("📤 Upserting item: completed=\(dto.completed), completed_at=\(body.completed_at ?? "nil"), completed_by=\(body.completed_by ?? "nil")")
+        var body: [String: AnyCodable] = [
+            "id": .string(dto.id),
+            "checklist_id": .string(dto.checklist_id),
+            "title": .string(dto.title),
+            "completed": .bool(dto.completed),
+            "completed_at": completedAtValue,
+            "completed_by": completedByValue,
+            "sort_order": .int(dto.sort_order)
+        ]
+
+        body["due_date"] = dto.due_date.map { .string($0) } ?? .null
+        body["created_at"] = dto.created_at.map { .string($0) } ?? .null
+        body["modified_at"] = dto.modified_at.map { .string($0) } ?? .null
+        body["deleted_at"] = dto.deleted_at.map { .string($0) } ?? .null
+        body["notification_id"] = dto.notification_id.map { .string($0) } ?? .null
+
+        print("📤 Upserting item: completed=\(dto.completed), completed_at=\(dto.completed_at ?? "nil"), completed_by=\(dto.completed_by ?? "nil")")
 
         // Try POST (insert new item)
         let (data, statusCode) = try await makeRequest(
@@ -1984,7 +1986,8 @@ class SupabaseManager: @unchecked Sendable {
             print("ℹ️ Item exists (409), attempting update via PATCH")
             let (updateData, updateStatusCode) = try await makeRequest(
                 "PATCH",
-                path: "rest/v1/checklist_items?id=eq.\(dto.id)",
+                path: "rest/v1/checklist_items",
+                queryItems: [URLQueryItem(name: "id", value: "eq.\(dto.id)")],
                 body: body,
                 userToken: userToken,
                 extraHeaders: [
@@ -2007,7 +2010,7 @@ class SupabaseManager: @unchecked Sendable {
 
         // Any other status is an error
         if statusCode == 400 {
-            print("⚠️ Constraint violation - completed=\(body.completed), completed_at=\(body.completed_at ?? "null"), completed_by=\(body.completed_by ?? "null")")
+            print("⚠️ Constraint violation - completed=\(dto.completed), completed_at=\(dto.completed_at ?? "null"), completed_by=\(dto.completed_by ?? "null")")
         }
         logErrorResponse(data, statusCode: statusCode, operation: "upsertChecklistItem")
         throw NSError(domain: "UpsertChecklistItem", code: statusCode)
@@ -2063,6 +2066,140 @@ class SupabaseManager: @unchecked Sendable {
         }
 
         print("✅ Item hard deleted from Supabase")
+    }
+
+    // MARK: - Notes
+
+    func fetchNotes(for memberIdentifiers: [String], token: String? = nil) async throws -> [NoteDTO] {
+        let userToken = token ?? authManager.accessToken
+        let memberIds = memberIdentifiers.map { "'\($0)'" }.joined(separator: ",")
+
+        print("📝 Fetching notes for members: \(memberIds)")
+
+        let queryItems = [URLQueryItem(name: "member_identifier", value: "in.(\(memberIds))")]
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/notes",
+            queryItems: queryItems,
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "fetchNotes")
+            throw NSError(domain: "FetchNotes", code: statusCode)
+        }
+
+        let decoder = JSONDecoder()
+        let dtos = try decoder.decode([NoteDTO].self, from: data)
+        print("✅ Fetched \(dtos.count) notes")
+        return dtos
+    }
+
+    func fetchAllNotes(token: String? = nil) async throws -> [NoteDTO] {
+        let userToken = token ?? authManager.accessToken
+
+        print("📝 Fetching all notes")
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/notes",
+            userToken: userToken
+        )
+
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "fetchAllNotes")
+            throw NSError(domain: "FetchAllNotes", code: statusCode)
+        }
+
+        let decoder = JSONDecoder()
+        let dtos = try decoder.decode([NoteDTO].self, from: data)
+        print("✅ Fetched \(dtos.count) notes")
+        return dtos
+    }
+
+    func upsertNote(_ dto: NoteDTO, token: String? = nil) async throws -> NoteDTO {
+        let userToken = token ?? authManager.accessToken
+
+        print("💾 Upserting note: \(dto.id)")
+        print("📝 Note data - family_id: \(dto.family_id), member_id: \(dto.member_identifier), content: \(dto.content)")
+
+        if let jsonData = try? JSONEncoder().encode(dto),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print("📤 Request body: \(jsonString)")
+        }
+
+        let (data, statusCode) = try await makeRequest(
+            "POST",
+            path: "rest/v1/notes",
+            body: dto,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=representation,resolution=merge-duplicates"]
+        )
+
+        print("📥 Response status: \(statusCode)")
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("📥 Response body: \(responseString)")
+        }
+
+        // If we got 409, fall back to PATCH update
+        if statusCode == 409 {
+            print("⚠️ POST got 409, attempting PATCH update")
+            let (patchData, patchStatusCode) = try await makeRequest(
+                "PATCH",
+                path: "rest/v1/notes",
+                queryItems: [URLQueryItem(name: "id", value: "eq.\(dto.id)")],
+                body: dto,
+                userToken: userToken,
+                extraHeaders: ["Prefer": "return=representation"]
+            )
+
+            guard patchStatusCode == 200 else {
+                logErrorResponse(patchData, statusCode: patchStatusCode, operation: "upsertNote (PATCH)")
+                throw NSError(domain: "UpsertNote", code: patchStatusCode)
+            }
+
+            let notes = try JSONDecoder().decode([NoteDTO].self, from: patchData)
+            guard let note = notes.first else {
+                throw NSError(domain: "UpsertNote", code: -1, userInfo: [NSLocalizedDescriptionKey: "No record returned from PATCH"])
+            }
+            print("✅ Note updated via PATCH: \(dto.id)")
+            return note
+        }
+
+        guard statusCode == 200 || statusCode == 201 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "upsertNote")
+            throw NSError(domain: "UpsertNote", code: statusCode)
+        }
+
+        let notes = try JSONDecoder().decode([NoteDTO].self, from: data)
+        guard let note = notes.first else {
+            print("⚠️ Empty response from upsert, returning DTO")
+            return dto
+        }
+        print("✅ Note upserted successfully: \(dto.id)")
+        return note
+    }
+
+    func deleteNote(id: String, familyId: String = "", token: String? = nil) async throws {
+        let userToken = token ?? authManager.accessToken
+
+        print("🗑️ Deleting note: \(id)")
+
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        let (data, statusCode) = try await makeRequest(
+            "DELETE",
+            path: "rest/v1/notes",
+            queryItems: queryItems,
+            userToken: userToken,
+            extraHeaders: ["Prefer": "return=minimal"]
+        )
+
+        guard statusCode == 200 || statusCode == 204 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "deleteNote")
+            throw NSError(domain: "DeleteNote", code: statusCode)
+        }
+
+        print("✅ Note deleted from Supabase")
     }
 }
 

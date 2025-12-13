@@ -21,6 +21,15 @@ struct ChecklistsView: View {
         predicate: NSPredicate(format: "deletedAt == nil")
     )
     private var allChecklists: FetchedResults<Checklist>
+    // Track checklist items directly so the view updates when items change (even if parent checklist is unchanged)
+    @FetchRequest(
+        entity: ChecklistItem.entity(),
+        sortDescriptors: [
+            NSSortDescriptor(keyPath: \ChecklistItem.createdAt, ascending: true)
+        ],
+        predicate: NSPredicate(format: "deletedAt == nil")
+    )
+    private var allChecklistItems: FetchedResults<ChecklistItem>
 
     @State private var completionFilter: CompletionFilter = .all
     @State private var showingAddItemSheet = false
@@ -44,17 +53,7 @@ struct ChecklistsView: View {
 
     /// Get all items from all checklists, filtered by completion status and deletion status
     private var allItems: [ChecklistItem] {
-        var items: [ChecklistItem] = []
-        for checklist in allChecklists {
-            if let checklistItems = checklist.items as? Set<ChecklistItem> {
-                items.append(contentsOf: checklistItems)
-            }
-        }
-        let filtered = items.filter { item in
-            // First, exclude deleted items
-            guard item.deletedAt == nil else { return false }
-
-            // Then filter by completion status
+        allChecklistItems.filter { item in
             switch completionFilter {
             case .all:
                 return true
@@ -64,7 +63,6 @@ struct ChecklistsView: View {
                 return !item.completed
             }
         }
-        return filtered
     }
 
     /// Group items by section (Overdue, Today, Upcoming, No Due Date, Completed)
@@ -247,6 +245,13 @@ struct ChecklistsView: View {
                 await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
             }
         }
+        .onDisappear {
+            // Ensure any toggles/edits are synced so the main screen refreshes
+            Task {
+                await ChecklistManager.shared.syncChecklistsToSupabase()
+                await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
+            }
+        }
     }
 
     // MARK: - Views
@@ -263,120 +268,20 @@ struct ChecklistsView: View {
                 .padding(.horizontal, 16)
 
             VStack(spacing: 0) {
-                ForEach(items.indices, id: \.self) { index in
-                    let item = items[index]
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        checklistItemView(item)
-
-                        if index < items.count - 1 {
-                            Divider()
-                                .padding(.leading, 44)
-                        }
-                    }
+                ForEach(items, id: \.objectID) { item in
+                    ChecklistListRow(
+                        item: item,
+                        onToggle: toggleItem,
+                        onDelete: deleteItem,
+                        onEdit: { editingItem = $0; showingEditSheet = true }
+                    )
+                    Divider()
+                        .padding(.leading, 44)
                 }
             }
             .background(Color(.systemBackground))
             .cornerRadius(12)
             .padding(.horizontal, 16)
-        }
-    }
-
-    private func checklistItemView(_ item: ChecklistItem) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Main row with checkbox and title
-            HStack(alignment: .top, spacing: 12) {
-                // Checkbox
-                Button(action: { toggleItem(item) }) {
-                    Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(item.completed ? .blue : .secondary)
-                }
-                .padding(.vertical, 10)
-
-                // Title and event
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title ?? "Untitled")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(item.completed ? .secondary : .primary)
-                        .strikethrough(item.completed, color: .secondary)
-                        .lineLimit(2)
-
-                    // Event title if linked
-                    if let eventTitle = item.checklist?.eventTitle {
-                        Text(eventTitle)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Delete button
-                Button(action: { deleteItem(item) }) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.red)
-                }
-                .padding(.vertical, 10)
-            }
-            .padding(.horizontal, 12)
-
-            // Expandable due date section
-            if let dueDate = item.dueDate {
-                Divider()
-                    .padding(.leading, 44)
-
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 8))
-                        .foregroundColor(.clear)
-                        .frame(width: 18)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Due")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.secondary)
-
-                        Text(formatDueDate(dueDate))
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .primary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Button(action: { editingItem = item; showingEditSheet = true }) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.blue)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            } else if !item.completed {
-                // Add due date option for incomplete items without due date
-                Divider()
-                    .padding(.leading, 44)
-
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 8))
-                        .foregroundColor(.clear)
-                        .frame(width: 18)
-
-                    Button(action: { editingItem = item; showingEditSheet = true }) {
-                        Text("Add due date")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.blue)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
         }
     }
 
@@ -731,6 +636,116 @@ struct ChecklistsView: View {
     }
 
     // MARK: - Helpers
+
+    private func formatDueDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func isOverdue(_ date: Date) -> Bool {
+        date < Date() && !Calendar.current.isDateInToday(date)
+    }
+}
+
+/// Row that observes a checklist item so UI refreshes as completion status changes
+private struct ChecklistListRow: View {
+    @ObservedObject var item: ChecklistItem
+    let onToggle: (ChecklistItem) -> Void
+    let onDelete: (ChecklistItem) -> Void
+    let onEdit: (ChecklistItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                Button(action: { onToggle(item) }) {
+                    Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(item.completed ? .blue : .secondary)
+                }
+                .padding(.vertical, 10)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title ?? "Untitled")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(item.completed ? .secondary : .primary)
+                        .strikethrough(item.completed, color: .secondary)
+                        .lineLimit(2)
+
+                    if let eventTitle = item.checklist?.eventTitle {
+                        Text(eventTitle)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button(action: { onDelete(item) }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.red)
+                }
+                .padding(.vertical, 10)
+            }
+            .padding(.horizontal, 12)
+
+            if let dueDate = item.dueDate {
+                Divider()
+                    .padding(.leading, 44)
+
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.clear)
+                        .frame(width: 18)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Due")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        Text(formatDueDate(dueDate))
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(isOverdue(dueDate) && !item.completed ? .red : .primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button(action: { onEdit(item) }) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            } else if !item.completed {
+                Divider()
+                    .padding(.leading, 44)
+
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.clear)
+                        .frame(width: 18)
+
+                    Button(action: { onEdit(item) }) {
+                        Text("Add due date")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.blue)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+        }
+    }
 
     private func formatDueDate(_ date: Date) -> String {
         let formatter = DateFormatter()

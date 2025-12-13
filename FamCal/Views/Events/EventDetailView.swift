@@ -494,7 +494,7 @@ struct EventDetailView: View {
                     .foregroundColor(.secondary)
             } else {
                 VStack(spacing: 10) {
-                    ForEach(checklistItems, id: \.objectID) { item in
+                    ForEach(checklistItems, id: \.id) { item in
                         HStack(spacing: 10) {
                             Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
                                 .foregroundColor(item.completed ? .green : .gray)

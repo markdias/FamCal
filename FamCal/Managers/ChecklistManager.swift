@@ -96,11 +96,6 @@ class ChecklistManager: ObservableObject {
             return true
         }
 
-        print("❌ No match - checklist ID: \(checklistEventIdentifier)")
-        print("   - EventKit ID: \(eventKitID)")
-        print("   - New stable ID: \(newStableID)")
-        print("   - Old stable ID: \(oldStableID)")
-        print("   - Event: title='\(eventTitle)', date=\(DateFormatter().string(from: startDate)), calendarID=\(calendarID)")
         return false
     }
 
