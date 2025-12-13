@@ -949,26 +949,8 @@ class NotificationManager: NSObject, ObservableObject {
             content.categoryIdentifier = "MORNING_BRIEF"
             content.interruptionLevel = .timeSensitive
 
-            // Schedule two notifications:
-            // 1. An immediate notification to test delivery now
-            // 2. A repeating daily notification at the set time
-
-            do {
-                // Send immediate notification for testing
-                let immediateContent = UNMutableNotificationContent()
-                immediateContent.title = content.title
-                immediateContent.body = content.body
-                immediateContent.sound = content.sound
-                immediateContent.userInfo = content.userInfo
-                immediateContent.categoryIdentifier = content.categoryIdentifier
-                immediateContent.interruptionLevel = content.interruptionLevel
-
-                let immediateTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-                let immediateRequest = UNNotificationRequest(identifier: "morningBrief_immediate", content: immediateContent, trigger: immediateTrigger)
-                try await notificationCenter.add(immediateRequest)
-                print("✅ Morning brief notification sent immediately")
-
-                // Also schedule the daily repeating notification
+            // Schedule the daily repeating notification
+            do {              
                 var components = DateComponents()
                 components.hour = morningBriefTime.hour
                 components.minute = morningBriefTime.minute
@@ -977,7 +959,7 @@ class NotificationManager: NSObject, ObservableObject {
                 let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
 
                 try await notificationCenter.add(request)
-                print("✅ Morning brief also scheduled daily for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
+                print("✅ Morning brief scheduled daily for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
             } catch {
                 print("❌ Error scheduling morning brief: \(error)")
             }
