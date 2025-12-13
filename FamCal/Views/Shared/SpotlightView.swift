@@ -1564,26 +1564,61 @@ extension SpotlightView {
     }
 
     private var dateSelector: some View {
-        HStack(spacing: 12) {
-            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
 
-            Picker("Day", selection: $selectedAnalyticsDate) {
-                Text("Today").tag(Date())
-                Text("Tomorrow").tag(tomorrow)
+        return VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                // Quick day buttons
+                Button(action: { selectedAnalyticsDate = today }) {
+                    Text("Today")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(calendar.isDate(selectedAnalyticsDate, inSameDayAs: today) ? Color.blue : Color(.secondarySystemBackground))
+                        .foregroundColor(calendar.isDate(selectedAnalyticsDate, inSameDayAs: today) ? .white : .primary)
+                        .cornerRadius(8)
+                }
+
+                Button(action: { selectedAnalyticsDate = tomorrow }) {
+                    Text("Tomorrow")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(calendar.isDate(selectedAnalyticsDate, inSameDayAs: tomorrow) ? Color.blue : Color(.secondarySystemBackground))
+                        .foregroundColor(calendar.isDate(selectedAnalyticsDate, inSameDayAs: tomorrow) ? .white : .primary)
+                        .cornerRadius(8)
+                }
+
+                // Custom date picker button
+                Menu {
+                    DatePicker(
+                        "Select Date",
+                        selection: $selectedAnalyticsDate,
+                        displayedComponents: .date
+                    )
+                } label: {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.blue)
+                        .padding(8)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(8)
+                }
             }
-            .pickerStyle(.segmented)
 
-            // Custom date picker
-            Menu {
-                DatePicker(
-                    "Select Date",
-                    selection: $selectedAnalyticsDate,
-                    displayedComponents: .date
-                )
-            } label: {
+            // Show selected date
+            HStack(spacing: 8) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 16))
-                    .foregroundColor(.blue)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+
+                Text(formatSelectedDate(selectedAnalyticsDate))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Spacer()
             }
         }
         .padding(.horizontal, 16)
@@ -1684,7 +1719,8 @@ extension SpotlightView {
 
             TimelineVisualizationView(
                 analytics: analytics,
-                memberColor: UIColorFromHex(member.colorHex ?? "#007AFF")
+                memberColor: UIColorFromHex(member.colorHex ?? "#007AFF"),
+                selectedBlock: $selectedEventBlock
             )
             .padding(.horizontal, 16)
         }
@@ -1728,28 +1764,59 @@ extension SpotlightView {
     }
 
     private func eventBlockCard(_ block: BusyBlock, isSelected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(block.eventTitles.first ?? "Event")
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
+        let cardCornerRadius: CGFloat = 12
+        let memberColor = UIColorFromHex(member.colorHex ?? "#007AFF")
+        let colorBarWidth: CGFloat = 4
 
-            HStack(spacing: 8) {
-                Text(timeString(block.start) + " – " + timeString(block.end))
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+        return ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .fill(isSelected ? Color(memberColor).opacity(0.15) : Color(uiColor: .systemBackground))
 
-                Spacer()
+            // Color bar on the left
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color(memberColor))
+                .frame(width: colorBarWidth)
 
-                Text(durationString(block.durationMinutes))
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+            HStack(spacing: 12) {
+                // Time box
+                VStack(spacing: 2) {
+                    Text("Start")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    Text(timeString(block.start))
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                }
+                .frame(width: 50, alignment: .center)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(block.eventTitles.first ?? "Event")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        Text(timeString(block.start) + " – " + timeString(block.end))
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+
+                        Spacer(minLength: 0)
+
+                        Text(durationString(block.durationMinutes))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.leading, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(isSelected ? Color.blue.opacity(0.1) : Color(.secondarySystemBackground))
-        .cornerRadius(8)
-        .border(isSelected ? Color.blue : Color.clear, width: 2)
+        .cornerRadius(cardCornerRadius)
+        .overlay(
+            isSelected ? RoundedRectangle(cornerRadius: cardCornerRadius).stroke(Color(memberColor), lineWidth: 2) : nil
+        )
     }
 
     private func saveWakeTimeChanges() {
@@ -1805,6 +1872,12 @@ extension SpotlightView {
     private func timeString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func formatSelectedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
         return formatter.string(from: date)
     }
 

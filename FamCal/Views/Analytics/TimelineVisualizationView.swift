@@ -10,7 +10,7 @@ import SwiftUI
 struct TimelineVisualizationView: View {
     let analytics: TimeAnalytics
     let memberColor: UIColor
-    @State private var selectedBlock: BusyBlock?
+    @Binding var selectedBlock: BusyBlock?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -25,9 +25,9 @@ struct TimelineVisualizationView: View {
                         .fill(Color(.systemGray5))
                         .frame(height: 40)
 
-                    // Busy blocks
+                    // Busy blocks - color-coded
                     ForEach(analytics.busyBlocks) { block in
-                        busyBlockView(block, totalWidth: geometry.size.width)
+                        busyBlockView(block, totalWidth: geometry.size.width, isSelected: selectedBlock?.id == block.id)
                     }
 
                     // Current time indicator (if today)
@@ -52,13 +52,17 @@ struct TimelineVisualizationView: View {
         .padding(.horizontal, 16)
     }
 
-    private func busyBlockView(_ block: BusyBlock, totalWidth: CGFloat) -> some View {
+    private func busyBlockView(_ block: BusyBlock, totalWidth: CGFloat, isSelected: Bool) -> some View {
         let position = calculatePosition(for: block, totalWidth: totalWidth)
 
         return RoundedRectangle(cornerRadius: 6)
             .fill(Color(memberColor))
+            .opacity(isSelected ? 1.0 : 0.8)
             .frame(width: position.width, height: 36)
             .offset(x: position.offset)
+            .overlay(
+                isSelected ? RoundedRectangle(cornerRadius: 6).stroke(Color(memberColor), lineWidth: 3) : nil
+            )
             .onTapGesture {
                 selectedBlock = block
             }
@@ -138,6 +142,6 @@ struct TimelineVisualizationView: View {
         bedTime: bedTime
     )
 
-    TimelineVisualizationView(analytics: analytics, memberColor: .systemBlue)
+    TimelineVisualizationView(analytics: analytics, memberColor: .systemBlue, selectedBlock: .constant(nil))
         .padding()
 }

@@ -8,12 +8,23 @@
 
 import SwiftUI
 import CoreData
+import EventKit
 
 struct FamilyAnalyticsPrototype: View {
     let familyMembers: [FamilyMember]
     var onMemberSelected: ((FamilyMember) -> Void)? = nil
 
+    @Environment(\.managedObjectContext) private var viewContext
+    @EnvironmentObject private var appSettingsManager: AppSettingsManager
+
+    @FetchRequest(
+        entity: PersonalCalendar.entity(),
+        sortDescriptors: []
+    )
+    private var personalCalendars: FetchedResults<PersonalCalendar>
+
     @State private var analytics: [UUID: TimeAnalytics] = [:]
+    @State private var eventStore = EKEventStore()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -113,9 +124,8 @@ struct FamilyAnalyticsPrototype: View {
         let bedHour = member.useCustomSchedule ? Int(member.bedTimeHour) : 22
         let bedMinute = member.useCustomSchedule ? Int(member.bedTimeMinute) : 0
 
-        // For this prototype, we use empty events array
-        // In a real integration, this would fetch events from the calendar data
-        let calendarEvents: [UpcomingCalendarEvent] = []
+        // Fetch all events from shared and personal calendars
+        let calendarEvents = fetchAllEventsForMember(member)
 
         // Calculate analytics for today
         let todayAnalytics = calculator.calculate(
@@ -128,10 +138,97 @@ struct FamilyAnalyticsPrototype: View {
 
         analytics[member.id ?? UUID()] = todayAnalytics
     }
+
+    /// Fetches all events from shared and personal calendars for the given member
+    private func fetchAllEventsForMember(_ member: FamilyMember) -> [UpcomingCalendarEvent] {
+        let localCalendars = eventStore.calendars(for: .event)
+        let calendarById = Dictionary(uniqueKeysWithValues: localCalendars.map { ($0.calendarIdentifier, $0) })
+        let calendarByTitle = Dictionary(grouping: localCalendars, by: { $0.title }).mapValues { $0.first! }
+
+        var calendarIDs = Set<String>()
+
+        // Personal calendars (linked to this member's family member record)
+        if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+            for cal in memberCals {
+                if let storedID = cal.calendarID {
+                    var resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = cal.calendarName, let localCal = calendarByTitle[name] {
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    calendarIDs.insert(resolvedID)
+                }
+            }
+        }
+
+        // Shared calendars (family calendars shared with this member)
+        if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
+            for cal in sharedCals {
+                if let storedID = cal.calendarID {
+                    var resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = cal.calendarName, let localCal = calendarByTitle[name] {
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                    calendarIDs.insert(resolvedID)
+                }
+            }
+        }
+
+        // Personal calendars - only include if this member is the logged-in user
+        if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
+           member.id?.uuidString.lowercased() == linkedMemberId.lowercased() {
+            for personalCal in personalCalendars {
+                // Only include if toggled for family view
+                let shouldInclude = personalCal.showInSpotlight
+                guard shouldInclude else { continue }
+
+                var resolvedID: String?
+                if let storedID = personalCal.calendarID {
+                    resolvedID = storedID
+                    if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                        resolvedID = localCal.calendarIdentifier
+                    }
+                } else if let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
+                    resolvedID = localCal.calendarIdentifier
+                }
+
+                if let resolvedID {
+                    calendarIDs.insert(resolvedID)
+                }
+            }
+        }
+
+        guard !calendarIDs.isEmpty else { return [] }
+
+        // Fetch all events
+        let upcomingEvents = CalendarManager.shared.fetchNextEvents(
+            for: Array(calendarIDs),
+            limit: 0,
+            pastDays: appSettingsManager.eventsPastDays,
+            futureDays: appSettingsManager.eventsFutureDays
+        )
+
+        return upcomingEvents.map { event in
+            UpcomingCalendarEvent(
+                id: event.id,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.meetingLink,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendarID,
+                calendarColor: event.calendarColor,
+                calendarTitle: event.calendarTitle,
+                hasRecurrence: event.hasRecurrence,
+                recurrenceRule: nil,
+                isAllDay: event.isAllDay
+            )
+        }
+    }
 }
 
 #Preview {
     let context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+    let appSettings = AppSettingsManager()
 
     let member1 = FamilyMember(context: context)
     member1.id = UUID()
@@ -152,5 +249,7 @@ struct FamilyAnalyticsPrototype: View {
     return FamilyAnalyticsPrototype(
         familyMembers: [member1, member2]
     )
+    .environment(\.managedObjectContext, context)
+    .environmentObject(appSettings)
     .padding()
 }
