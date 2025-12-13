@@ -106,8 +106,8 @@ struct AnalyticsMetricsView: View {
             TimeGap(start: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, end: bedTime, durationMinutes: 270)
         ],
         busyBlocks: [
-            BusyBlock(start: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 10, minute: 0, second: 0, of: startOfDay)!, durationMinutes: 60, eventTitles: ["Meeting"]),
-            BusyBlock(start: calendar.date(bySettingHour: 14, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, durationMinutes: 90, eventTitles: ["Lunch"])
+            BusyBlock(start: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 10, minute: 0, second: 0, of: startOfDay)!, durationMinutes: 60, eventTitles: ["Meeting"], calendarColors: [.systemBlue]),
+            BusyBlock(start: calendar.date(bySettingHour: 14, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, durationMinutes: 90, eventTitles: ["Lunch"], calendarColors: [.systemGreen])
         ],
         longestGap: TimeGap(start: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, end: bedTime, durationMinutes: 270),
         wakeTime: wakeTime,

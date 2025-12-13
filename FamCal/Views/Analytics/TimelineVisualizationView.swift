@@ -54,14 +54,18 @@ struct TimelineVisualizationView: View {
 
     private func busyBlockView(_ block: BusyBlock, totalWidth: CGFloat, isSelected: Bool) -> some View {
         let position = calculatePosition(for: block, totalWidth: totalWidth)
+        // Use the first calendar color (for single events) or blend if multiple
+        let blockColor = block.calendarColors.first ?? memberColor
 
         return RoundedRectangle(cornerRadius: 6)
-            .fill(Color(memberColor))
-            .opacity(isSelected ? 1.0 : 0.8)
-            .frame(width: position.width, height: 36)
-            .offset(x: position.offset)
+            .fill(Color(blockColor))
+            .frame(width: position.width, height: isSelected ? 36 : 32)
+            .offset(x: position.offset, y: isSelected ? 0 : 2)
             .overlay(
-                isSelected ? RoundedRectangle(cornerRadius: 6).stroke(Color(memberColor), lineWidth: 3) : nil
+                isSelected
+                    ? RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(blockColor), lineWidth: 2.5)
+                    : nil
             )
             .onTapGesture {
                 selectedBlock = block
@@ -134,8 +138,8 @@ struct TimelineVisualizationView: View {
             TimeGap(start: event2End, end: bedTime, durationMinutes: 270)
         ],
         busyBlocks: [
-            BusyBlock(start: event1Start, end: event1End, durationMinutes: 60, eventTitles: ["Meeting"]),
-            BusyBlock(start: event2Start, end: event2End, durationMinutes: 90, eventTitles: ["Lunch", "Follow-up"])
+            BusyBlock(start: event1Start, end: event1End, durationMinutes: 60, eventTitles: ["Meeting"], calendarColors: [.systemBlue]),
+            BusyBlock(start: event2Start, end: event2End, durationMinutes: 90, eventTitles: ["Lunch", "Follow-up"], calendarColors: [.systemGreen, .systemRed])
         ],
         longestGap: TimeGap(start: event2End, end: bedTime, durationMinutes: 270),
         wakeTime: wakeTime,

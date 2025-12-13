@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 
 /// Represents analytics for a single member's day
 struct TimeAnalytics {
@@ -55,6 +56,7 @@ struct BusyBlock: Identifiable {
     let end: Date
     let durationMinutes: Int
     let eventTitles: [String]  // Multiple if overlapping
+    let calendarColors: [UIColor]  // Color from each event's calendar
 }
 
 /// Main calculator for daily time analytics
@@ -154,6 +156,7 @@ class TimeAnalyticsCalculator {
         var currentStart = sortedEvents[0].startDate
         var currentEnd = sortedEvents[0].endDate
         var currentTitles = [sortedEvents[0].title]
+        var currentColors = [sortedEvents[0].calendarColor]
 
         // Clamp first event to wake/bed window
         currentStart = max(currentStart, wakeTime)
@@ -171,6 +174,7 @@ class TimeAnalyticsCalculator {
                 // Overlapping - extend current block
                 currentEnd = max(currentEnd, eventEnd)
                 currentTitles.append(event.title)
+                currentColors.append(event.calendarColor)
             } else {
                 // No overlap - save current block and start new one
                 let duration = Int(currentEnd.timeIntervalSince(currentStart) / 60)
@@ -179,13 +183,15 @@ class TimeAnalyticsCalculator {
                         start: currentStart,
                         end: currentEnd,
                         durationMinutes: duration,
-                        eventTitles: currentTitles
+                        eventTitles: currentTitles,
+                        calendarColors: currentColors
                     ))
                 }
 
                 currentStart = eventStart
                 currentEnd = eventEnd
                 currentTitles = [event.title]
+                currentColors = [event.calendarColor]
             }
         }
 
@@ -196,7 +202,8 @@ class TimeAnalyticsCalculator {
                 start: currentStart,
                 end: currentEnd,
                 durationMinutes: duration,
-                eventTitles: currentTitles
+                eventTitles: currentTitles,
+                calendarColors: currentColors
             ))
         }
 
