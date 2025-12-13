@@ -93,18 +93,21 @@ class TimeAnalyticsCalculator {
         // Filter events to this day, excluding all-day events
         let relevantEvents = filterEvents(events, for: date)
 
-        // Consolidate overlapping events into busy blocks
-        let busyBlocks = consolidateBusyBlocks(relevantEvents, wakeTime: wakeDate, bedTime: bedDate)
+        // Create busy blocks from events (don't merge overlapping - show all events)
+        let busyBlocks = createBusyBlocks(from: relevantEvents, wakeTime: wakeDate, bedTime: bedDate)
 
-        // Calculate total busy minutes
-        let busyMinutes = busyBlocks.reduce(0) { $0 + $1.durationMinutes }
+        // Calculate total busy minutes (count overlapping time only once)
+        let busyMinutes = calculateBusyMinutes(busyBlocks, wakeTime: wakeDate, bedTime: bedDate)
 
         // Calculate free time
         let freeMinutes = max(0, totalAvailableMinutes - busyMinutes)
         let freePercentage = totalAvailableMinutes > 0 ? (freeMinutes * 100) / totalAvailableMinutes : 0
 
+        // Consolidate blocks for gap calculation (to count gaps correctly with overlaps)
+        let mergedForGaps = consolidateBusyBlocksForGaps(busyBlocks)
+
         // Calculate gaps between busy blocks
-        let gaps = calculateGaps(busyBlocks: busyBlocks, wakeTime: wakeDate, bedTime: bedDate)
+        let gaps = calculateGaps(busyBlocks: mergedForGaps, wakeTime: wakeDate, bedTime: bedDate)
 
         // Find longest gap
         let longestGap = gaps.max { $0.durationMinutes < $1.durationMinutes }
@@ -138,6 +141,117 @@ class TimeAnalyticsCalculator {
 
             return eventStartsToday || eventEndsToday
         }
+    }
+
+    /// Create a BusyBlock for each event (don't merge overlapping)
+    /// Shows all events even if they overlap
+    private func createBusyBlocks(
+        from events: [UpcomingCalendarEvent],
+        wakeTime: Date,
+        bedTime: Date
+    ) -> [BusyBlock] {
+        return events
+            .sorted { $0.startDate < $1.startDate }
+            .compactMap { event in
+                let eventStart = max(event.startDate, wakeTime)
+                let eventEnd = min(event.endDate, bedTime)
+
+                // Skip events entirely outside wake/bed window
+                guard eventStart < bedTime && eventEnd > wakeTime else { return nil }
+
+                let duration = Int(eventEnd.timeIntervalSince(eventStart) / 60)
+                guard duration > 0 else { return nil }
+
+                return BusyBlock(
+                    start: eventStart,
+                    end: eventEnd,
+                    durationMinutes: duration,
+                    eventTitles: [event.title],
+                    calendarColors: [event.calendarColor]
+                )
+            }
+    }
+
+    /// Consolidate busy blocks (merge overlapping) for gap calculation
+    /// This gives accurate gaps even when events overlap
+    private func consolidateBusyBlocksForGaps(_ blocks: [BusyBlock]) -> [BusyBlock] {
+        guard !blocks.isEmpty else { return [] }
+
+        let sorted = blocks.sorted { $0.start < $1.start }
+        var consolidated: [BusyBlock] = []
+        var currentStart = sorted[0].start
+        var currentEnd = sorted[0].end
+        var currentTitles = sorted[0].eventTitles
+        var currentColors = sorted[0].calendarColors
+
+        for block in sorted.dropFirst() {
+            if block.start <= currentEnd {
+                // Overlapping - extend
+                currentEnd = max(currentEnd, block.end)
+                currentTitles.append(contentsOf: block.eventTitles)
+                currentColors.append(contentsOf: block.calendarColors)
+            } else {
+                // No overlap - save and start new
+                let duration = Int(currentEnd.timeIntervalSince(currentStart) / 60)
+                if duration > 0 {
+                    consolidated.append(BusyBlock(
+                        start: currentStart,
+                        end: currentEnd,
+                        durationMinutes: duration,
+                        eventTitles: currentTitles,
+                        calendarColors: currentColors
+                    ))
+                }
+                currentStart = block.start
+                currentEnd = block.end
+                currentTitles = block.eventTitles
+                currentColors = block.calendarColors
+            }
+        }
+
+        // Add final block
+        let duration = Int(currentEnd.timeIntervalSince(currentStart) / 60)
+        if duration > 0 {
+            consolidated.append(BusyBlock(
+                start: currentStart,
+                end: currentEnd,
+                durationMinutes: duration,
+                eventTitles: currentTitles,
+                calendarColors: currentColors
+            ))
+        }
+
+        return consolidated
+    }
+
+    /// Calculate total busy minutes accounting for overlaps
+    /// Counts overlapping time only once
+    private func calculateBusyMinutes(_ blocks: [BusyBlock], wakeTime: Date, bedTime: Date) -> Int {
+        guard !blocks.isEmpty else { return 0 }
+
+        // Merge overlapping blocks to count busy time correctly
+        let mergedBlocks = consolidateBusyBlocks(
+            blocks.flatMap { block in
+                [UpcomingCalendarEvent(
+                    id: block.id.uuidString,
+                    title: block.eventTitles.first ?? "Event",
+                    location: nil,
+                    meetingLink: nil,
+                    startDate: block.start,
+                    endDate: block.end,
+                    calendarID: "",
+                    calendarColor: block.calendarColors.first ?? .systemGray,
+                    calendarTitle: "",
+                    hasRecurrence: false,
+                    recurrenceRule: nil,
+                    isAllDay: false
+                )]
+            },
+            wakeTime: wakeTime,
+            bedTime: bedTime
+        )
+
+        return mergedBlocks.reduce(0) { $0 + $1.durationMinutes }
     }
 
     /// Consolidate overlapping events into busy blocks

@@ -54,19 +54,13 @@ struct TimelineVisualizationView: View {
 
     private func busyBlockView(_ block: BusyBlock, totalWidth: CGFloat, isSelected: Bool) -> some View {
         let position = calculatePosition(for: block, totalWidth: totalWidth)
-        // Use the first calendar color (for single events) or blend if multiple
+        // Use the first calendar color
         let blockColor = block.calendarColors.first ?? memberColor
 
         return RoundedRectangle(cornerRadius: 6)
-            .fill(Color(blockColor))
-            .frame(width: position.width, height: isSelected ? 36 : 32)
-            .offset(x: position.offset, y: isSelected ? 0 : 2)
-            .overlay(
-                isSelected
-                    ? RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color(blockColor), lineWidth: 2.5)
-                    : nil
-            )
+            .fill(isSelected ? Color(blockColor) : Color(.systemGray4))
+            .frame(width: position.width, height: 36)
+            .offset(x: position.offset)
             .onTapGesture {
                 selectedBlock = block
             }

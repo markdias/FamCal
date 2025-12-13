@@ -1765,16 +1765,16 @@ extension SpotlightView {
 
     private func eventBlockCard(_ block: BusyBlock, isSelected: Bool) -> some View {
         let cardCornerRadius: CGFloat = 12
-        let memberColor = UIColorFromHex(member.colorHex ?? "#007AFF")
+        let calendarColor = block.calendarColors.first ?? UIColorFromHex(member.colorHex ?? "#007AFF")
         let colorBarWidth: CGFloat = 4
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(isSelected ? Color(memberColor).opacity(0.15) : Color(uiColor: .systemBackground))
+                .fill(isSelected ? Color(calendarColor).opacity(0.15) : Color(uiColor: .systemBackground))
 
-            // Color bar on the left
+            // Color bar on the left - always show calendar color
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(memberColor))
+                .fill(Color(calendarColor))
                 .frame(width: colorBarWidth)
 
             HStack(spacing: 12) {
@@ -1815,7 +1815,7 @@ extension SpotlightView {
         .frame(maxWidth: .infinity, alignment: .leading)
         .cornerRadius(cardCornerRadius)
         .overlay(
-            isSelected ? RoundedRectangle(cornerRadius: cardCornerRadius).stroke(Color(memberColor), lineWidth: 2) : nil
+            isSelected ? RoundedRectangle(cornerRadius: cardCornerRadius).stroke(Color(calendarColor), lineWidth: 2) : nil
         )
     }
 
