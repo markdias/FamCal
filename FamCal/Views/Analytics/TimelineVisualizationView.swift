@@ -11,6 +11,7 @@ struct TimelineVisualizationView: View {
     let analytics: TimeAnalytics
     let memberColor: UIColor
     @Binding var selectedBlock: BusyBlock?
+    @Binding var selectedGap: TimeGap?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -27,7 +28,16 @@ struct TimelineVisualizationView: View {
 
                     // Busy blocks - color-coded
                     ForEach(analytics.busyBlocks) { block in
-                        busyBlockView(block, totalWidth: geometry.size.width, isSelected: selectedBlock?.id == block.id)
+                        let isSelected = selectedBlock?.id == block.id
+                        busyBlockView(block, totalWidth: geometry.size.width, isSelected: isSelected)
+                            .zIndex(isSelected ? 1 : 0)
+                    }
+
+                    // Free time gaps (tap to see time range)
+                    ForEach(analytics.gaps) { gap in
+                        let isGapSelected = selectedGap?.id == gap.id
+                        gapView(gap, totalWidth: geometry.size.width, isSelected: isGapSelected)
+                            .zIndex(isGapSelected ? 2 : 1)
                     }
 
                     // Current time indicator (if today)
@@ -54,15 +64,50 @@ struct TimelineVisualizationView: View {
 
     private func busyBlockView(_ block: BusyBlock, totalWidth: CGFloat, isSelected: Bool) -> some View {
         let position = calculatePosition(for: block, totalWidth: totalWidth)
-        // Use the first calendar color
-        let blockColor = block.calendarColors.first ?? memberColor
 
         return RoundedRectangle(cornerRadius: 6)
-            .fill(isSelected ? Color(blockColor) : Color(.systemGray4))
+            .fill(blockColor(for: block, isSelected: isSelected))
             .frame(width: position.width, height: 36)
             .offset(x: position.offset)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color(.systemBackground).opacity(0.001))
+            )
             .onTapGesture {
-                selectedBlock = block
+                if selectedBlock?.id == block.id {
+                    selectedBlock = nil
+                } else {
+                    selectedGap = nil
+                    selectedBlock = block
+                }
+            }
+    }
+
+    private func blockColor(for block: BusyBlock, isSelected: Bool) -> Color {
+        let baseColor = block.calendarColors.first ?? UIColor.systemGray4
+        return isSelected ? Color(baseColor) : Color(.systemGray4)
+    }
+
+    private func gapView(_ gap: TimeGap, totalWidth: CGFloat, isSelected: Bool) -> some View {
+        let position = calculatePosition(for: gap.start, end: gap.end, totalWidth: totalWidth)
+        let width = max(position.width, 8) // ensure small gaps remain tappable
+
+        return RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(isSelected ? Color.blue : Color(.systemGray3), lineWidth: isSelected ? 2 : 1)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? Color.blue.opacity(0.08) : Color.clear)
+            )
+            .frame(width: width, height: 36)
+            .offset(x: position.offset)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if selectedGap?.id == gap.id {
+                    selectedGap = nil
+                } else {
+                    selectedBlock = nil
+                    selectedGap = gap
+                }
             }
     }
 
@@ -77,9 +122,13 @@ struct TimelineVisualizationView: View {
     }
 
     private func calculatePosition(for block: BusyBlock, totalWidth: CGFloat) -> (offset: CGFloat, width: CGFloat) {
+        calculatePosition(for: block.start, end: block.end, totalWidth: totalWidth)
+    }
+
+    private func calculatePosition(for start: Date, end: Date, totalWidth: CGFloat) -> (offset: CGFloat, width: CGFloat) {
         let totalMinutes = analytics.totalAvailableMinutes
-        let startOffset = block.start.timeIntervalSince(analytics.wakeTime) / 60
-        let duration = block.durationMinutes
+        let startOffset = start.timeIntervalSince(analytics.wakeTime) / 60
+        let duration = Int(end.timeIntervalSince(start) / 60)
 
         let offsetPercentage = startOffset / Double(totalMinutes)
         let widthPercentage = Double(duration) / Double(totalMinutes)
@@ -140,6 +189,11 @@ struct TimelineVisualizationView: View {
         bedTime: bedTime
     )
 
-    TimelineVisualizationView(analytics: analytics, memberColor: .systemBlue, selectedBlock: .constant(nil))
+    TimelineVisualizationView(
+        analytics: analytics,
+        memberColor: .systemBlue,
+        selectedBlock: .constant(nil),
+        selectedGap: .constant(nil)
+    )
         .padding()
 }

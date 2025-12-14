@@ -37,6 +37,8 @@ struct AnalyticsView: View {
     @State private var isCalculating = false
     @State private var eventStore = EKEventStore()
     @State private var selectedEventBlock: BusyBlock?
+    @State private var selectedGap: TimeGap?
+    @State private var showDatePickerSheet = false
 
     var body: some View {
         NavigationView {
@@ -114,47 +116,7 @@ struct AnalyticsView: View {
             }
 
             // Date picker
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Date")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 12) {
-                    Button(action: {
-                        selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.blue)
-                            .frame(width: 44, height: 44)
-                    }
-
-                    DatePicker(
-                        "Select Date",
-                        selection: $selectedDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-
-                    Button(action: {
-                        selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
-                    }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.blue)
-                            .frame(width: 44, height: 44)
-                    }
-                }
-
-                // Quick date buttons
-                HStack(spacing: 8) {
-                    quickDateButton("Today", date: Date())
-                    quickDateButton(
-                        "Tomorrow",
-                        date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-                    )
-                }
-            }
+            dateSelector
         }
         .padding(12)
         .background(
@@ -163,19 +125,81 @@ struct AnalyticsView: View {
         )
     }
 
-    private func quickDateButton(_ label: String, date: Date) -> some View {
-        Button(action: { selectedDate = date }) {
-            Text(label)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(Calendar.current.isDate(selectedDate, inSameDayAs: date) ? .white : .blue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(
-                    Calendar.current.isDate(selectedDate, inSameDayAs: date)
-                        ? Color.blue
-                        : Color(.tertiarySystemBackground)
-                )
-                .cornerRadius(8)
+    private var dateSelector: some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Date")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    Button(action: { selectedDate = today }) {
+                        Text("Today")
+                            .font(.system(size: 14, weight: .medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(calendar.isDate(selectedDate, inSameDayAs: today) ? Color.blue : Color(.tertiarySystemBackground))
+                            .foregroundColor(calendar.isDate(selectedDate, inSameDayAs: today) ? .white : .primary)
+                            .cornerRadius(8)
+                    }
+
+                    Button(action: { selectedDate = tomorrow }) {
+                        Text("Tomorrow")
+                            .font(.system(size: 14, weight: .medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        .background(calendar.isDate(selectedDate, inSameDayAs: tomorrow) ? Color.blue : Color(.tertiarySystemBackground))
+                        .foregroundColor(calendar.isDate(selectedDate, inSameDayAs: tomorrow) ? .white : .primary)
+                        .cornerRadius(8)
+                    }
+
+                    Button(action: { showDatePickerSheet = true }) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.blue)
+                            .padding(8)
+                            .background(Color(.tertiarySystemBackground))
+                            .cornerRadius(8)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+
+                    Text(formatSelectedDate(selectedDate))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+                }
+            }
+        }
+        .sheet(isPresented: $showDatePickerSheet) {
+            NavigationView {
+                VStack {
+                    DatePicker(
+                        "Select Date",
+                        selection: $selectedDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding()
+
+                    Spacer()
+                }
+                .navigationTitle("Select Date")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") { showDatePickerSheet = false }
+                    }
+                }
+            }
         }
     }
 
@@ -190,7 +214,8 @@ struct AnalyticsView: View {
                 TimelineVisualizationView(
                     analytics: analytics,
                     memberColor: UIColorFromHex(selectedMember?.colorHex ?? "#007AFF"),
-                    selectedBlock: $selectedEventBlock
+                    selectedBlock: $selectedEventBlock,
+                    selectedGap: $selectedGap
                 )
             }
 
@@ -471,6 +496,12 @@ struct AnalyticsView: View {
         } else {
             return "\(mins)m"
         }
+    }
+
+    private func formatSelectedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter.string(from: date)
     }
 
     private func insightMessage(analytics: TimeAnalytics) -> String {

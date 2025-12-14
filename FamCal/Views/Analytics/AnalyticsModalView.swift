@@ -28,6 +28,8 @@ struct AnalyticsModalView: View {
     @State private var isCalculating = false
     @State private var eventStore = EKEventStore()
     @State private var selectedEventBlock: BusyBlock?
+    @State private var selectedGap: TimeGap?
+    @State private var showDatePickerSheet = false
 
     var body: some View {
         NavigationView {
@@ -51,7 +53,8 @@ struct AnalyticsModalView: View {
                                 TimelineVisualizationView(
                                     analytics: analytics,
                                     memberColor: UIColorFromHex(member.colorHex ?? "#007AFF"),
-                                    selectedBlock: $selectedEventBlock
+                                    selectedBlock: $selectedEventBlock,
+                                    selectedGap: $selectedGap
                                 )
                             }
 
@@ -129,32 +132,63 @@ struct AnalyticsModalView: View {
     // MARK: - Components
 
     private var quickDateSelector: some View {
-        HStack(spacing: 8) {
-            quickDateButton("Today", date: Date())
-            quickDateButton(
-                "Tomorrow",
-                date: Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-            )
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
 
-            Spacer()
-
-            Menu {
-                DatePicker(
-                    "Select Date",
-                    selection: $selectedDate,
-                    displayedComponents: .date
+        return VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                quickDateButton("Today", date: today)
+                quickDateButton(
+                    "Tomorrow",
+                    date: tomorrow
                 )
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 13))
-                    Text("Custom")
-                        .font(.system(size: 13))
+
+                Spacer()
+
+                Button(action: { showDatePickerSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 13))
+                        Text("Custom")
+                            .font(.system(size: 13))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(6)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(.tertiarySystemBackground))
-                .cornerRadius(6)
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Text(formatSelectedDate(selectedDate))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+        .sheet(isPresented: $showDatePickerSheet) {
+            NavigationView {
+                VStack {
+                    DatePicker(
+                        "Select Date",
+                        selection: $selectedDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding()
+
+                    Spacer()
+                }
+                .navigationTitle("Select Date")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") { showDatePickerSheet = false }
+                    }
+                }
             }
         }
     }
@@ -384,6 +418,12 @@ struct AnalyticsModalView: View {
         } else {
             return "\(hours)h"
         }
+    }
+
+    private func formatSelectedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter.string(from: date)
     }
 
     private func insightTitle(analytics: TimeAnalytics) -> String {

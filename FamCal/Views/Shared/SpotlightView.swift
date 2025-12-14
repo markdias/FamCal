@@ -77,9 +77,11 @@ struct SpotlightView: View {
     @State private var tempBedHour: Int = 22
     @State private var tempBedMinute: Int = 0
     @State private var selectedEventBlock: BusyBlock?
+    @State private var selectedGap: TimeGap?
     @State private var noteInput: String = ""
     @State private var notesContentWidth: CGFloat?
     @State private var editingNoteId: UUID?
+    @State private var showDatePickerSheet = false
     @EnvironmentObject private var supabaseDataManager: SupabaseDataManager
 
     @Namespace private var tabNamespace
@@ -114,6 +116,30 @@ struct SpotlightView: View {
         case all
         case member
         case analytics
+    }
+
+    // Combined schedule items for ordered list display
+    private enum ScheduleItem: Identifiable {
+        case busy(BusyBlock)
+        case gap(TimeGap)
+
+        var id: UUID {
+            switch self {
+            case .busy(let block):
+                return block.id
+            case .gap(let gap):
+                return gap.id
+            }
+        }
+
+        var start: Date {
+            switch self {
+            case .busy(let block):
+                return block.start
+            case .gap(let gap):
+                return gap.start
+            }
+        }
     }
 
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -1587,30 +1613,24 @@ extension SpotlightView {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(calendar.isDate(selectedAnalyticsDate, inSameDayAs: tomorrow) ? Color.blue : Color(.secondarySystemBackground))
-                        .foregroundColor(calendar.isDate(selectedAnalyticsDate, inSameDayAs: tomorrow) ? .white : .primary)
-                        .cornerRadius(8)
-                }
-
-                // Custom date picker button
-                Menu {
-                    DatePicker(
-                        "Select Date",
-                        selection: $selectedAnalyticsDate,
-                        displayedComponents: .date
-                    )
-                } label: {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.blue)
-                        .padding(8)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(8)
-                }
+                    .foregroundColor(calendar.isDate(selectedAnalyticsDate, inSameDayAs: tomorrow) ? .white : .primary)
+                    .cornerRadius(8)
             }
 
-            // Show selected date
-            HStack(spacing: 8) {
+            // Custom date picker button
+            Button(action: { showDatePickerSheet = true }) {
                 Image(systemName: "calendar")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.blue)
+                    .padding(8)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(8)
+            }
+        }
+
+        // Show selected date
+        HStack(spacing: 8) {
+            Image(systemName: "calendar")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
 
@@ -1622,6 +1642,27 @@ extension SpotlightView {
             }
         }
         .padding(.horizontal, 16)
+        .sheet(isPresented: $showDatePickerSheet) {
+            NavigationView {
+                VStack {
+                    DatePicker(
+                        "Select Date",
+                        selection: $selectedAnalyticsDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding()
+
+                    Spacer()
+                }
+                .navigationTitle("Select Date")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Done") { showDatePickerSheet = false }
+                    }
+                }
+            }
+        }
     }
 
     private var wakeTimeAdjustmentButton: some View {
@@ -1720,7 +1761,8 @@ extension SpotlightView {
             TimelineVisualizationView(
                 analytics: analytics,
                 memberColor: UIColorFromHex(member.colorHex ?? "#007AFF"),
-                selectedBlock: $selectedEventBlock
+                selectedBlock: $selectedEventBlock,
+                selectedGap: $selectedGap
             )
             .padding(.horizontal, 16)
         }
@@ -1728,21 +1770,39 @@ extension SpotlightView {
 
     private func eventsListForSelectedDay(analytics: TimeAnalytics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !analytics.busyBlocks.isEmpty {
+            let scheduleItems = combinedScheduleItems(analytics: analytics)
+
+            if !scheduleItems.isEmpty {
                 Text("Events")
                     .font(.system(size: 14, weight: .semibold))
                     .padding(.horizontal, 16)
 
                 VStack(spacing: 8) {
-                    ForEach(analytics.busyBlocks) { busyBlock in
-                        eventBlockCard(busyBlock, isSelected: selectedEventBlock?.id == busyBlock.id)
-                            .onTapGesture {
-                                selectedEventBlock = busyBlock
-                                // Find and open the actual event
-                                if let eventTitle = busyBlock.eventTitles.first {
-                                    openEventDetail(for: eventTitle)
+                    ForEach(scheduleItems) { item in
+                        switch item {
+                        case .busy(let busyBlock):
+                            eventBlockCard(busyBlock, isSelected: selectedEventBlock?.id == busyBlock.id)
+                                .onTapGesture {
+                                    selectedEventBlock = busyBlock
+                                    selectedGap = nil
                                 }
-                            }
+                                .contextMenu {
+                                    if let eventTitle = busyBlock.eventTitles.first {
+                                        Button {
+                                            selectedEventBlock = busyBlock
+                                            openEventDetail(for: eventTitle)
+                                        } label: {
+                                            Label("View Details", systemImage: "info.circle")
+                                        }
+                                    }
+                                }
+                        case .gap(let gap):
+                            gapListCard(gap, isSelected: selectedGap?.id == gap.id)
+                                .onTapGesture {
+                                    selectedGap = gap
+                                    selectedEventBlock = nil
+                                }
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1761,6 +1821,12 @@ extension SpotlightView {
                 .padding(.vertical, 40)
             }
         }
+    }
+
+    private func combinedScheduleItems(analytics: TimeAnalytics) -> [ScheduleItem] {
+        let busyItems = analytics.busyBlocks.map { ScheduleItem.busy($0) }
+        let gapItems = analytics.gaps.map { ScheduleItem.gap($0) }
+        return (busyItems + gapItems).sorted { $0.start < $1.start }
     }
 
     private func eventBlockCard(_ block: BusyBlock, isSelected: Bool) -> some View {
@@ -1816,6 +1882,61 @@ extension SpotlightView {
         .cornerRadius(cardCornerRadius)
         .overlay(
             isSelected ? RoundedRectangle(cornerRadius: cardCornerRadius).stroke(Color(calendarColor), lineWidth: 2) : nil
+        )
+    }
+
+    private func gapListCard(_ gap: TimeGap, isSelected: Bool) -> some View {
+        let cardCornerRadius: CGFloat = 12
+        let colorBarWidth: CGFloat = 4
+
+        return ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .fill(isSelected ? Color.blue.opacity(0.12) : Color(uiColor: .systemBackground))
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.blue)
+                .frame(width: colorBarWidth)
+
+            HStack(spacing: 12) {
+                // Time box like events
+                VStack(spacing: 2) {
+                    Text("Start")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(isSelected ? .blue : .secondary)
+
+                    Text(timeString(gap.start))
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundColor(isSelected ? .blue : .primary)
+                }
+                .frame(width: 50, alignment: .center)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Free Time")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(isSelected ? .blue : .primary)
+
+                    HStack(spacing: 6) {
+                        Text("\(timeString(gap.start)) – \(timeString(gap.end))")
+                            .font(.system(size: 11))
+                            .foregroundColor(isSelected ? .blue : .secondary)
+
+                        Spacer(minLength: 0)
+
+                        Text(gap.formattedDuration)
+                            .font(.system(size: 10))
+                            .foregroundColor(isSelected ? .blue : .secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.leading, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cornerRadius(cardCornerRadius)
+        .overlay(
+            isSelected ? RoundedRectangle(cornerRadius: cardCornerRadius).stroke(Color.blue, lineWidth: 2) : nil
         )
     }
 

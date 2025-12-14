@@ -150,7 +150,15 @@ class TimeAnalyticsCalculator {
         wakeTime: Date,
         bedTime: Date
     ) -> [BusyBlock] {
-        return events
+        struct ClampedEvent {
+            let id: String
+            let start: Date
+            let end: Date
+            let title: String
+            let color: UIColor
+        }
+
+        let clampedEvents: [ClampedEvent] = events
             .sorted { $0.startDate < $1.startDate }
             .compactMap { event in
                 let eventStart = max(event.startDate, wakeTime)
@@ -162,14 +170,42 @@ class TimeAnalyticsCalculator {
                 let duration = Int(eventEnd.timeIntervalSince(eventStart) / 60)
                 guard duration > 0 else { return nil }
 
-                return BusyBlock(
+                return ClampedEvent(
+                    id: event.id,
                     start: eventStart,
                     end: eventEnd,
-                    durationMinutes: duration,
-                    eventTitles: [event.title],
-                    calendarColors: [event.calendarColor]
+                    title: event.title,
+                    color: event.calendarColor
                 )
             }
+
+        return clampedEvents.map { clamped in
+            // Collect colors for all overlapping events so timeline can render gradients
+            let overlappingColors = clampedEvents
+                .filter { $0.id != clamped.id && $0.start < clamped.end && $0.end > clamped.start }
+                .map { $0.color }
+
+            let orderedColors = uniqueColorsPreservingOrder([clamped.color] + overlappingColors)
+            let duration = Int(clamped.end.timeIntervalSince(clamped.start) / 60)
+
+            return BusyBlock(
+                start: clamped.start,
+                end: clamped.end,
+                durationMinutes: duration,
+                eventTitles: [clamped.title],
+                calendarColors: orderedColors
+            )
+        }
+    }
+
+    private func uniqueColorsPreservingOrder(_ colors: [UIColor]) -> [UIColor] {
+        var seen: [UIColor] = []
+        for color in colors {
+            if !seen.contains(where: { $0.isEqual(color) }) {
+                seen.append(color)
+            }
+        }
+        return seen
     }
 
     /// Consolidate busy blocks (merge overlapping) for gap calculation
