@@ -1816,7 +1816,6 @@ extension SpotlightView {
     private func eventsListForSelectedDay(analytics: TimeAnalytics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             let scheduleItems = combinedScheduleItems(analytics: analytics)
-            let busyLookup = Dictionary(uniqueKeysWithValues: analytics.busyBlocks.map { ($0.id, $0) })
 
             if !scheduleItems.isEmpty {
                 Text("Events")
@@ -1843,11 +1842,11 @@ extension SpotlightView {
                                         }
                                     }
                                 }
-                        case .travel(let travel):
+                case .travel(let travel):
                     travelBlockCard(travel, isSelected: selectedTravelId == travel.id)
                         .onTapGesture {
                             selectedTravelId = travel.id
-                            selectedEventBlock = nil
+                            selectedEventBlock = travel.parentBlock
                             selectedGap = nil
                         }
                         case .gap(let gap):
@@ -1882,7 +1881,7 @@ extension SpotlightView {
         var items: [ScheduleItem] = []
 
         for block in analytics.busyBlocks {
-            if block.travelDurationMinutes > 0 {
+            if block.travelDurationMinutes > 0 && !block.isFree {
                 let travelEnd = block.start.addingTimeInterval(TimeInterval(block.travelDurationMinutes * 60))
                 let travel = TravelSegment(
                     start: block.start,
@@ -1927,10 +1926,15 @@ extension SpotlightView {
         let eventStart = block.start.addingTimeInterval(TimeInterval(block.travelDurationMinutes * 60))
         let eventEnd = block.end
         let eventDuration = max(0, block.durationMinutes - block.travelDurationMinutes)
+        let isFree = block.isFree
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(isSelected ? Color(calendarColor).opacity(0.15) : Color(uiColor: .systemBackground))
+                .fill(
+                    isSelected
+                    ? Color(calendarColor).opacity(0.15)
+                    : (isFree ? Color(uiColor: .systemBackground).opacity(0.95) : Color(uiColor: .systemBackground))
+                )
 
             // Color bar on the left - always show calendar color
             RoundedRectangle(cornerRadius: 2)
@@ -1951,9 +1955,22 @@ extension SpotlightView {
                 .frame(width: 50, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(block.eventTitles.first ?? "Event")
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(block.eventTitles.first ?? "Event")
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                            .foregroundColor(isFree ? .secondary : .primary)
+
+                        if isFree {
+                            Text("Free")
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.gray.opacity(0.15))
+                                .foregroundColor(.secondary)
+                                .cornerRadius(6)
+                        }
+                    }
 
                     HStack(spacing: 6) {
                         Text(timeString(eventStart) + " – " + timeString(eventEnd))
@@ -2280,7 +2297,8 @@ extension SpotlightView {
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
                 travelTimeMinutes: event.travelTimeMinutes,
-                isAllDay: event.isAllDay
+                isAllDay: event.isAllDay,
+                showAs: event.showAs
             )
         }
     }

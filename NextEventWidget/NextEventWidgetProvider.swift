@@ -72,6 +72,7 @@ struct WidgetEventData: Codable {
     let colorHex: String
     let checklistCompleted: Int?
     let checklistTotal: Int?
+    let travelTimeMinutes: Int?
 }
 
 /// Timeline provider for next event widget
@@ -438,6 +439,13 @@ struct NextEventProvider: AppIntentTimelineProvider {
             // Note: Checklist data is not fetched in widget due to process isolation
             // Widgets run in a separate process and cannot access the main app's Core Data
             // Checklist indicator is available in the struct but left nil here
+            let travelMinutes: Int? = {
+                if let travelValue = nextEvent.value(forKey: "travelTime") as? TimeInterval, travelValue > 0 {
+                    return Int(travelValue / 60)
+                }
+                return nil
+            }()
+
             let eventData = WidgetEventData(
                 title: nextEvent.title ?? "Event",
                 startDate: nextEvent.startDate,
@@ -445,7 +453,8 @@ struct NextEventProvider: AppIntentTimelineProvider {
                 location: nextEvent.location,
                 colorHex: eventColorHex, // Use calendar color
                 checklistCompleted: nil,
-                checklistTotal: nil
+                checklistTotal: nil,
+                travelTimeMinutes: travelMinutes
             )
 
             print("✅ Widget: Returning event '\(eventData.title)' for '\(memberData.name)' with color \(eventColorHex)")

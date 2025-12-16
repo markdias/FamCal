@@ -572,13 +572,7 @@ class SupabaseDataManager: ObservableObject {
             // Fetch family members from CoreData
             let memberFetch = FamilyMember.fetchRequest()
             let cachedMembers = try context.fetch(memberFetch)
-            print("📦 Loaded \(cachedMembers.count) family members from CoreData cache")
-
-            // Verify relationships are intact in CoreData
-            for member in cachedMembers {
-                let calendarCount = member.memberCalendars?.count ?? 0
-                print("  └─ \(member.name ?? "Unknown"): \(calendarCount) linked calendars")
-            }
+            // Quiet: avoid repetitive cache load logs
 
             // Convert CoreData FamilyMember to DTO for in-memory cache
             self.familyMembers = cachedMembers.map { member in
@@ -605,13 +599,7 @@ class SupabaseDataManager: ObservableObject {
             // Fetch shared calendars from CoreData
             let sharedCalendarFetch = SharedCalendar.fetchRequest()
             let cachedSharedCalendars = try context.fetch(sharedCalendarFetch)
-            print("📦 Loaded \(cachedSharedCalendars.count) shared calendars from CoreData cache")
-
-            // Verify shared calendar member relationships are intact
-            for calendar in cachedSharedCalendars {
-                let memberCount = calendar.members?.count ?? 0
-                print("  └─ \(calendar.calendarName ?? "Unknown"): linked to \(memberCount) members")
-            }
+            // Quiet: avoid repetitive cache load logs
 
             self.sharedCalendars = cachedSharedCalendars.map { calendar in
                 SharedCalendarDTO(
@@ -642,7 +630,7 @@ class SupabaseDataManager: ObservableObject {
                 }
             }
             self.familyMemberCalendars = memberCalendars
-            print("📦 Loaded \(memberCalendars.count) family member calendars from CoreData cache")
+            // Quiet: avoid repetitive cache load logs
 
             // Fetch personal calendars from CoreData
             let personalCalendarFetch = PersonalCalendar.fetchRequest()
@@ -662,7 +650,7 @@ class SupabaseDataManager: ObservableObject {
                     updated_at: nil
                 )
             }
-            print("📦 Loaded \(cachedPersonalCalendars.count) personal calendars from CoreData cache")
+            // Quiet: avoid repetitive cache load logs
 
             // Fetch drivers from CoreData
             let driverFetch = Driver.fetchRequest()
@@ -682,7 +670,7 @@ class SupabaseDataManager: ObservableObject {
                     updated_at: nil
                 )
             }
-            print("📦 Loaded \(cachedDrivers.count) drivers from CoreData cache")
+            // Quiet: avoid repetitive cache load logs
 
             // Fetch saved addresses from CoreData
             let addressFetch = SavedAddress.fetchRequest()
@@ -699,19 +687,8 @@ class SupabaseDataManager: ObservableObject {
                     updated_at: nil
                 )
             }
-            print("📦 Loaded \(cachedAddresses.count) saved addresses from CoreData cache")
-
-            // Verify all relationships are intact and accessible
-            print("📊 Offline cache validation:")
-            print("  ✅ Family members: \(cachedMembers.count)")
-            print("  ✅ Family members with linked calendars: \(cachedMembers.filter { ($0.memberCalendars?.count ?? 0) > 0 }.count)")
-            print("  ✅ Total family member calendars: \(memberCalendars.count)")
-            print("  ✅ Shared calendars: \(cachedSharedCalendars.count)")
-            print("  ✅ Personal calendars: \(cachedPersonalCalendars.count)")
-            print("  ✅ Drivers: \(cachedDrivers.count)")
-            print("  ✅ Saved addresses: \(cachedAddresses.count)")
-
-            print("✅ Successfully restored data from CoreData cache for offline support")
+            // Quiet: avoid repetitive cache load logs
+            // (relationships already validated by successful fetches)
             hasHydratedFromCache = true
         } catch {
             print("❌ Error loading cached data from CoreData: \(error)")
@@ -1505,7 +1482,6 @@ class SupabaseDataManager: ObservableObject {
             return
         }
 
-        print("📦 Hydrating in-memory cache from CoreData (\(reason))")
         loadCachedDataFromCoreData(context)
     }
 

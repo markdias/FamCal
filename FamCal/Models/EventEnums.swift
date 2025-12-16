@@ -27,7 +27,7 @@ enum AlertOption: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum ShowAsOption: String, CaseIterable {
+enum ShowAsOption: String, CaseIterable, Codable {
     case busy = "Busy"
     case free = "Free"
 }

@@ -101,7 +101,9 @@ struct FamilyView: View {
                             driverName: eventDTO.driverName,
                             isImportant: eventDTO.isImportant,
                             hasChecklist: false,
-                            checklistProgress: nil
+                            checklistProgress: nil,
+                            travelTimeMinutes: eventDTO.travelTimeMinutes,
+                            showAs: eventDTO.showAs ?? .busy
                         )
                     }
 
@@ -126,7 +128,9 @@ struct FamilyView: View {
                             driverName: eventDTO.driverName,
                             isImportant: eventDTO.isImportant,
                             hasChecklist: false,
-                            checklistProgress: nil
+                            checklistProgress: nil,
+                            travelTimeMinutes: eventDTO.travelTimeMinutes,
+                            showAs: eventDTO.showAs ?? .busy
                         )
                     }
 
@@ -149,7 +153,7 @@ struct FamilyView: View {
     @State private var eventsTask: Task<Void, Never>? = nil
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
     @State private var spotlightMemberName: String? = nil
-    @State private var eventStore = EKEventStore()
+    private var eventStore: EKEventStore { CalendarManager.shared.eventStore }
     @State private var refreshTimer: Timer? = nil
     @State private var currentTime = Date()
     @State private var showingSettings = false
@@ -171,6 +175,9 @@ struct FamilyView: View {
     @State private var lastTappedEventId: String = ""
     @State private var tapDelayTimer: Timer?
     @State private var dataChangeDebounceTimer: Timer?
+    @State private var eventStoreHasPendingChanges = true
+    @State private var lastEventFingerprint: String? = nil
+    @State private var lastEventLoadDate: Date? = nil
 
     private let calendar = Calendar.current
     private var theme: AppTheme { themeManager.selectedTheme }
@@ -357,30 +364,27 @@ struct FamilyView: View {
         .onChange(of: memberCalendarLinks.count) { _, _ in triggerDebouncedReload() }
         .onChange(of: personalCalendars.count) { _, _ in triggerDebouncedReload() }
         .onChange(of: familyEvents.count) { _, _ in triggerDebouncedReload() }
-        .onChange(of: checklists.count) { oldValue, newValue in
+        .onChange(of: checklists.count) { _, _ in
             // When checklists load or change, refresh event display to show/update checklist indicators
-            print("📋 Checklists changed: \(oldValue) → \(newValue)")
-            if !memberEvents.isEmpty {
-                print("🔄 Refreshing \(memberEvents.count) member groups with checklist data")
-                // Update existing events with fresh checklist data
-                memberEvents = memberEvents.map { group in
-                    let updatedNextEvent = group.nextEvent.map { refreshedGroupedEvent($0) }
-                    let updatedUpcomingEvents = group.upcomingEvents.map { refreshedGroupedEvent($0) }
-                    print("📝 Updated \(group.memberName): nextEvent hasChecklist=\(updatedNextEvent?.hasChecklist ?? false), upcoming=\(updatedUpcomingEvents.filter { $0.hasChecklist }.count)")
-                    return MemberEventGroup(
-                        id: group.id,
-                        memberName: group.memberName,
-                        sortOrder: group.sortOrder,
-                        memberColor: group.memberColor,
-                        nextEvent: updatedNextEvent,
-                        upcomingEvents: updatedUpcomingEvents
-                    )
-                }
-            } else {
-                print("⚠️ No member events to refresh")
+            guard !memberEvents.isEmpty else { return }
+
+            memberEvents = memberEvents.map { group in
+                let updatedNextEvent = group.nextEvent.map { refreshedGroupedEvent($0) }
+                let updatedUpcomingEvents = group.upcomingEvents.map { refreshedGroupedEvent($0) }
+                return MemberEventGroup(
+                    id: group.id,
+                    memberName: group.memberName,
+                    sortOrder: group.sortOrder,
+                    memberColor: group.memberColor,
+                    nextEvent: updatedNextEvent,
+                    upcomingEvents: updatedUpcomingEvents
+                )
             }
+
+            lastEventFingerprint = fingerprint(for: memberEvents)
+            lastEventLoadDate = Date()
         }
-        .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents(showLoadingState: false) }
+        .onChange(of: appSettingsManager.eventsPerPerson) { _, _ in loadNextEvents(showLoadingState: false, force: true) }
         .onChange(of: appSettingsManager.autoRefreshInterval) { _, _ in startRefreshTimer() }
         .onChange(of: currentTime) { _, _ in /* Trigger re-render for status updates */ }
         .onChange(of: appSettingsManager.familyMemberOrder) { _, newOrder in
@@ -569,8 +573,9 @@ struct FamilyView: View {
                                     performDragDrop(from: sourceID, to: memberGroup.id)
                                     if !reorderedEvents.isEmpty {
                                         memberEvents = reorderedEvents
+                                        lastEventFingerprint = fingerprint(for: memberEvents)
+                                        lastEventLoadDate = Date()
                                     }
-                                    loadNextEvents()
                                 }
                                 resetDragState()
                                 return true
@@ -718,7 +723,9 @@ struct FamilyView: View {
                 calendarTitle: displayEvent.calendarTitle,
                 hasRecurrence: displayEvent.hasRecurrence,
                 recurrenceRule: nil,
-                isAllDay: displayEvent.isAllDay
+                travelTimeMinutes: displayEvent.travelTimeMinutes,
+                isAllDay: displayEvent.isAllDay,
+                showAs: displayEvent.showAs
             )
 
             Button(action: { duplicateEvent(event) }) {
@@ -814,20 +821,34 @@ struct FamilyView: View {
                 }
                 .lineLimit(2)
 
-                Spacer(minLength: 6)
-
-                // Day name and date (with relative formatting)
-                Text(dateText)
-                    .font(.system(size: detailSize, weight: .semibold))
-                    .foregroundColor(secondaryTextColor)
-
-                // Time on its own line to avoid truncation
                 if let timeRange = event.timeRange {
                     Text(timeRange)
                         .font(.system(size: detailSize, weight: .semibold))
                         .monospacedDigit()
                         .foregroundColor(secondaryTextColor)
                 }
+
+                DepartureRow(
+                    startDate: event.startDate,
+                    travelMinutes: event.travelTimeMinutes,
+                    timeRange: nil,
+                    fontSize: detailSize,
+                    iconColor: .orange,
+                    textColor: secondaryTextColor,
+                    showTimeRange: false
+                )
+                if event.timeRange == nil {
+                    Text("All Day")
+                        .font(.system(size: detailSize, weight: .semibold))
+                        .foregroundColor(secondaryTextColor)
+                }
+
+                Spacer(minLength: 2)
+
+                // Day name and date (with relative formatting)
+                Text(dateText)
+                    .font(.system(size: detailSize, weight: .semibold))
+                    .foregroundColor(secondaryTextColor)
                 
                 // Location (only in 2-column view)
                 if nextEventColumns <= 2, let location = event.location, !location.isEmpty {
@@ -1156,6 +1177,7 @@ struct FamilyView: View {
         let detailSize: CGFloat = nextEventColumns >= 4 ? 10 : 11
         let timeLabel = badge?.text
             ?? (event.isAllDay ? formatRelativeDate(event.startDate) : getTimeUntilEvent(event.startDate))
+        let timeRange = event.timeRange
 
         return HStack(alignment: .top, spacing: 10) {
             Rectangle()
@@ -1187,11 +1209,28 @@ struct FamilyView: View {
                     }
                 }
 
+                if let timeRange {
+                    Text(timeRange)
+                        .font(.system(size: detailSize, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundColor(secondaryTextColor)
+                }
+
+                DepartureRow(
+                    startDate: event.startDate,
+                    travelMinutes: event.travelTimeMinutes,
+                    timeRange: nil,
+                    fontSize: detailSize,
+                    iconColor: .orange,
+                    textColor: secondaryTextColor,
+                    showTimeRange: false
+                )
+
                 Spacer(minLength: 6)
 
                 // Checklist indicator if available
                 if event.hasChecklist, let progress = event.checklistProgress {
-                    HStack(spacing: 3) {
+                HStack(spacing: 3) {
                         Image(systemName: "checkmark.square")
                             .font(.system(size: detailSize - 1))
                         Text(progress.displayString)
@@ -1239,7 +1278,7 @@ struct FamilyView: View {
                 await dataManager.fetchUserDataIfNeeded()
                 // Load events after Supabase data is fetched
                 let hasCachedEvents = !memberEvents.isEmpty
-                loadNextEvents(showLoadingState: !hasCachedEvents)
+                loadNextEvents(showLoadingState: !hasCachedEvents, force: true)
             }
         } else {
             // Load fresh events in background (cached events already displayed)
@@ -1247,7 +1286,7 @@ struct FamilyView: View {
             let hasCachedEvents = !memberEvents.isEmpty
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 // Only show loading state if we have no cached data to display
-                loadNextEvents(showLoadingState: !hasCachedEvents)
+                loadNextEvents(showLoadingState: !hasCachedEvents, force: true)
             }
         }
 
@@ -1261,7 +1300,8 @@ struct FamilyView: View {
             queue: .main
         ) { _ in
             // Refresh silently when calendars change
-            loadNextEvents(showLoadingState: false)
+            eventStoreHasPendingChanges = true
+            triggerDebouncedReload()
             loadAvailableCalendars()
         }
 
@@ -1273,7 +1313,8 @@ struct FamilyView: View {
             // Small delay to ensure CoreData has propagated the change
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 // Refresh silently for visibility changes
-                loadNextEvents(showLoadingState: false)
+                eventStoreHasPendingChanges = true
+                triggerDebouncedReload()
             }
         }
 
@@ -1298,7 +1339,9 @@ struct FamilyView: View {
                 currentTime = Date()
                 await dataManager.fetchUserDataIfNeeded()
                 // Refresh silently in background (no loading state flash)
-                loadNextEvents(showLoadingState: false)
+                if shouldRefreshEventsOnTimer() {
+                    loadNextEvents(showLoadingState: false, force: true)
+                }
             }
         }
         currentTime = Date()
@@ -1307,6 +1350,19 @@ struct FamilyView: View {
     private func stopRefreshTimer() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+    }
+    
+    private func shouldRefreshEventsOnTimer() -> Bool {
+        if eventStoreHasPendingChanges {
+            return true
+        }
+
+        guard let lastLoad = lastEventLoadDate else {
+            return true
+        }
+
+        let interval = TimeInterval(max(autoRefreshInterval, 1) * 60)
+        return Date().timeIntervalSince(lastLoad) >= interval
     }
 
     // MARK: - Data Loading
@@ -1357,9 +1413,13 @@ struct FamilyView: View {
         try? viewContext.save()
     }
 
-    private func loadNextEvents(showLoadingState: Bool = true) {
+    private func loadNextEvents(showLoadingState: Bool = true, force: Bool = false) {
         eventsTask?.cancel()
         eventsTask = Task { @MainActor in
+            guard force || eventStoreHasPendingChanges else {
+                return
+            }
+
             if showLoadingState {
                 isLoadingEvents = true
             }
@@ -1477,6 +1537,16 @@ struct FamilyView: View {
                     let timeRange = formatTimeRange(event.startDate, correctedEndDate)
                     let displayID = "\(event.id)|\(event.startDate.timeIntervalSince1970)"
                     let driverName = fetchDriverForEvent(event.id)
+                    // Prefer travel time from cached event data; fallback to querying EventKit
+                    var travelTimeMinutes = event.travelTimeMinutes
+                    if travelTimeMinutes == nil {
+                        if let ekEvent = CalendarManager.shared.fetchEventDetails(
+                            withIdentifier: event.id,
+                            occurrenceStartDate: event.startDate
+                        ) {
+                            travelTimeMinutes = CalendarManager.shared.getTravelTimeMinutes(from: ekEvent)
+                        }
+                    }
                     memberEventItems.append(EventItem(
                         id: displayID,
                         eventIdentifier: event.id,
@@ -1495,7 +1565,9 @@ struct FamilyView: View {
                         recurrenceRule: event.recurrenceRule,
                         isAllDay: event.isAllDay,
                         driverName: driverName,
-                        isImportant: importantEventIDs.contains(event.id)
+                        isImportant: importantEventIDs.contains(event.id),
+                        travelTimeMinutes: travelTimeMinutes,
+                        showAs: event.showAs
                     ))
                 }
 
@@ -1539,7 +1611,19 @@ struct FamilyView: View {
                 return $0.sortOrder < $1.sortOrder
             }
 
+            let fingerprint = fingerprint(for: memberEventGroups)
+            if !force, let lastFingerprint = lastEventFingerprint {
+                if lastFingerprint == fingerprint {
+                    lastEventLoadDate = Date()
+                    eventStoreHasPendingChanges = false
+                    return
+                }
+            }
+
+            lastEventFingerprint = fingerprint
             memberEvents = memberEventGroups
+            lastEventLoadDate = Date()
+            eventStoreHasPendingChanges = false
 
             // Cache the events for instant display on next app launch
             await cacheLoadedEvents(memberEventGroups)
@@ -1568,7 +1652,9 @@ struct FamilyView: View {
                     hasRecurrence: event.hasRecurrence,
                     isAllDay: event.isAllDay,
                     driverName: event.driverName,
-                    isImportant: event.isImportant
+                    isImportant: event.isImportant,
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    showAs: event.showAs
                 )
             }
 
@@ -1591,7 +1677,9 @@ struct FamilyView: View {
                     hasRecurrence: event.hasRecurrence,
                     isAllDay: event.isAllDay,
                     driverName: event.driverName,
-                    isImportant: event.isImportant
+                    isImportant: event.isImportant,
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    showAs: event.showAs
                 )
             }
 
@@ -1605,6 +1693,40 @@ struct FamilyView: View {
         }
 
         await EventCache.shared.save(dtos)
+    }
+
+    private func fingerprint(for groups: [MemberEventGroup]) -> String {
+        var components: [String] = []
+
+        for group in groups {
+            components.append("\(group.memberName)|\(group.upcomingEvents.count)")
+
+            if let next = group.nextEvent {
+                components.append(eventFingerprint(next))
+            }
+
+            for event in group.upcomingEvents {
+                components.append(eventFingerprint(event))
+            }
+        }
+
+        return String(components.joined(separator: "|").hashValue)
+    }
+
+    private func eventFingerprint(_ event: GroupedEvent) -> String {
+        let checklistKey = "\(event.hasChecklist)-\(event.checklistProgress?.completed ?? -1)-\(event.checklistProgress?.total ?? -1)"
+        let travelKey = event.travelTimeMinutes ?? -1
+
+        return [
+            event.eventIdentifier,
+            "\(event.startDate.timeIntervalSince1970)",
+            "\(event.endDate.timeIntervalSince1970)",
+            event.title,
+            "\(event.isAllDay)",
+            "\(event.isImportant)",
+            checklistKey,
+            "\(travelKey)"
+        ].joined(separator: "|")
     }
 
     private func cleanupStaleEvents() async {
@@ -1684,12 +1806,6 @@ struct FamilyView: View {
         // Only show checklist if it has items (not empty)
         let hasChecklist = progress?.isEmpty == false
 
-        if let progress = progress {
-            print("✅ Checklist found for \(event.title) (\(event.eventIdentifier)): \(progress.completed)/\(progress.total) items")
-        } else if checklists.first(where: { $0.eventIdentifier == event.eventIdentifier && $0.deletedAt == nil }) != nil {
-            print("⚠️ Checklist exists but has no items for \(event.title)")
-        }
-
         return (hasChecklist, progress)
     }
 
@@ -1748,7 +1864,8 @@ struct FamilyView: View {
                     driverName: event.driverName,
                     isImportant: event.isImportant,
                     hasChecklist: false,
-                    checklistProgress: nil
+                    checklistProgress: nil,
+                    travelTimeMinutes: event.travelTimeMinutes
                 )
                 let checklistData = getChecklistData(for: tempEvent)
 
@@ -1773,7 +1890,9 @@ struct FamilyView: View {
                     driverName: existing.driverName ?? event.driverName,
                     isImportant: existing.isImportant || event.isImportant,
                     hasChecklist: checklistData.hasChecklist,
-                    checklistProgress: checklistData.progress
+                    checklistProgress: checklistData.progress,
+                    travelTimeMinutes: existing.travelTimeMinutes ?? event.travelTimeMinutes,
+                    showAs: (existing.showAs == .busy || event.showAs == .busy) ? .busy : .free
                 )
             } else {
                 // Get checklist data - create temporary GroupedEvent for lookup
@@ -1797,7 +1916,9 @@ struct FamilyView: View {
                     driverName: event.driverName,
                     isImportant: event.isImportant,
                     hasChecklist: false,
-                    checklistProgress: nil
+                    checklistProgress: nil,
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    showAs: event.showAs
                 )
                 let checklistData = getChecklistData(for: tempEvent)
 
@@ -1821,7 +1942,9 @@ struct FamilyView: View {
                     driverName: event.driverName,
                     isImportant: event.isImportant,
                     hasChecklist: checklistData.hasChecklist,
-                    checklistProgress: checklistData.progress
+                    checklistProgress: checklistData.progress,
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    showAs: event.showAs
                 )
             }
         }
@@ -1871,22 +1994,25 @@ struct FamilyView: View {
     }
     
     private func reloadEvents() async {
-        loadNextEvents()
+        eventStoreHasPendingChanges = true
+        loadNextEvents(force: true)
         // Wait for the task to complete with a brief delay to show refresh indicator
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
 
     private func refreshAllData() async {
         // Force refresh when user manually pulls down (bypass change detection)
-        await dataManager.fetchUserDataIfNeeded(force: true)
-        loadNextEvents()
+        await dataManager.fetchUserDataIfNeeded()
+        eventStoreHasPendingChanges = true
+        loadNextEvents(force: true)
     }
 
     private func triggerDebouncedReload() {
         // Debounce data changes to prevent cascading reloads
         dataChangeDebounceTimer?.invalidate()
         dataChangeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
-            loadNextEvents(showLoadingState: false)
+            eventStoreHasPendingChanges = true
+            loadNextEvents(showLoadingState: false, force: true)
         }
     }
 
@@ -1999,7 +2125,9 @@ struct FamilyView: View {
                     calendarTitle: event.calendarTitle,
                     hasRecurrence: event.hasRecurrence,
                     recurrenceRule: nil,
-                    isAllDay: event.isAllDay
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    isAllDay: event.isAllDay,
+                    showAs: event.showAs
                 )
                 tapDelayTimer = nil
             }
@@ -2027,7 +2155,9 @@ struct FamilyView: View {
                         calendarTitle: event.calendarTitle,
                         hasRecurrence: event.hasRecurrence,
                         recurrenceRule: nil,
-                        isAllDay: event.isAllDay
+                        travelTimeMinutes: event.travelTimeMinutes,
+                        isAllDay: event.isAllDay,
+                        showAs: event.showAs
                     )
 
                     let success = CalendarManager.shared.deleteEvent(
@@ -2055,7 +2185,8 @@ struct FamilyView: View {
                 print("✅ Batch deleted \(deletedCount) event(s)")
                 await MainActor.run {
                     selectedEventIdsForDeletion.removeAll()
-                    loadNextEvents()
+                    eventStoreHasPendingChanges = true
+                    loadNextEvents(showLoadingState: false, force: true)
                 }
             }
         }
@@ -2089,7 +2220,8 @@ struct FamilyView: View {
                     }
 
                     print("✅ Event moved to calendar: \(targetCalendar.title)")
-                    loadNextEvents()
+                    eventStoreHasPendingChanges = true
+                    loadNextEvents(showLoadingState: false, force: true)
                 } catch {
                     print("❌ Failed to move event: \(error.localizedDescription)")
                 }
@@ -2128,7 +2260,8 @@ struct FamilyView: View {
             do {
                 try viewContext.save()
                 print("✅ Event duplicated: \(newTitle)")
-                loadNextEvents()
+                eventStoreHasPendingChanges = true
+                loadNextEvents(showLoadingState: false, force: true)
             } catch {
                 print("❌ Failed to save duplicated event: \(error.localizedDescription)")
             }
@@ -2157,7 +2290,8 @@ struct FamilyView: View {
             familyEvent.isImportant = isImportant
             try viewContext.save()
             print("✅ Toggled importance for event \(event.title): \(isImportant)")
-            loadNextEvents()
+            eventStoreHasPendingChanges = true
+            loadNextEvents(showLoadingState: false, force: true)
         } catch {
             print("❌ Failed to toggle importance: \(error.localizedDescription)")
         }
@@ -2200,7 +2334,9 @@ struct FamilyView: View {
                     calendarTitle: event.calendarTitle,
                     hasRecurrence: event.hasRecurrence,
                     recurrenceRule: event.recurrenceRule,
-                    isAllDay: event.isAllDay
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    isAllDay: event.isAllDay,
+                    showAs: event.showAs
                 )
             }
             targets.append(contentsOf: extras)
@@ -2238,7 +2374,8 @@ struct FamilyView: View {
             try? viewContext.save()
             print("✅ Cleaned up \(targets.count) event record(s)")
             await MainActor.run {
-                loadNextEvents()
+                eventStoreHasPendingChanges = true
+                loadNextEvents(showLoadingState: false, force: true)
             }
         }
     }
@@ -2314,6 +2451,8 @@ struct FamilyView: View {
         do {
             try viewContext.save()
             memberEvents = finalOrder
+            lastEventFingerprint = fingerprint(for: memberEvents)
+            lastEventLoadDate = Date()
             if let sourceName = memberEvents.first(where: { $0.id == sourceID })?.memberName,
                let destName = memberEvents.first(where: { $0.id == destID })?.memberName {
                 print("✅ Reordered: \(sourceName) moved to position of \(destName)")
@@ -2386,7 +2525,8 @@ struct FamilyView: View {
             do {
                 try viewContext.save()
                 print("✅ Applied family member order from settings")
-                loadNextEvents() // Reload to reflect new order
+                eventStoreHasPendingChanges = true
+                loadNextEvents(force: true) // Reload to reflect new order
             } catch {
                 print("❌ Failed to apply order from settings: \(error)")
             }
@@ -2415,6 +2555,52 @@ private struct EventItem: Identifiable {
     let isAllDay: Bool
     let driverName: String?
     let isImportant: Bool
+    let travelTimeMinutes: Int?
+    let showAs: ShowAsOption
+
+    init(
+        id: String,
+        eventIdentifier: String,
+        title: String,
+        location: String?,
+        meetingLink: String?,
+        startDate: Date,
+        endDate: Date,
+        timeRange: String?,
+        memberName: String,
+        memberColor: UIColor,
+        calendarColor: UIColor,
+        calendarTitle: String,
+        calendarID: String,
+        hasRecurrence: Bool,
+        recurrenceRule: EKRecurrenceRule?,
+        isAllDay: Bool,
+        driverName: String?,
+        isImportant: Bool,
+        travelTimeMinutes: Int?,
+        showAs: ShowAsOption = .busy
+    ) {
+        self.id = id
+        self.eventIdentifier = eventIdentifier
+        self.title = title
+        self.location = location
+        self.meetingLink = meetingLink
+        self.startDate = startDate
+        self.endDate = endDate
+        self.timeRange = timeRange
+        self.memberName = memberName
+        self.memberColor = memberColor
+        self.calendarColor = calendarColor
+        self.calendarTitle = calendarTitle
+        self.calendarID = calendarID
+        self.hasRecurrence = hasRecurrence
+        self.recurrenceRule = recurrenceRule
+        self.isAllDay = isAllDay
+        self.driverName = driverName
+        self.isImportant = isImportant
+        self.travelTimeMinutes = travelTimeMinutes
+        self.showAs = showAs
+    }
 }
 
 private struct GroupedEvent: Identifiable {
@@ -2438,6 +2624,56 @@ private struct GroupedEvent: Identifiable {
     let isImportant: Bool
     let hasChecklist: Bool
     let checklistProgress: ChecklistProgress?
+    let travelTimeMinutes: Int?
+    let showAs: ShowAsOption
+
+    init(
+        id: String,
+        eventIdentifier: String,
+        title: String,
+        timeRange: String?,
+        location: String?,
+        meetingLink: String?,
+        startDate: Date,
+        endDate: Date,
+        memberNames: [String],
+        memberColor: UIColor,
+        calendarColor: UIColor,
+        calendarTitle: String,
+        calendarID: String,
+        memberColors: [UIColor] = [],
+        hasRecurrence: Bool,
+        isAllDay: Bool,
+        driverName: String?,
+        isImportant: Bool,
+        hasChecklist: Bool,
+        checklistProgress: ChecklistProgress?,
+        travelTimeMinutes: Int?,
+        showAs: ShowAsOption = .busy
+    ) {
+        self.id = id
+        self.eventIdentifier = eventIdentifier
+        self.title = title
+        self.timeRange = timeRange
+        self.location = location
+        self.meetingLink = meetingLink
+        self.startDate = startDate
+        self.endDate = endDate
+        self.memberNames = memberNames
+        self.memberColor = memberColor
+        self.calendarColor = calendarColor
+        self.calendarTitle = calendarTitle
+        self.calendarID = calendarID
+        self.memberColors = memberColors
+        self.hasRecurrence = hasRecurrence
+        self.isAllDay = isAllDay
+        self.driverName = driverName
+        self.isImportant = isImportant
+        self.hasChecklist = hasChecklist
+        self.checklistProgress = checklistProgress
+        self.travelTimeMinutes = travelTimeMinutes
+        self.showAs = showAs
+    }
 }
 
 private struct MemberEventGroup: Identifiable, Equatable {
@@ -2475,7 +2711,9 @@ private extension GroupedEvent {
             driverName: driverName,
             isImportant: isImportant,
             hasChecklist: hasChecklist,
-            checklistProgress: checklistProgress
+            checklistProgress: checklistProgress,
+            travelTimeMinutes: travelTimeMinutes,
+            showAs: showAs
         )
     }
 }
@@ -2501,11 +2739,15 @@ private struct CompactEventCard: View {
     }
 }
 
-private struct CompactCardStyle1: View {
-    let event: GroupedEvent
-    let theme: AppTheme
+    private struct CompactCardStyle1: View {
+        let event: GroupedEvent
+        let theme: AppTheme
 
-    private var secondaryTextColor: Color { theme.mutedTagColor }
+        private var secondaryTextColor: Color { theme.mutedTagColor }
+        private var startTime: String {
+            guard let timeRange = event.timeRange else { return "" }
+            return timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        }
 
     private static let dayOfWeekFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -2531,29 +2773,34 @@ private struct CompactCardStyle1: View {
                     .foregroundColor(secondaryTextColor)
                     .frame(width: 50, alignment: .leading)
 
-                if let timeRange = event.timeRange {
-                    let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-                    Text(startTime)
-                        .font(.system(size: 12, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundColor(secondaryTextColor)
-                        .frame(width: 50, alignment: .leading)
-                } else {
-                    Text("All Day")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(secondaryTextColor)
-                        .frame(width: 50, alignment: .leading)
-                }
+                HStack(spacing: 6) {
+                    if !startTime.isEmpty {
+                        Text(startTime)
+                            .font(.system(size: 12, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundColor(secondaryTextColor)
+                    }
 
-                HStack(spacing: 4) {
-                    Text(event.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    if event.hasRecurrence {
-                        RecurrenceIcon(color: Color(uiColor: event.calendarColor), fontSize: 10.0)
+                    HStack(spacing: 4) {
+                        Text(event.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        if event.hasRecurrence {
+                            RecurrenceIcon(color: Color(uiColor: event.calendarColor), fontSize: 10.0)
+                        }
                     }
                 }
+
+                DepartureRow(
+                    startDate: event.startDate,
+                    travelMinutes: event.travelTimeMinutes,
+                    timeRange: nil,
+                    fontSize: 11,
+                    iconColor: .orange,
+                    textColor: secondaryTextColor,
+                    showTimeRange: false
+                )
 
                 Spacer(minLength: 0)
 
@@ -2585,11 +2832,15 @@ private struct CompactCardStyle1: View {
     }
 }
 
-private struct CompactCardStyle3: View {
-    let event: GroupedEvent
-    let theme: AppTheme
+    private struct CompactCardStyle3: View {
+        let event: GroupedEvent
+        let theme: AppTheme
 
-    private var secondaryTextColor: Color { theme.mutedTagColor }
+        private var secondaryTextColor: Color { theme.mutedTagColor }
+        private var startTime: String {
+            guard let timeRange = event.timeRange else { return "" }
+            return timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        }
 
     private static let dayOfWeekFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -2621,7 +2872,14 @@ private struct CompactCardStyle3: View {
                 .frame(width: 32)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
+                        if !startTime.isEmpty {
+                            Text(startTime)
+                                .font(.system(size: 11, weight: .regular))
+                                .monospacedDigit()
+                                .foregroundColor(secondaryTextColor)
+                        }
+
                         Text(event.title)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.primary)
@@ -2638,17 +2896,15 @@ private struct CompactCardStyle3: View {
                         }
                     }
 
-                    if let timeRange = event.timeRange {
-                        let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-                        Text(startTime)
-                            .font(.system(size: 11, weight: .regular))
-                            .monospacedDigit()
-                            .foregroundColor(secondaryTextColor)
-                    } else {
-                        Text("All Day")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundColor(secondaryTextColor)
-                    }
+                    DepartureRow(
+                        startDate: event.startDate,
+                        travelMinutes: event.travelTimeMinutes,
+                        timeRange: nil,
+                        fontSize: 10,
+                        iconColor: .orange,
+                        textColor: secondaryTextColor,
+                        showTimeRange: false
+                    )
 
                     if event.hasChecklist, let progress = event.checklistProgress {
                         HStack(spacing: 2) {
@@ -2675,11 +2931,15 @@ private struct CompactCardStyle3: View {
     }
 }
 
-private struct CompactCardStyle4: View {
-    let event: GroupedEvent
-    let theme: AppTheme
+    private struct CompactCardStyle4: View {
+        let event: GroupedEvent
+        let theme: AppTheme
 
-    private var secondaryTextColor: Color { theme.mutedTagColor }
+        private var secondaryTextColor: Color { theme.mutedTagColor }
+        private var startTime: String {
+            guard let timeRange = event.timeRange else { return "" }
+            return timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        }
 
     private static let dayOfWeekFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -2708,7 +2968,14 @@ private struct CompactCardStyle4: View {
             .cornerRadius(6)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
+                    if !startTime.isEmpty {
+                        Text(startTime)
+                            .font(.system(size: 11, weight: .regular))
+                            .monospacedDigit()
+                            .foregroundColor(secondaryTextColor)
+                    }
+
                     Text(event.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.primary)
@@ -2725,17 +2992,15 @@ private struct CompactCardStyle4: View {
                     }
                 }
 
-                if let timeRange = event.timeRange {
-                    let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-                    Text(startTime)
-                        .font(.system(size: 11, weight: .regular))
-                        .monospacedDigit()
-                        .foregroundColor(secondaryTextColor)
-                } else {
-                    Text("All Day")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(secondaryTextColor)
-                }
+                DepartureRow(
+                    startDate: event.startDate,
+                    travelMinutes: event.travelTimeMinutes,
+                    timeRange: nil,
+                    fontSize: 10,
+                    iconColor: .orange,
+                    textColor: secondaryTextColor,
+                    showTimeRange: false
+                )
 
                 if event.hasChecklist, let progress = event.checklistProgress {
                     HStack(spacing: 2) {

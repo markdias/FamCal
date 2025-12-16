@@ -33,7 +33,41 @@ struct UpcomingCalendarEvent: Identifiable, Equatable {
     let calendarTitle: String
     let hasRecurrence: Bool
     let recurrenceRule: EKRecurrenceRule?
+    let travelTimeMinutes: Int?
     let isAllDay: Bool
+    let showAs: ShowAsOption
+
+    init(
+        id: String,
+        title: String,
+        location: String?,
+        meetingLink: String?,
+        startDate: Date,
+        endDate: Date,
+        calendarID: String,
+        calendarColor: UIColor,
+        calendarTitle: String,
+        hasRecurrence: Bool,
+        recurrenceRule: EKRecurrenceRule?,
+        travelTimeMinutes: Int?,
+        isAllDay: Bool,
+        showAs: ShowAsOption = .busy
+    ) {
+        self.id = id
+        self.title = title
+        self.location = location
+        self.meetingLink = meetingLink
+        self.startDate = startDate
+        self.endDate = endDate
+        self.calendarID = calendarID
+        self.calendarColor = calendarColor
+        self.calendarTitle = calendarTitle
+        self.hasRecurrence = hasRecurrence
+        self.recurrenceRule = recurrenceRule
+        self.travelTimeMinutes = travelTimeMinutes
+        self.isAllDay = isAllDay
+        self.showAs = showAs
+    }
 
     static func == (lhs: UpcomingCalendarEvent, rhs: UpcomingCalendarEvent) -> Bool {
         lhs.id == rhs.id &&
@@ -45,14 +79,38 @@ struct UpcomingCalendarEvent: Identifiable, Equatable {
         lhs.calendarID == rhs.calendarID &&
         lhs.calendarTitle == rhs.calendarTitle &&
         lhs.hasRecurrence == rhs.hasRecurrence &&
-        lhs.isAllDay == rhs.isAllDay
+        lhs.travelTimeMinutes == rhs.travelTimeMinutes &&
+        lhs.isAllDay == rhs.isAllDay &&
+        lhs.showAs == rhs.showAs
     }
 }
 final class CalendarManager {
     static let shared = CalendarManager()
 
-    private let eventStore = EKEventStore()
+    public let eventStore = EKEventStore()
     private let eventStoreQueue = DispatchQueue(label: "com.famcal.eventstore", qos: .userInitiated)
+
+    private static func ekAvailability(for showAs: ShowAsOption) -> EKEventAvailability {
+        switch showAs {
+        case .busy:
+            return .busy
+        case .free:
+            return .free
+        }
+    }
+
+    private static func showAsOption(for event: EKEvent) -> ShowAsOption {
+        switch event.availability {
+        case .free:
+            return .free
+        case .notSupported:
+            return .busy
+        case .busy, .tentative, .unavailable:
+            return .busy
+        @unknown default:
+            return .busy
+        }
+    }
 
     func resetStore() {
         print("🔄 CalendarManager: resetStore() called")
@@ -312,6 +370,7 @@ final class CalendarManager {
             }
 
             let calendarColor = event.calendar.cgColor.map { UIColor(cgColor: $0) } ?? .systemBlue
+            let travelMinutes = CalendarManager.shared.getTravelTimeMinutes(from: event)
 
             let upcomingEvent = UpcomingCalendarEvent(
                 id: event.eventIdentifier,
@@ -325,7 +384,9 @@ final class CalendarManager {
                 calendarTitle: event.calendar.title,
                 hasRecurrence: event.hasRecurrenceRules,
                 recurrenceRule: event.recurrenceRules?.first,
-                isAllDay: event.isAllDay
+                travelTimeMinutes: travelMinutes,
+                isAllDay: event.isAllDay,
+                showAs: Self.showAsOption(for: event)
             )
             results.append(upcomingEvent)
 
@@ -410,7 +471,7 @@ final class CalendarManager {
         }
     }
 
-    func createEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, meetingLink: String? = nil, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil) -> String? {
+    func createEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, meetingLink: String? = nil, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil, showAs: ShowAsOption = .busy) -> String? {
         guard let calendar = eventStore.calendar(withIdentifier: calendarID) else { return nil }
 
         let event = EKEvent(eventStore: eventStore)
@@ -422,6 +483,7 @@ final class CalendarManager {
         event.url = MeetingLinkHelper.normalizedURL(from: meetingLink)
         event.isAllDay = isAllDay
         event.calendar = calendar
+        event.availability = Self.ekAvailability(for: showAs)
 
         // Add alarm if alertOption is provided
         if let alertOption = alertOption {
@@ -439,7 +501,7 @@ final class CalendarManager {
         }
     }
 
-    func createRecurringEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, meetingLink: String? = nil, recurrenceRule: EKRecurrenceRule, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil) -> String? {
+    func createRecurringEvent(title: String, startDate: Date, endDate: Date, location: String?, notes: String?, meetingLink: String? = nil, recurrenceRule: EKRecurrenceRule, isAllDay: Bool = false, in calendarID: String, alertOption: AlertOption? = nil, showAs: ShowAsOption = .busy) -> String? {
         guard let calendar = eventStore.calendar(withIdentifier: calendarID) else { return nil }
 
         let event = EKEvent(eventStore: eventStore)
@@ -452,6 +514,7 @@ final class CalendarManager {
         event.isAllDay = isAllDay
         event.addRecurrenceRule(recurrenceRule)
         event.calendar = calendar
+        event.availability = Self.ekAvailability(for: showAs)
 
         // Add alarm if alertOption is provided
         if let alertOption = alertOption {
@@ -482,7 +545,8 @@ final class CalendarManager {
                      recurrenceRule: EKRecurrenceRule? = nil,
                      updateRecurrence: Bool = false,
                      span: EKSpan = .thisEvent,
-                     alertOption: AlertOption? = nil) -> Bool {
+                     alertOption: AlertOption? = nil,
+                     showAs: ShowAsOption = .busy) -> Bool {
         // First, find the specific calendar
         guard let calendar = eventStore.calendar(withIdentifier: calendarID) else {
             print("❌ Could not find calendar with ID: \(calendarID)")
@@ -518,6 +582,7 @@ final class CalendarManager {
         event.notes = notes
         event.url = MeetingLinkHelper.normalizedURL(from: meetingLink)
         event.isAllDay = isAllDay
+        event.availability = Self.ekAvailability(for: showAs)
         if updateRecurrence {
             if let recurrenceRule = recurrenceRule {
                 event.recurrenceRules = [recurrenceRule]
@@ -677,6 +742,64 @@ final class CalendarManager {
             if let ekError = error as? EKError {
                 print("   EKError code: \(ekError.errorCode)")
             }
+            return false
+        }
+    }
+
+    // MARK: - Travel Time
+
+    /// Extracts travel time from an EventKit event
+    /// - Parameter event: The EKEvent to extract travel time from
+    /// - Returns: Travel time in minutes, or nil if no travel time is set or on iOS < 17
+    func getTravelTimeMinutes(from event: EKEvent) -> Int? {
+        if #available(iOS 17.0, *) {
+            // Use KVC to safely access travelTime property
+            if let travelTimeValue = event.value(forKey: "travelTime") as? TimeInterval {
+                guard travelTimeValue > 0 else { return nil }
+                return Int(travelTimeValue / 60)
+            }
+            return nil
+        } else {
+            return nil
+        }
+    }
+
+    /// Calculates the departure time for an event based on its travel time
+    /// - Parameters:
+    ///   - eventStartDate: The start date of the event
+    ///   - travelTimeMinutes: The travel time in minutes (optional)
+    /// - Returns: The departure date, or the event start date if no travel time
+    func calculateDepartureTime(eventStartDate: Date, travelTimeMinutes: Int?) -> Date {
+        guard let travelMinutes = travelTimeMinutes, travelMinutes > 0 else {
+            return eventStartDate
+        }
+        return eventStartDate.addingTimeInterval(TimeInterval(-travelMinutes * 60))
+    }
+
+    /// Sets travel time on an EventKit event
+    /// - Parameters:
+    ///   - event: The EKEvent to update
+    ///   - travelTimeMinutes: The travel time in minutes (optional)
+    /// - Returns: true if the save was successful, false otherwise on iOS < 17
+    func setTravelTime(on event: EKEvent, travelTimeMinutes: Int?, span: EKSpan = .thisEvent) -> Bool {
+        if #available(iOS 17.0, *) {
+            // Use KVC to safely set travelTime property
+            if let minutes = travelTimeMinutes, minutes > 0 {
+                event.setValue(TimeInterval(minutes * 60), forKey: "travelTime")
+            } else {
+                event.setValue(TimeInterval(0), forKey: "travelTime")
+            }
+
+            do {
+                try eventStore.save(event, span: span)
+                print("✅ Travel time set to \(travelTimeMinutes ?? 0) minutes for event: \(event.title ?? "Unknown") [span: \(span == .thisEvent ? "thisEvent" : "futureEvents")]")
+                return true
+            } catch {
+                print("❌ Error saving travel time for event \(event.title ?? "Unknown"): \(error.localizedDescription)")
+                return false
+            }
+        } else {
+            print("⚠️ Travel time is only supported on iOS 17+")
             return false
         }
     }

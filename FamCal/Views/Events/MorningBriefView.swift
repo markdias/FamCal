@@ -88,6 +88,7 @@ struct MorningBriefEvent {
     let attendees: [String]
     let meetingLink: String?
     let isAllDay: Bool
+    let travelTimeMinutes: Int?
 
     var startTimeString: String {
         let formatter = DateFormatter()
@@ -101,6 +102,14 @@ struct MorningBriefEvent {
         let start = formatter.string(from: startTime)
         let end = formatter.string(from: endTime)
         return "\(start) - \(end)"
+    }
+
+    var departureString: String? {
+        guard let travelMinutes = travelTimeMinutes, travelMinutes > 0 else { return nil }
+        let departure = startTime.addingTimeInterval(TimeInterval(-travelMinutes * 60))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return "Leaves \(formatter.string(from: departure))"
     }
 }
 
@@ -132,6 +141,18 @@ struct MorningBriefEventRow: View {
                                 .foregroundColor(.gray)
                         } else {
                             Text(event.timeRangeString)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundColor(.gray)
+                        }
+                    }
+
+                    if let departure = event.departureString {
+                        HStack(spacing: 4) {
+                            Image(systemName: "car.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.orange)
+
+                            Text(departure)
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(.gray)
                         }
@@ -224,7 +245,8 @@ struct MorningBriefEventRow: View {
                 driver: "John",
                 attendees: ["Sarah", "Michael"],
                 meetingLink: nil,
-                isAllDay: false
+                isAllDay: false,
+                travelTimeMinutes: 20
             ),
             MorningBriefEvent(
                 title: "Family Lunch",
@@ -234,7 +256,8 @@ struct MorningBriefEventRow: View {
                 driver: nil,
                 attendees: ["Everyone"],
                 meetingLink: nil,
-                isAllDay: false
+                isAllDay: false,
+                travelTimeMinutes: nil
             ),
             MorningBriefEvent(
                 title: "Piano Lesson",
@@ -244,7 +267,8 @@ struct MorningBriefEventRow: View {
                 driver: "Sarah",
                 attendees: ["Emma"],
                 meetingLink: nil,
-                isAllDay: false
+                isAllDay: false,
+                travelTimeMinutes: 15
             )
         ],
         date: Date()

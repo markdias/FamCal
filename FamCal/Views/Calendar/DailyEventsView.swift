@@ -30,6 +30,9 @@ struct DailyEventsView: View {
     @State private var showingLinkedDeleteDialog = false
     @State private var pendingDeleteEvent: DayEventItem?
     @State private var pendingDeleteScope: DeleteScope = .singleCalendar
+    @State private var pendingRecurringEvent: DayEventItem?
+    @State private var pendingEditSpan: EKSpan = .futureEvents
+    @State private var showingEditScopeDialog = false
 
     @Environment(\.managedObjectContext) private var viewContext
 
@@ -201,10 +204,25 @@ struct DailyEventsView: View {
                     calendarTitle: event.calendarTitle,
                     hasRecurrence: event.hasRecurrence,
                     recurrenceRule: nil,
-                    isAllDay: event.isAllDay
+                    travelTimeMinutes: nil,
+                    isAllDay: event.isAllDay,
+                    showAs: event.showAs
                 )
-                EditEventView(upcomingEvent: upcomingEvent)
+                EditEventView(upcomingEvent: upcomingEvent, editSpan: pendingEditSpan)
             }
+        }
+        .confirmationDialog("Edit Recurring Event?", isPresented: $showingEditScopeDialog, titleVisibility: .visible) {
+            Button("This event only") {
+                confirmRecurringEdit(with: .thisEvent)
+            }
+            Button("This and future events") {
+                confirmRecurringEdit(with: .futureEvents)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRecurringEvent = nil
+            }
+        } message: {
+            Text("Do you want to edit just this occurrence, or this and future events?")
         }
         .confirmationDialog("Delete Event", isPresented: $showingDeleteConfirmation, presenting: eventToDelete) { event in
             // Check if event has linked copies
@@ -294,15 +312,37 @@ struct DailyEventsView: View {
                 calendarTitle: event.calendarTitle,
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
-                isAllDay: event.isAllDay
+                travelTimeMinutes: nil,
+                isAllDay: event.isAllDay,
+                showAs: event.showAs
             )
             selectedEventForDetail = upcomingEvent
             showingEventDetail = true
         }
     }
 
+    private func startEditing(event: DayEventItem) {
+        if event.hasRecurrence {
+            pendingRecurringEvent = event
+            pendingEditSpan = .futureEvents
+            showingEditScopeDialog = true
+        } else {
+            pendingEditSpan = .thisEvent
+            editingEvent = event
+            showingEditSheet = true
+        }
+    }
+
+    private func confirmRecurringEdit(with span: EKSpan) {
+        guard let event = pendingRecurringEvent else { return }
+        pendingEditSpan = span
+        editingEvent = event
+        showingEditSheet = true
+        pendingRecurringEvent = nil
+    }
+
     private func deleteEvent(_ event: DayEventItem, scope: DeleteScope = .singleCalendar) {
-        let store = EKEventStore()
+        let store = CalendarManager.shared.eventStore
 
         // Get linked events if needed
         var targetIdentifiers: [String] = [event.eventIdentifier]
@@ -463,6 +503,28 @@ struct DailyEventsView: View {
             }
 
             return ZStack(alignment: .topLeading) {
+                // Render travel time blocks first (so they appear behind event blocks)
+                ForEach(layouts) { layout in
+                    let travelTimeMinutes = getTravelTimeForEvent(layout.event)
+
+                    if let minutes = travelTimeMinutes, minutes > 0 {
+                        let departureTime = CalendarManager.shared.calculateDepartureTime(
+                            eventStartDate: layout.event.startDate,
+                            travelTimeMinutes: minutes
+                        )
+                        let travelDuration = TimeInterval(minutes * 60)
+                        let travelYOffset = yOffset(for: departureTime)
+                        let travelHeight = (travelDuration / 3600) * hourHeight // Height based on travel duration
+
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.gray.opacity(0.2))
+                            .stroke(Color.gray.opacity(0.4), lineWidth: 0.5)
+                            .frame(width: layout.width, height: travelHeight)
+                            .offset(x: layout.x, y: travelYOffset)
+                    }
+                }
+
+                // Render event blocks
                 ForEach(layouts) { layout in
                     eventCell(for: layout.event, isTapped: tappedEvent == layout.event, isSelected: selectedEventIds.contains(layout.event.eventIdentifier))
                         .frame(width: layout.width, height: layout.height)
@@ -472,8 +534,7 @@ struct DailyEventsView: View {
                         }
                         .contextMenu {
                             Button(action: {
-                                editingEvent = layout.event
-                                showingEditSheet = true
+                                startEditing(event: layout.event)
                             }) {
                                 Label("Edit", systemImage: "pencil")
                             }
@@ -594,8 +655,7 @@ struct DailyEventsView: View {
             }
             .contextMenu {
                 Button(action: {
-                    editingEvent = event
-                    showingEditSheet = true
+                    startEditing(event: event)
                 }) {
                     Label("Edit", systemImage: "pencil")
                 }
@@ -648,9 +708,14 @@ struct DailyEventsView: View {
                 }
 
                 if !isShortEvent {
-                    Text(event.timeRange ?? "")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(isPast ? 0.6 : 0.8))
+                    DepartureRow(
+                        startDate: event.startDate,
+                        travelMinutes: event.travelTimeMinutes,
+                        timeRange: event.timeRange,
+                        fontSize: 10,
+                        iconColor: .white,
+                        textColor: .white.opacity(isPast ? 0.6 : 0.8)
+                    )
 
                     HStack(spacing: 4) {
                         Text(event.memberNames.joined(separator: ", "))
@@ -774,6 +839,20 @@ struct DailyEventsView: View {
         }
 
         return layouts
+    }
+
+    private func getTravelTimeForEvent(_ event: DayEventItem) -> Int? {
+        // Fetch the EventKit event and extract travel time
+        let ekEvent = CalendarManager.shared.fetchEventDetails(
+            withIdentifier: event.eventIdentifier,
+            occurrenceStartDate: event.startDate
+        ) ?? CalendarManager.shared.fetchEventDetails(withIdentifier: event.eventIdentifier)
+
+        guard let ekEvent = ekEvent else {
+            return nil
+        }
+
+        return CalendarManager.shared.getTravelTimeMinutes(from: ekEvent)
     }
 
     private func yOffset(for date: Date) -> CGFloat {

@@ -385,6 +385,61 @@ class ChecklistManager: ObservableObject {
         await SupabaseDataManager.shared.syncChecklistsToSupabase()
     }
 
+    /// Sync a single checklist and its items to Supabase (targeted, avoids full sync)
+    @MainActor
+    func syncChecklist(_ checklist: Checklist) async {
+        guard !SupabaseAuthManager.shared.isGuest else { return }
+        guard let checklistId = checklist.id?.uuidString else { return }
+
+        let formatter = ISO8601DateFormatter()
+
+        // Skip deleted checklists; deletion currently handled by full sync path
+        guard checklist.deletedAt == nil else { return }
+
+        let checklistDTO = ChecklistDTO(
+            id: checklistId,
+            event_identifier: checklist.eventIdentifier ?? "",
+            event_group_id: checklist.eventGroupId?.uuidString,
+            event_title: checklist.eventTitle,
+            created_at: checklist.createdAt.map { formatter.string(from: $0) },
+            modified_at: formatter.string(from: checklist.modifiedAt ?? Date()),
+            deleted_at: nil,
+            deletion_reason: nil
+        )
+
+        do {
+            _ = try await SupabaseManager.shared.upsertChecklist(checklistDTO)
+
+            let items = (checklist.items as? Set<ChecklistItem>)?.filter { $0.deletedAt == nil } ?? []
+            for item in items {
+                guard let itemId = item.id?.uuidString else { continue }
+
+                let itemDTO = ChecklistItemDTO(
+                    id: itemId,
+                    checklist_id: checklistId,
+                    title: item.title ?? "",
+                    due_date: item.dueDate.map { formatter.string(from: $0) },
+                    completed: item.completed,
+                    completed_at: item.completedAt.map { formatter.string(from: $0) },
+                    completed_by: item.completedBy?.uuidString,
+                    sort_order: Int(item.sortOrder),
+                    created_at: item.createdAt.map { formatter.string(from: $0) },
+                    modified_at: formatter.string(from: item.modifiedAt ?? Date()),
+                    deleted_at: nil,
+                    notification_id: item.notificationId
+                )
+
+                do {
+                    _ = try await SupabaseManager.shared.upsertChecklistItem(itemDTO)
+                } catch {
+                    print("❌ Error syncing checklist item \(itemId): \(error)")
+                }
+            }
+        } catch {
+            print("❌ Error syncing checklist \(checklistId): \(error)")
+        }
+    }
+
     /// Sync a single item deletion to Supabase (targeted operation)
     func syncItemDeletion(_ item: ChecklistItem) async {
         guard let itemId = item.id?.uuidString else {

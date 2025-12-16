@@ -220,6 +220,7 @@ struct FamilyAnalyticsPrototype: View {
                 calendarTitle: event.calendarTitle,
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
+                travelTimeMinutes: event.travelTimeMinutes,
                 isAllDay: event.isAllDay
             )
         }

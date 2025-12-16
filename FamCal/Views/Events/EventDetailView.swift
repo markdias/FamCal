@@ -32,11 +32,24 @@ struct EventDetailView: View {
     @State private var showingLinkedDeleteDialog = false
     @State private var pendingDeleteSpan: EKSpan = .thisEvent
     @State private var pendingDeleteScope: DeleteScope = .singleCalendar
+    @State private var pendingEditSpan: EKSpan = .futureEvents
+    @State private var showingEditScopeDialog = false
+    @State private var showingLinkedEditDialog = false
+    @State private var applyLinkedToAll = false
+    @State private var linkedCalendarOptions: [LinkedCalendarOption] = []
+    @State private var selectedLinkedCalendarIds: Set<String> = []
+    @State private var showingLinkedSelectionSheet = false
+    @State private var showAsOption: ShowAsOption = .busy
+
+    private struct LinkedCalendarOption {
+        let calendarId: String
+        let name: String
+    }
     @State private var driver: Driver?
     @State private var driverFamilyMemberId: UUID?
     @State private var selectedDriver: DriverWrapper?
     @State private var driverTravelTimeMinutes: Int = 15
-    @State private var eventStore = EKEventStore()
+    private var eventStore: EKEventStore { CalendarManager.shared.eventStore }
     @State private var availableCalendars: [EKCalendar] = []
     @State private var geocodeTask: Task<Void, Never>?
     @State private var selectedCalendarID: String?
@@ -52,6 +65,7 @@ struct EventDetailView: View {
     @State private var newChecklistDueDate = Date()
     @State private var showingChecklistRecurringDialog = false
     @State private var pendingChecklistItem: (title: String, dueDate: Date?)? = nil
+    @State private var travelTimeMinutes: Int? = nil
 
     @FetchRequest(
         entity: Driver.entity(),
@@ -86,13 +100,6 @@ struct EventDetailView: View {
 
     private var eventChecklist: Checklist? {
         let eventId = event.id
-        print("🔍 Looking for checklist for event: \(event.title), allChecklists count: \(allChecklists.count)")
-
-        // Debug: List all available checklists
-        for checklist in allChecklists {
-            print("   📋 Stored checklist: eventIdentifier='\(checklist.eventIdentifier ?? "nil")', eventTitle='\(checklist.eventTitle ?? "nil")'")
-        }
-
         let result = allChecklists.first { checklist in
             guard let checklistEventId = checklist.eventIdentifier else { return false }
             let match = ChecklistManager.canMatchEventIdentifier(
@@ -105,11 +112,6 @@ struct EventDetailView: View {
             return match
         }
 
-        if let result = result {
-            print("✅ Found checklist with \(result.items?.count ?? 0) items")
-        } else {
-            print("❌ No checklist found for event")
-        }
         return result
     }
 
@@ -207,7 +209,7 @@ struct EventDetailView: View {
                     if let calName = cal.calendarName, !linkedCalendars.contains(calName) {
                         // Check if this calendar contains the event
                         if let calId = cal.calendarID {
-                            let store = EKEventStore()
+                            let store = CalendarManager.shared.eventStore
                             if let calendar = store.calendar(withIdentifier: calId) {
                                 let predicate = store.predicateForEvents(withStart: eventItem.startDate.addingTimeInterval(-86400), end: eventItem.startDate.addingTimeInterval(86400), calendars: [calendar])
                                 let events = store.events(matching: predicate).filter { $0.title == eventItem.title }
@@ -226,7 +228,7 @@ struct EventDetailView: View {
             for sharedCal in sharedCals {
                 if let calName = sharedCal.calendarName, !linkedCalendars.contains(calName) {
                     if let calId = sharedCal.calendarID {
-                        let store = EKEventStore()
+                        let store = CalendarManager.shared.eventStore
                         if let calendar = store.calendar(withIdentifier: calId) {
                             let predicate = store.predicateForEvents(withStart: eventItem.startDate.addingTimeInterval(-86400), end: eventItem.startDate.addingTimeInterval(86400), calendars: [calendar])
                             let events = store.events(matching: predicate).filter { $0.title == eventItem.title }
@@ -351,7 +353,11 @@ struct EventDetailView: View {
             Divider().padding(.leading, 44)
             driverRow
             Divider().padding(.leading, 44)
+            showAsRow
+            Divider().padding(.leading, 44)
             alertRow
+            Divider().padding(.leading, 44)
+            travelTimeRow
         }
         .background(Color(.systemBackground))
         .cornerRadius(12)
@@ -436,6 +442,37 @@ struct EventDetailView: View {
                 currentAlert: alerts.first,
                 onSelect: { updateAlert(minutes: $0) }
             )
+        }
+    }
+
+    private var showAsRow: some View {
+        quickRow(icon: "circle.square", title: "Show As", showsChevron: false, verticalPadding: 8) {
+            Text(showAsOption.rawValue)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(showAsOption == .free ? .secondary : .primary)
+        }
+    }
+
+    private var travelTimeRow: some View {
+        quickRow(icon: "car.fill", title: "Travel Time", showsChevron: false, verticalPadding: 8) {
+            if let minutes = travelTimeMinutes, minutes > 0 {
+                let departureTime = CalendarManager.shared.calculateDepartureTime(
+                    eventStartDate: event.startDate,
+                    travelTimeMinutes: minutes
+                )
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(minutes) min")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                    Text("Depart \(departureTime.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Text("None")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 
@@ -750,7 +787,7 @@ struct EventDetailView: View {
 
             // For new items, sync the entire checklist to ensure parent exists in Supabase first
             Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
+                await ChecklistManager.shared.syncChecklist(targetChecklist)
             }
 
             // Apply to all future occurrences if requested
@@ -764,7 +801,7 @@ struct EventDetailView: View {
 
     private func applyChecklistItemToFutureOccurrences(title: String, dueDate: Date?) {
         // Find all future occurrences of this recurring event
-        let eventStore = EKEventStore()
+        let eventStore = CalendarManager.shared.eventStore
 
         guard let ekEvent = eventStore.event(withIdentifier: event.id) else {
             return
@@ -773,6 +810,8 @@ struct EventDetailView: View {
         guard ekEvent.hasRecurrenceRules else {
             return
         }
+
+        var checklistsToSync: [Checklist] = []
 
         // Get all occurrences of this recurring event that are STRICTLY AFTER the current event
         // Start from tomorrow to exclude today's event
@@ -802,6 +841,7 @@ struct EventDetailView: View {
                     dueDate: dueDate,
                     sortOrder: nextSortOrder
                 )
+                checklistsToSync.append(targetChecklist)
             } catch {
                 print("❌ Error adding checklist item to future occurrence: \(error)")
             }
@@ -809,7 +849,9 @@ struct EventDetailView: View {
 
         // Sync all checklists to Supabase
         Task {
-            await ChecklistManager.shared.syncChecklistsToSupabase()
+            for checklist in checklistsToSync {
+                await ChecklistManager.shared.syncChecklist(checklist)
+            }
         }
     }
 
@@ -898,7 +940,10 @@ struct EventDetailView: View {
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { isEditing = true }) {
+                    Button(action: {
+                        applyLinkedToAll = false
+                        startEditFlow()
+                    }) {
                         Text("Edit")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
@@ -906,11 +951,95 @@ struct EventDetailView: View {
                 }
             }
             .sheet(isPresented: $isEditing) {
-                EditEventView(upcomingEvent: event)
+                EditEventView(
+                    upcomingEvent: event,
+                    editSpan: pendingEditSpan,
+                    applyToLinkedByDefault: applyLinkedToAll || !selectedLinkedCalendarIds.isEmpty,
+                    selectedLinkedCalendarIds: selectedLinkedCalendarIds.isEmpty ? nil : selectedLinkedCalendarIds
+                )
             }
             .onChange(of: isEditing) { _, newValue in
                 if newValue == false {
                     fetchEventDetails()
+                }
+            }
+            .confirmationDialog("Update Linked Calendars?", isPresented: $showingLinkedEditDialog, titleVisibility: .visible) {
+                Button("This calendar only") {
+                    applyLinkedToAll = false
+                    selectedLinkedCalendarIds.removeAll()
+                    continueEditFlow()
+                }
+                Button("All linked calendars") {
+                    applyLinkedToAll = true
+                    selectedLinkedCalendarIds.removeAll()
+                    continueEditFlow()
+                }
+                if !linkedCalendarOptions.isEmpty {
+                    Button("Choose calendars…") {
+                        applyLinkedToAll = false
+                        showingLinkedSelectionSheet = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    applyLinkedToAll = false
+                    selectedLinkedCalendarIds.removeAll()
+                }
+            } message: {
+                Text("This event exists in other linked calendars. Apply your edits here only, or to all linked copies?")
+            }
+            .confirmationDialog("Edit Recurring Event?", isPresented: $showingEditScopeDialog, titleVisibility: .visible) {
+                Button("This event only") {
+                    pendingEditSpan = .thisEvent
+                    isEditing = true
+                }
+                Button("This and future events") {
+                    pendingEditSpan = .futureEvents
+                    isEditing = true
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Do you want to edit just this occurrence, or this and all future events?")
+            }
+            .sheet(isPresented: $showingLinkedSelectionSheet) {
+                NavigationStack {
+                    List {
+                        Section("Select linked calendars") {
+                            ForEach(linkedCalendarOptions, id: \.calendarId) { option in
+                                Button {
+                                    if selectedLinkedCalendarIds.contains(option.calendarId) {
+                                        selectedLinkedCalendarIds.remove(option.calendarId)
+                                    } else {
+                                        selectedLinkedCalendarIds.insert(option.calendarId)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(option.name)
+                                        Spacer()
+                                        if selectedLinkedCalendarIds.contains(option.calendarId) {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                                .tint(.primary)
+                            }
+                        }
+                    }
+                    .navigationTitle("Linked Calendars")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                selectedLinkedCalendarIds.removeAll()
+                                showingLinkedSelectionSheet = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Apply") {
+                                showingLinkedSelectionSheet = false
+                                continueEditFlow()
+                            }
+                            .disabled(selectedLinkedCalendarIds.isEmpty)
+                        }
+                    }
                 }
             }
             .alert("Delete Event", isPresented: $showingDeleteConfirmation) {
@@ -988,6 +1117,7 @@ struct EventDetailView: View {
             }
             .onAppear {
                 loadAvailableCalendars()
+                showAsOption = event.showAs
                 fetchEventDetails()
 
                 if let location = event.location, !location.isEmpty {
@@ -1048,97 +1178,6 @@ struct EventDetailView: View {
     }
 
     // MARK: - View Components
-
-    private var driverSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Driver")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.gray)
-                .padding(.horizontal, 20)
-
-            // Driver selection dropdown
-            HStack(spacing: 12) {
-                Menu {
-                    Button(action: { selectedDriver = nil }) {
-                        HStack {
-                            Text("None")
-                            if selectedDriver == nil {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-
-                    if !allAvailableDrivers.isEmpty {
-                        Divider()
-
-                        ForEach(allAvailableDrivers, id: \.id) { driverWrapper in
-                            Button(action: {
-                                selectedDriver = driverWrapper
-                                // Only show alert if selecting a family member driver
-                                if case .familyMember(_) = driverWrapper {
-                                    driverToCreateEventFor = driverWrapper
-                                    showingCreateEventForDriverAlert = true
-                                }
-                            }) {
-                                HStack {
-                                    Text(driverWrapper.name)
-                                    if selectedDriver?.id == driverWrapper.id {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "car.fill")
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundColor(Color(red: 0.33, green: 0.33, blue: 0.33))
-
-                        Text(selectedDriver?.name ?? "None")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.primary)
-
-                        Spacer()
-
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.gray)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
-                }
-                .onChange(of: selectedDriver) { _, _ in
-                    saveDriver()
-                }
-            }
-            .padding(.horizontal, 20)
-
-            // Phone button (only show if driver selected and has phone)
-            if let selectedDriver = selectedDriver, let phone = selectedDriver.phone, !phone.isEmpty {
-                HStack(spacing: 12) {
-                    Link(destination: URL(string: "tel:\(phone)")!) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "phone.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(phone)
-                                .font(.system(size: 14, weight: .medium))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .foregroundColor(.white)
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-    }
 
     // MARK: - Helper Methods
     
@@ -1328,6 +1367,83 @@ struct EventDetailView: View {
         }
     }
 
+    private func startEditFlow() {
+        let linked = linkedFamilyEvents(for: event.id)
+        let ekLinked = fetchEventKitLinkedCalendars()
+        linkedCalendarOptions = linkedOptions(from: linked) + ekLinked
+        // Remove current calendar from options
+        linkedCalendarOptions = linkedCalendarOptions.filter { $0.calendarId != event.calendarID }
+
+        if linkedCalendarOptions.count > 0 {
+            showingLinkedEditDialog = true
+        } else {
+            continueEditFlow()
+        }
+    }
+
+    private func continueEditFlow() {
+        if event.hasRecurrence {
+            pendingEditSpan = .futureEvents
+            showingEditScopeDialog = true
+        } else {
+            pendingEditSpan = .thisEvent
+            isEditing = true
+        }
+    }
+
+    /// Detect linked copies via EventKit when CoreData links are missing.
+    private func hasEventKitLinkedCopies() -> Bool {
+        let store = CalendarManager.shared.eventStore
+        let calendars = store.calendars(for: .event).filter { $0.calendarIdentifier != event.calendarID }
+        guard !calendars.isEmpty else { return false }
+
+        let predicate = store.predicateForEvents(
+            withStart: event.startDate.addingTimeInterval(-86400),
+            end: event.startDate.addingTimeInterval(86400),
+            calendars: calendars
+        )
+        let matches = store.events(matching: predicate).filter {
+            $0.title == event.title && $0.eventIdentifier != event.id
+        }
+        return !matches.isEmpty
+    }
+
+    private func fetchEventKitLinkedCalendars() -> [LinkedCalendarOption] {
+        let store = CalendarManager.shared.eventStore
+        let calendars = store.calendars(for: .event).filter { $0.calendarIdentifier != event.calendarID }
+        guard !calendars.isEmpty else { return [] }
+
+        var options: [LinkedCalendarOption] = []
+        for calendar in calendars {
+            let predicate = store.predicateForEvents(
+                withStart: event.startDate.addingTimeInterval(-86400),
+                end: event.startDate.addingTimeInterval(86400),
+                calendars: [calendar]
+            )
+            let matches = store.events(matching: predicate).filter {
+                $0.title == event.title && $0.eventIdentifier != event.id
+            }
+            if !matches.isEmpty {
+                options.append(LinkedCalendarOption(calendarId: calendar.calendarIdentifier, name: calendar.title))
+            }
+        }
+        return options
+    }
+
+    private func linkedOptions(from familyEvents: [FamilyEvent]) -> [LinkedCalendarOption] {
+        var options: [LinkedCalendarOption] = []
+        for familyEvent in familyEvents {
+            if let calId = familyEvent.calendarId,
+               calId != event.calendarID,
+               let calName = CalendarManager.shared.getCalendar(withIdentifier: calId)?.title {
+                options.append(LinkedCalendarOption(calendarId: calId, name: calName))
+            }
+        }
+        // Deduplicate by calendarId
+        var seen: Set<String> = []
+        return options.filter { seen.insert($0.calendarId).inserted }
+    }
+
     private func fetchEventDetails() {
         // Try to fetch full event details for alarms, but continue without them if not available
         // This prevents crashes if the event has been deleted or is inaccessible
@@ -1344,6 +1460,13 @@ struct EventDetailView: View {
 
         self.ekEvent = ekEvent
         self.alerts = ekEvent.alarms ?? []
+        self.travelTimeMinutes = CalendarManager.shared.getTravelTimeMinutes(from: ekEvent)
+        switch ekEvent.availability {
+        case .free:
+            self.showAsOption = .free
+        default:
+            self.showAsOption = .busy
+        }
     }
 
     private func geocodeLocation(_ locationString: String, zoom: Double = 0.01) {
@@ -1463,6 +1586,7 @@ struct EventDetailView: View {
                     calendarTitle: event.calendarTitle,
                     hasRecurrence: event.hasRecurrence,
                     recurrenceRule: event.recurrenceRule,
+                    travelTimeMinutes: event.travelTimeMinutes,
                     isAllDay: event.isAllDay
                 )
             }
@@ -1824,6 +1948,7 @@ private struct AlertMenuButton: View {
             calendarTitle: "Mark",
             hasRecurrence: false,
             recurrenceRule: nil,
+            travelTimeMinutes: nil,
             isAllDay: false
         )
 

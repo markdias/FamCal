@@ -34,7 +34,8 @@ struct NextEventWidget: Widget {
         location: "Conference Room A",
         colorHex: "#007AFF",
         checklistCompleted: 2,
-        checklistTotal: 5
+        checklistTotal: 5,
+        travelTimeMinutes: 20
     )
 
     let mockMember = FamilyMemberData(

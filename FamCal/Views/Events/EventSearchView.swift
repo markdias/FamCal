@@ -178,15 +178,9 @@ struct EventSearchView: View {
 
     private func resultRow(for result: SearchEvent) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(Self.dateFormatter.string(from: result.event.startDate))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.gray)
-                Spacer()
-                Text(timeRange(for: result.event))
-                    .font(.system(size: 13))
-                    .foregroundColor(.gray)
-            }
+            Text(Self.dateFormatter.string(from: result.event.startDate))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.gray)
 
             HStack(spacing: 6) {
                 Text(result.event.title)
@@ -196,6 +190,15 @@ struct EventSearchView: View {
                     RecurrenceIcon(color: Color(uiColor: result.event.calendarColor))
                 }
             }
+
+            DepartureRow(
+                startDate: result.event.startDate,
+                travelMinutes: result.event.travelTimeMinutes,
+                timeRange: timeRange(for: result.event),
+                fontSize: 12,
+                iconColor: .orange,
+                textColor: .gray
+            )
 
             if let location = result.event.location, !location.isEmpty {
                 Text(location)

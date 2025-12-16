@@ -17,6 +17,8 @@ struct EditEventView: View {
     @EnvironmentObject private var themeManager: ThemeManager
 
     let upcomingEvent: UpcomingCalendarEvent
+    let applyToLinkedByDefault: Bool
+    let selectedLinkedCalendarIds: Set<String>?
 
     @FetchRequest(
         entity: Driver.entity(),
@@ -30,8 +32,10 @@ struct EditEventView: View {
     )
     private var familyMembers: FetchedResults<FamilyMember>
 
-    init(upcomingEvent: UpcomingCalendarEvent, editSpan: EKSpan? = nil) {
+    init(upcomingEvent: UpcomingCalendarEvent, editSpan: EKSpan? = nil, applyToLinkedByDefault: Bool = false, selectedLinkedCalendarIds: Set<String>? = nil) {
         self.upcomingEvent = upcomingEvent
+        self.applyToLinkedByDefault = applyToLinkedByDefault
+        self.selectedLinkedCalendarIds = selectedLinkedCalendarIds
         _selectedEditSpan = State(initialValue: editSpan ?? .futureEvents)
     }
 
@@ -356,6 +360,7 @@ struct EditEventView: View {
                 fetchCalendarId()
                 fetchDriver()
                 loadExistingAlertOption()
+                loadExistingShowAsOption()
                 loadExistingTravelTime()
                 loadLinkedFamilyEvents()
                 loadAvailableCalendars()
@@ -739,6 +744,25 @@ struct EditEventView: View {
         }
     }
 
+    private func loadExistingShowAsOption() {
+        let ekEvent = CalendarManager.shared.fetchEventDetails(
+            withIdentifier: upcomingEvent.id,
+            occurrenceStartDate: upcomingEvent.startDate
+        ) ?? CalendarManager.shared.fetchEventDetails(withIdentifier: upcomingEvent.id)
+
+        guard let ekEvent else {
+            showAsOption = upcomingEvent.showAs
+            return
+        }
+
+        switch ekEvent.availability {
+        case .free:
+            showAsOption = .free
+        default:
+            showAsOption = .busy
+        }
+    }
+
     private func loadExistingTravelTime() {
         let ekEvent = CalendarManager.shared.fetchEventDetails(
             withIdentifier: upcomingEvent.id,
@@ -800,7 +824,8 @@ struct EditEventView: View {
         span: EKSpan,
         applyToGroup: Bool,
         currentCalendarId: String,
-        currentOccurrence: Date
+        currentOccurrence: Date,
+        selectedCalendarIds: Set<String>? = nil
     ) {
         var targets: [(id: String, calendarId: String, occurrence: Date?)] = [
             (id: upcomingEvent.id, calendarId: currentCalendarId, occurrence: currentOccurrence)
@@ -810,6 +835,7 @@ struct EditEventView: View {
             for familyEvent in linkedFamilyEvents {
                 guard let eid = familyEvent.eventIdentifier,
                       let calId = familyEvent.calendarId else { continue }
+                if let selectedCalendarIds, !selectedCalendarIds.contains(calId) { continue }
                 targets.append((id: eid, calendarId: calId, occurrence: nil))
             }
         }
@@ -1136,6 +1162,11 @@ struct EditEventView: View {
             return
         }
 
+        if applyToLinkedByDefault && linkedFamilyEvents.count > 1 {
+            Task { await saveEvent(applyToGroup: true, selectedCalendarIds: selectedLinkedCalendarIds) }
+            return
+        }
+
         externalEditCalendars = []
 
         if linkedFamilyEvents.count > 1 {
@@ -1195,13 +1226,12 @@ struct EditEventView: View {
             let calendars = foundLinkedCalendars
             Task { @MainActor in
                 self.externalEditCalendars = calendars
-                self.showingUpdateScopeDialog = true
             }
             print("🔗 Found \(foundLinkedCalendars.count) calendar(s) with linked event")
-        } else {
-            // No linked events found - save normally
-            Task { await saveEvent(applyToGroup: false) }
         }
+
+        // Always proceed with saving the current calendar copy
+        Task { await saveEvent(applyToGroup: false) }
     }
 
     private func detectExternalChanges(in familyEvents: [FamilyEvent]) -> [String] {
@@ -1267,10 +1297,18 @@ struct EditEventView: View {
         isAllDay: Bool,
         recurrenceRule: EKRecurrenceRule?,
         span: EKSpan,
-        alertOption: AlertOption?
+        alertOption: AlertOption?,
+        showAsOption: ShowAsOption,
+        selectedCalendarIds: Set<String>? = nil
     ) async {
         // First try to use FamilyEvent records from CoreData
-        let otherEvents = linkedFamilyEvents.filter { $0.eventIdentifier != upcomingEvent.id }
+        let otherEvents = linkedFamilyEvents.filter { familyEvent in
+            guard familyEvent.eventIdentifier != upcomingEvent.id else { return false }
+            if let selectedCalendarIds {
+                return familyEvent.calendarId.map { selectedCalendarIds.contains($0) } ?? false
+            }
+            return true
+        }
 
         // If no other FamilyEvent records found, search EventKit directly for this event in all family member calendars
         if otherEvents.isEmpty {
@@ -1300,6 +1338,9 @@ struct EditEventView: View {
 
             // Search each calendar for the event by title
             for (calendarId, _) in allMemberCalendars {
+                if let selectedCalendarIds, !selectedCalendarIds.contains(calendarId) {
+                    continue
+                }
                 let store = CalendarManager.shared.eventStore
                 if let calendar = store.calendar(withIdentifier: calendarId) {
                     let predicate = store.predicateForEvents(withStart: upcomingEvent.startDate.addingTimeInterval(-86400), end: upcomingEvent.startDate.addingTimeInterval(86400), calendars: [calendar])
@@ -1329,7 +1370,8 @@ struct EditEventView: View {
                                 recurrenceRule: recurrenceRule,
                                 updateRecurrence: true,
                                 span: span,
-                                alertOption: alertOption
+                                alertOption: alertOption,
+                                showAs: showAsOption
                             )
 
                             if success {
@@ -1389,7 +1431,7 @@ struct EditEventView: View {
         }
     }
 
-    private func saveEvent(applyToGroup: Bool = false) async {
+    private func saveEvent(applyToGroup: Bool = false, selectedCalendarIds: Set<String>? = nil) async {
         await MainActor.run {
             isSaving = true
             print("📝 Starting save event for: \(upcomingEvent.title)")
@@ -1479,7 +1521,8 @@ struct EditEventView: View {
             recurrenceRule: recurrenceRule,
             updateRecurrence: true,
             span: updateSpan,
-            alertOption: alertOption
+            alertOption: alertOption,
+            showAs: showAsOption
         )
 
         if success {
@@ -1497,20 +1540,23 @@ struct EditEventView: View {
                     meetingLink: meetingLinkValue,
                     isAllDay: isAllDay,
                     recurrenceRule: recurrenceRule,
-                    span: updateSpan,
-                    alertOption: alertOption
-                )
-            }
-
-            applyTravelTimesToTargets(
-                baseMinutes: baseTravelMinutes,
-                driverExtraMinutes: driverExtraMinutes,
-                driverCalendarIds: driverCalendarIds,
                 span: updateSpan,
-                applyToGroup: applyToGroup,
-                currentCalendarId: calId,
-                currentOccurrence: eventStartDate
+                alertOption: alertOption,
+                showAsOption: showAsOption,
+                selectedCalendarIds: selectedCalendarIds ?? selectedLinkedCalendarIds
             )
+        }
+
+        applyTravelTimesToTargets(
+            baseMinutes: baseTravelMinutes,
+            driverExtraMinutes: driverExtraMinutes,
+            driverCalendarIds: driverCalendarIds,
+            span: updateSpan,
+            applyToGroup: applyToGroup,
+            currentCalendarId: calId,
+            currentOccurrence: eventStartDate,
+            selectedCalendarIds: selectedCalendarIds ?? selectedLinkedCalendarIds
+        )
 
             if driverNotAttending,
                let driver = driverFamilyMember,
@@ -2478,6 +2524,23 @@ struct EditEventView: View {
                 } label: {
                     Text(alertOption.rawValue)
                         .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+
+            Divider().padding(.leading, 44)
+
+            // Show As
+            QuickRow(icon: "circle.square", title: "Show As", showChevron: true, color: .gray) {
+                Menu {
+                    ForEach(ShowAsOption.allCases, id: \.self) { option in
+                        Button(action: { showAsOption = option }) {
+                            Label(option.rawValue, systemImage: showAsOption == option ? "checkmark" : "")
+                        }
+                    }
+                } label: {
+                    Text(showAsOption.rawValue)
+                        .foregroundColor(.primary)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }

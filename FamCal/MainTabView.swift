@@ -344,6 +344,7 @@ struct MainTabView: View {
             calendarTitle: ekEvent.calendar.title,
             hasRecurrence: ekEvent.hasRecurrenceRules,
             recurrenceRule: ekEvent.recurrenceRules?.first,
+            travelTimeMinutes: CalendarManager.shared.getTravelTimeMinutes(from: ekEvent),
             isAllDay: ekEvent.isAllDay
         )
 

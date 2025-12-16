@@ -528,7 +528,7 @@ struct AddFamilyMemberView: View {
                                     isAutoLinked: true
                                 )
                                 // Refresh to confirm
-                                await dataManager.fetchUserDataIfNeeded(force: true)
+                                await dataManager.fetchUserDataIfNeeded()
                             }
                         }
                     }
@@ -590,7 +590,7 @@ struct AddFamilyMemberView: View {
                             }
                             
                             // Final sync to ensure consistency
-                            await dataManager.fetchUserDataIfNeeded(force: true)
+                            await dataManager.fetchUserDataIfNeeded()
                         } catch {
                             print("❌ Background sync failed for new member: \(error)")
                             // Note: Local data remains. Retry logic would be handled by SyncMetadataManager in future app launches

@@ -11,45 +11,23 @@ struct AnalyticsMetricsView: View {
     let analytics: TimeAnalytics
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                metricCard(
-                    title: "Free Time",
-                    value: formatMinutes(analytics.freeMinutes),
-                    subtitle: "\(analytics.freePercentage)% of day",
-                    color: .green
-                )
+        let cards = metricCards()
 
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            ForEach(cards, id: \.title) { card in
                 metricCard(
-                    title: "Busy Time",
-                    value: formatMinutes(analytics.busyMinutes),
-                    subtitle: "\(100 - analytics.freePercentage)% of day",
-                    color: .orange
-                )
-            }
-
-            HStack(spacing: 12) {
-                if let longestGap = analytics.longestGap {
-                    metricCard(
-                        title: "Longest Gap",
-                        value: longestGap.formattedDuration,
-                        subtitle: longestGap.formattedTimeRange,
-                        color: .blue
-                    )
-                }
-
-                metricCard(
-                    title: "Free Blocks",
-                    value: "\(analytics.gaps.count)",
-                    subtitle: analytics.gaps.count == 1 ? "gap" : "gaps",
-                    color: .purple
+                    title: card.title,
+                    value: card.value,
+                    subtitle: card.subtitle,
+                    color: card.color,
+                    footer: card.footer
                 )
             }
         }
         .padding(.horizontal, 16)
     }
 
-    private func metricCard(title: String, value: String, subtitle: String, color: Color) -> some View {
+    private func metricCard(title: String, value: String, subtitle: String, color: Color, footer: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
@@ -62,13 +40,78 @@ struct AnalyticsMetricsView: View {
             Text(subtitle)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+
+            if let footer {
+                Text(footer)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.8))
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(.secondarySystemBackground))
         )
+    }
+
+    private struct MetricCardData {
+        let title: String
+        let value: String
+        let subtitle: String
+        let footer: String?
+        let color: Color
+    }
+
+    private func metricCards() -> [MetricCardData] {
+        var cards: [MetricCardData] = [
+            MetricCardData(
+                title: "Free Time",
+                value: formatMinutes(analytics.freeMinutes),
+                subtitle: "\(analytics.freePercentage)% of day",
+                footer: nil,
+                color: .green
+            ),
+            MetricCardData(
+                title: "Busy Time",
+                value: formatMinutes(analytics.busyMinutes),
+                subtitle: "\(100 - analytics.freePercentage)% of day",
+                footer: nil,
+                color: .orange
+            ),
+            MetricCardData(
+                title: "Travel Time",
+                value: formatMinutes(analytics.travelMinutes),
+                subtitle: analytics.travelMinutes > 0 ? "Counted as busy" : "No travel today",
+                footer: nil,
+                color: .orange.opacity(0.85)
+            )
+        ]
+
+        if let longestGap = analytics.longestGap {
+            cards.append(
+                MetricCardData(
+                    title: "Longest Gap",
+                    value: longestGap.formattedDuration,
+                    subtitle: longestGap.formattedTimeRange,
+                    footer: nil,
+                    color: .blue
+                )
+            )
+        }
+
+        cards.append(
+            MetricCardData(
+                title: "Free Blocks",
+                value: "\(analytics.gaps.count)",
+                subtitle: analytics.gaps.count == 1 ? "gap" : "gaps",
+                footer: nil,
+                color: .purple
+            )
+        )
+
+        return cards
     }
 
     private func formatMinutes(_ minutes: Int) -> String {
@@ -98,6 +141,7 @@ struct AnalyticsMetricsView: View {
         memberID: UUID(),
         totalAvailableMinutes: 900,
         busyMinutes: 150,
+        travelMinutes: 0,
         freeMinutes: 750,
         freePercentage: 83,
         gaps: [
@@ -106,8 +150,8 @@ struct AnalyticsMetricsView: View {
             TimeGap(start: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, end: bedTime, durationMinutes: 270)
         ],
         busyBlocks: [
-            BusyBlock(start: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 10, minute: 0, second: 0, of: startOfDay)!, durationMinutes: 60, eventTitles: ["Meeting"], calendarColors: [.systemBlue]),
-            BusyBlock(start: calendar.date(bySettingHour: 14, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, durationMinutes: 90, eventTitles: ["Lunch"], calendarColors: [.systemGreen])
+            BusyBlock(start: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 10, minute: 0, second: 0, of: startOfDay)!, durationMinutes: 60, travelDurationMinutes: 0, eventTitles: ["Meeting"], calendarColors: [.systemBlue], isFree: false),
+            BusyBlock(start: calendar.date(bySettingHour: 14, minute: 0, second: 0, of: startOfDay)!, end: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, durationMinutes: 90, travelDurationMinutes: 0, eventTitles: ["Lunch"], calendarColors: [.systemGreen], isFree: false)
         ],
         longestGap: TimeGap(start: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: startOfDay)!, end: bedTime, durationMinutes: 270),
         wakeTime: wakeTime,

@@ -459,7 +459,7 @@ struct EditFamilyMemberView: View {
                             }
                             
                             // Final sync to ensure consistency
-                            await dataManager.fetchUserDataIfNeeded(force: true)
+                            await dataManager.fetchUserDataIfNeeded()
                         } catch {
                             print("❌ Background sync failed for update member: \(error)")
                         }
@@ -592,7 +592,7 @@ struct EditFamilyMemberView: View {
                             print("✅ Account unlinked from family member \(memberName ?? "Unknown") on Supabase")
                             
                             // Refresh data
-                            await dataManager.fetchUserDataIfNeeded(force: true)
+                            await dataManager.fetchUserDataIfNeeded()
                         } catch {
                             print("❌ Background sync failed for unlink account: \(error)")
                         }

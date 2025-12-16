@@ -239,19 +239,6 @@ struct ChecklistsView: View {
                 editItemSheet(item)
             }
         }
-        .onAppear {
-            Task {
-                // Fetch all checklists from Supabase when view appears
-                await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
-            }
-        }
-        .onDisappear {
-            // Ensure any toggles/edits are synced so the main screen refreshes
-            Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
-                await SupabaseDataManager.shared.syncAllChecklistsFromSupabase()
-            }
-        }
     }
 
     // MARK: - Views
@@ -450,7 +437,7 @@ struct ChecklistsView: View {
                                     item.dueDate = nil
                                     try? viewContext.save()
                                     Task {
-                                        await ChecklistManager.shared.syncChecklistsToSupabase()
+                                        await ChecklistManager.shared.syncItemUpdate(item)
                                     }
                                     showingEditSheet = false
                                 }
@@ -495,9 +482,9 @@ struct ChecklistsView: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .background(Color(.systemGray5))
-                                .foregroundColor(.secondary)
-                                .cornerRadius(10)
+                            .background(Color(.systemGray5))
+                            .foregroundColor(.secondary)
+                            .cornerRadius(10)
                         }
 
                         Button(action: {
@@ -505,7 +492,7 @@ struct ChecklistsView: View {
                                 do {
                                     try viewContext.save()
                                     Task {
-                                        await ChecklistManager.shared.syncChecklistsToSupabase()
+                                        await ChecklistManager.shared.syncItemUpdate(item)
                                     }
                                 } catch {
                                     print("❌ Error saving due date: \(error)")
@@ -624,7 +611,7 @@ struct ChecklistsView: View {
 
             // For new items, sync the entire checklist to ensure parent exists in Supabase first
             Task {
-                await ChecklistManager.shared.syncChecklistsToSupabase()
+                await ChecklistManager.shared.syncChecklist(checklist)
             }
             newItemTitle = ""
             newItemHasDueDate = false

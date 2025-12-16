@@ -90,4 +90,6 @@ struct GroupedEventDTO: Codable {
     let isAllDay: Bool
     let driverName: String?
     let isImportant: Bool
+    let travelTimeMinutes: Int?
+    let showAs: ShowAsOption?
 }

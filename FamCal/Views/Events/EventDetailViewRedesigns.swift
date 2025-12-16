@@ -281,6 +281,7 @@ private let previewLinkedCalendars: [LinkedCalendarPreview] = [
             calendarTitle: "Work",
             hasRecurrence: true,
             recurrenceRule: nil,
+            travelTimeMinutes: nil,
             isAllDay: false
         )
     )

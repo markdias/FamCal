@@ -16,6 +16,7 @@ import CoreLocation
 
 class NotificationManager: NSObject, ObservableObject {
     static let shared = NotificationManager()
+    private let verboseLogging = false
 
     @Published var notificationsEnabled = false
     @Published var morningBriefEnabled = false
@@ -44,6 +45,11 @@ class NotificationManager: NSObject, ObservableObject {
     private let morningBriefTimeKey = "morningBriefTime"
     private let selectedMembersKey = "selectedMembersForNotifications"
     private let selectedCalendarsKey = "selectedCalendarsForNotifications"
+
+    private func log(_ message: String) {
+        guard verboseLogging else { return }
+        print(message)
+    }
 
     override init() {
         super.init()
@@ -166,7 +172,7 @@ class NotificationManager: NSObject, ObservableObject {
             return
         }
 
-        print("🔄 Syncing calendar notifications...")
+        // Quiet by default; keep only essential warnings/errors
 
         // Get calendar owner lookup
         let calendarLookup = fetchCalendarOwners()
@@ -563,22 +569,22 @@ class NotificationManager: NSObject, ObservableObject {
             fetchRequest.relationshipKeyPathsForPrefetching = ["memberCalendars", "sharedCalendars", "personalCalendars"]
 
             if let members = try? context.fetch(fetchRequest) {
-                print("ℹ️ Morning brief: Found \(members.count) family member(s)")
+                log("ℹ️ Morning brief: Found \(members.count) family member(s)")
                 for member in members {
                     let memberId = member.id
                     let name = member.name ?? "Family Member"
-                    print("  → \(name):")
+                    log("  → \(name):")
 
                     if let linkedCalendarID = member.linkedCalendarID, !linkedCalendarID.isEmpty {
                         lookup[linkedCalendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
-                        print("    - Linked calendar: \(linkedCalendarID)")
+                        log("    - Linked calendar: \(linkedCalendarID)")
                     }
 
                     if let calendars = member.memberCalendars as? Set<FamilyMemberCalendar> {
                         for calendar in calendars {
                             if let calendarID = calendar.calendarID, !calendarID.isEmpty {
                                 lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
-                                print("    - Member calendar: \(calendarID)")
+                                log("    - Member calendar: \(calendarID)")
                             }
                         }
                     }
@@ -587,7 +593,7 @@ class NotificationManager: NSObject, ObservableObject {
                         for personal in personalCalendars {
                             if let calendarID = personal.calendarID, !calendarID.isEmpty {
                                 lookup[calendarID] = CalendarOwnerInfo(memberId: memberId, displayName: name)
-                                print("    - Personal calendar: \(calendarID)")
+                                log("    - Personal calendar: \(calendarID)")
                             }
                         }
                     }
@@ -598,18 +604,19 @@ class NotificationManager: NSObject, ObservableObject {
                                 if lookup[calendarID] == nil {
                                     let displayName = shared.calendarName ?? "Shared Calendar"
                                     lookup[calendarID] = CalendarOwnerInfo(memberId: nil, displayName: displayName)
-                                    print("    - Shared calendar: \(calendarID)")
+                                    log("    - Shared calendar: \(calendarID)")
                                 }
                             }
                         }
                     }
                 }
             } else {
+                // Keep warning to indicate data issue
                 print("⚠️ Morning brief: Failed to fetch family members from CoreData")
             }
         }
 
-        print("ℹ️ Morning brief: Calendar lookup has \(lookup.count) entries")
+        log("ℹ️ Morning brief: Calendar lookup has \(lookup.count) entries")
         return lookup
     }
 
@@ -622,25 +629,25 @@ class NotificationManager: NSObject, ObservableObject {
             let weekday = calendar.component(.weekday, from: Date())
             // weekday: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
             if weekday == 1 || weekday == 7 {
-                print("ℹ️ Morning brief: Skipping weekend (today is weekday \(weekday))")
+                log("ℹ️ Morning brief: Skipping weekend (today is weekday \(weekday))")
                 return []
             }
         }
 
         let calendarLookup = fetchCalendarOwners()
         guard !calendarLookup.isEmpty else {
-            print("⚠️ Morning brief: No calendar mappings found for family members")
+            log("⚠️ Morning brief: No calendar mappings found for family members")
             return []
         }
 
         // Filter calendars by selected members if specified
         let filteredLookup = calendarLookup
         if let selectedMembers = appSettings.morningBriefSelectedMembers, !selectedMembers.isEmpty {
-            print("ℹ️ Morning brief: Filtering to \(selectedMembers.count) selected member(s)")
+            log("ℹ️ Morning brief: Filtering to \(selectedMembers.count) selected member(s)")
             // Would need to filter here based on member UUID
             // For now, we'll use all calendars if no members selected
         } else if appSettings.morningBriefSelectedMembers == nil {
-            print("ℹ️ Morning brief: Including all members (default)")
+            log("ℹ️ Morning brief: Including all members (default)")
         }
 
         let calendarStatus = EKEventStore.authorizationStatus(for: .event)
@@ -652,21 +659,19 @@ class NotificationManager: NSObject, ObservableObject {
         }
 
         guard hasReadAccess else {
-            print("⚠️ Morning brief: Calendar access not authorized for reading (status=\(calendarStatus.rawValue))")
+            log("⚠️ Morning brief: Calendar access not authorized for reading (status=\(calendarStatus.rawValue))")
             return []
         }
 
         let eventStore = EKEventStore()
         let allCalendars = eventStore.calendars(for: .event)
-        print("ℹ️ Morning brief: Device has \(allCalendars.count) calendar(s)")
+        log("ℹ️ Morning brief: Device has \(allCalendars.count) calendar(s)")
 
         let calendars = allCalendars
             .filter { filteredLookup[$0.calendarIdentifier] != nil }
 
-        print("ℹ️ Morning brief: \(calendars.count) calendar(s) match our lookup")
-        for cal in calendars {
-            print("  → \(cal.title) [\(cal.calendarIdentifier)]")
-        }
+        log("ℹ️ Morning brief: \(calendars.count) calendar(s) match our lookup")
+        calendars.forEach { cal in log("  → \(cal.title) [\(cal.calendarIdentifier)]") }
 
         guard !calendars.isEmpty else {
             print("⚠️ Morning brief: No matching calendars found on device")
@@ -702,12 +707,13 @@ class NotificationManager: NSObject, ObservableObject {
                 driver: nil,
                 attendees: [owner.displayName],
                 meetingLink: event.url?.absoluteString,
-                isAllDay: event.isAllDay
+                isAllDay: event.isAllDay,
+                travelTimeMinutes: CalendarManager.shared.getTravelTimeMinutes(from: event)
             )
             briefEvents.append(briefEvent)
         }
 
-        print("ℹ️ Morning brief: Prepared \(briefEvents.count) event(s) for today")
+        log("ℹ️ Morning brief: Prepared \(briefEvents.count) event(s) for today")
         return briefEvents
     }
 
@@ -894,7 +900,7 @@ class NotificationManager: NSObject, ObservableObject {
 
                     do {
                         try imageData.write(to: imageURL)
-                        print("✅ Image file written successfully, size: \(imageData.count) bytes")
+                        // Success paths are silent to reduce log noise
 
                         // Create attachment with explicit options
                         let options: [String: Any] = [
@@ -906,7 +912,6 @@ class NotificationManager: NSObject, ObservableObject {
                             options: options
                         )
                         content.attachments = [attachment]
-                        print("✅ Morning brief image attached successfully to notification")
                     } catch {
                         print("⚠️ Failed to attach morning brief image: \(error)")
                         print("   Error details: \(error.localizedDescription)")
@@ -959,7 +964,6 @@ class NotificationManager: NSObject, ObservableObject {
                 let request = UNNotificationRequest(identifier: "morningBrief", content: content, trigger: trigger)
 
                 try await notificationCenter.add(request)
-                print("✅ Morning brief scheduled daily for \(self.morningBriefTime.hour):\(String(format: "%02d", self.morningBriefTime.minute))")
             } catch {
                 print("❌ Error scheduling morning brief: \(error)")
             }

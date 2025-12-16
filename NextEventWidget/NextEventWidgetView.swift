@@ -96,6 +96,7 @@ struct NextEventWidgetView: View {
         let timeRange = timeRangeFormatter(startDate: event.startDate, endDate: event.endDate)
         let timeLabel = timeBubble(for: event)
         let locationLine = event.location?.split(separator: "\n").first.map(String.init)
+        let departureText = departureLabel(for: event)
 
         return ZStack(alignment: .topLeading) {
             // Card background - fills entire widget
@@ -120,6 +121,18 @@ struct NextEventWidgetView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.primary)
                         .lineLimit(2)
+
+                    if let departureText {
+                        HStack(spacing: 6) {
+                            Image(systemName: "car.fill")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundColor(.orange)
+                            Text(departureText)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
 
                     Spacer(minLength: 0)
 
@@ -237,6 +250,14 @@ struct NextEventWidgetView: View {
         let start = timeFormatter.string(from: startDate)
         let end = timeFormatter.string(from: endDate)
         return "\(start) – \(end)"
+    }
+
+    private func departureLabel(for event: WidgetEventData) -> String? {
+        guard let travelMinutes = event.travelTimeMinutes, travelMinutes > 0 else { return nil }
+        let departure = event.startDate.addingTimeInterval(TimeInterval(-travelMinutes * 60))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: departure)
     }
 
     /// Generate deep link to event (to be handled by main app)
@@ -375,7 +396,8 @@ extension View {
         location: "Conference Room A",
         colorHex: "#007AFF",
         checklistCompleted: 2,
-        checklistTotal: 5
+        checklistTotal: 5,
+        travelTimeMinutes: 20
     )
 
     let mockMember = FamilyMemberData(

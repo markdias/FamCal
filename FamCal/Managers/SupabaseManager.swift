@@ -1523,7 +1523,9 @@ class SupabaseManager: @unchecked Sendable {
                 if let extra {
                     try container.encode(extra, forKey: .extra)
                 } else {
-                    try container.encodeNil(forKey: .extra)
+                    // Send empty JSON object instead of null to satisfy NOT NULL constraint
+                    let empty: [String: AnyCodable] = [:]
+                    try container.encode(empty, forKey: .extra)
                 }
             }
         }

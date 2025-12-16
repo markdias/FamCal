@@ -383,7 +383,9 @@ struct AnalyticsModalView: View {
                 calendarTitle: event.calendarTitle,
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
-                isAllDay: event.isAllDay
+                travelTimeMinutes: event.travelTimeMinutes,
+                isAllDay: event.isAllDay,
+                showAs: event.showAs
             )
         }
     }

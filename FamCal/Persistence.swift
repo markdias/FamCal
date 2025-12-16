@@ -9,9 +9,16 @@ import CoreData
 
 struct PersistenceController {
     static let shared = PersistenceController()
+    private static let verboseLogging = false
+
+    private static func log(_ message: String) {
+        guard verboseLogging else { return }
+        print(message)
+    }
 
     /// Print diagnostics about the CoreData store location and contents
     static func printStoreDiagnostics() {
+        guard verboseLogging else { return }
         let fileManager = FileManager.default
         guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             print("⚠️ Could not find Application Support directory")
@@ -61,16 +68,16 @@ struct PersistenceController {
             // Configure app groups for widget access
             let appGroupID = "group.com.markdias.famli"
 
-            print("🔍 Persistence: Looking for app group container '\(appGroupID)'")
+            Self.log("🔍 Persistence: Looking for app group container '\(appGroupID)'")
             if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
                 let storeURL = appGroupURL.appendingPathComponent("FamCal.sqlite")
-                print("✅ Persistence: Found app group container at \(appGroupURL.path)")
-                print("   Store URL: \(storeURL.path)")
+                Self.log("✅ Persistence: Found app group container at \(appGroupURL.path)")
+                Self.log("   Store URL: \(storeURL.path)")
 
                 if let description = container.persistentStoreDescriptions.first {
                     description.url = storeURL
                     description.cloudKitContainerOptions = nil  // Disable CloudKit sync
-                    print("✅ Persistence: Configured store URL in description")
+                    Self.log("✅ Persistence: Configured store URL in description")
                 }
             } else {
                 print("❌ Persistence: App group container not found!")
@@ -86,7 +93,7 @@ struct PersistenceController {
                 print("❌ CoreData Error: \(error), \(error.userInfo)")
                 fatalError("Unresolved error \(error), \(error.userInfo)")
             }
-            print("✅ CoreData store loaded successfully at: \(storeDescription.url?.absoluteString ?? "unknown")")
+            Self.log("✅ CoreData store loaded successfully at: \(storeDescription.url?.absoluteString ?? "unknown")")
         })
 
         container.viewContext.automaticallyMergesChangesFromParent = true

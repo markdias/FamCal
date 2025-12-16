@@ -66,7 +66,7 @@ struct CalendarView: View {
     @State private var dayEvents: [String: [DayEventItem]] = [:]
     @State private var isLoadingEvents = false
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
-    @State private var eventStore = EKEventStore()
+    private var eventStore: EKEventStore { CalendarManager.shared.eventStore }
     @State private var refreshTimer: Timer? = nil
     @State private var showingCalendarPicker = false
     @State private var contextMenuEvent: UpcomingCalendarEvent? = nil
@@ -135,6 +135,12 @@ struct CalendarView: View {
     private static let dayOfWeekFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
+        return formatter
+    }()
+    
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
         return formatter
     }()
 
@@ -610,6 +616,15 @@ struct CalendarView: View {
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                DepartureRow(
+                    startDate: groupedEvent.startDate,
+                    travelMinutes: groupedEvent.travelTimeMinutes,
+                    timeRange: groupedEvent.isAllDay ? "All day" : (groupedEvent.timeRange ?? ""),
+                    fontSize: 11,
+                    iconColor: .orange,
+                    textColor: .secondary
+                )
+
                 Spacer(minLength: 0)
 
                 if groupedEvent.hasChecklist, let progress = groupedEvent.checklistProgress {
@@ -734,18 +749,23 @@ struct CalendarView: View {
                                 .opacity(isPast ? 0.5 : 1.0)
                         }
 
-                        // Time
-                        let timeText = groupedEvent.isAllDay ? "all day" : (groupedEvent.timeRange ?? "-")
-                        HStack(spacing: 8) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 12))
-                                .foregroundColor(secondaryTextColor)
-                            Text(timeText)
+                        // Time + departure
+                        if groupedEvent.isAllDay {
+                            Text("all day")
                                 .font(.system(size: 11, weight: .semibold))
-                                .monospacedDigit()
                                 .foregroundColor(secondaryTextColor)
+                                .opacity(isPast ? 0.5 : 1.0)
+                        } else {
+                            DepartureRow(
+                                startDate: groupedEvent.startDate,
+                                travelMinutes: groupedEvent.travelTimeMinutes,
+                                timeRange: groupedEvent.timeRange,
+                                fontSize: 11,
+                                iconColor: .orange,
+                                textColor: secondaryTextColor
+                            )
+                            .opacity(isPast ? 0.5 : 1.0)
                         }
-                        .opacity(isPast ? 0.5 : 1.0)
 
                         // Location (first line only) - tappable to open maps
                         if let location = groupedEvent.location {
@@ -886,7 +906,9 @@ struct CalendarView: View {
             calendarTitle: groupedEvent.calendarTitle,
             hasRecurrence: groupedEvent.hasRecurrence,
             recurrenceRule: nil,
-            isAllDay: groupedEvent.isAllDay
+            travelTimeMinutes: nil,
+            isAllDay: groupedEvent.isAllDay,
+            showAs: groupedEvent.showAs
         )
     }
 
@@ -1038,7 +1060,9 @@ struct CalendarView: View {
                     isAllDay: event.isAllDay,
                     driverName: event.driverName,
                     hasChecklist: event.hasChecklist,
-                    checklistProgress: event.checklistProgress
+                    checklistProgress: event.checklistProgress,
+                    travelTimeMinutes: event.travelTimeMinutes,
+                    showAs: event.showAs
                 )
             }
         }
@@ -1383,7 +1407,7 @@ struct CalendarView: View {
     }
 
     private func loadEvents() {
-        print("📅 CalendarView: loadEvents() started")
+        if isLoadingEvents { return }
         isLoadingEvents = true
 
         var tempEventsDict: [String: [DayEventItem]] = [:]
@@ -1406,10 +1430,9 @@ struct CalendarView: View {
             
             var resolvedID = storedID
             // If ID not found locally, try to find by name
-            if calendarById[storedID] == nil, let name = link.calendarName, let localCal = calendarByTitle[name] {
-                print("⚠️ Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
-                resolvedID = localCal.calendarIdentifier
-            }
+                if calendarById[storedID] == nil, let name = link.calendarName, let localCal = calendarByTitle[name] {
+                    resolvedID = localCal.calendarIdentifier
+                }
 
             var entry = memberCalendarMap[member.objectID] ?? ([], member)
             entry.0.insert(resolvedID)
@@ -1429,7 +1452,6 @@ struct CalendarView: View {
                         var resolvedID = storedID
                         // If ID not found locally, try to find by name
                         if calendarById[storedID] == nil, let name = sharedCal.calendarName, let localCal = calendarByTitle[name] {
-                            print("⚠️ Shared Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
                             resolvedID = localCal.calendarIdentifier
                         }
                         entry.0.insert(resolvedID)
@@ -1455,11 +1477,9 @@ struct CalendarView: View {
                     resolvedID = storedID
                     // If ID not found locally, try to find by name
                     if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
-                        print("⚠️ Personal Calendar ID mismatch for '\(name)'. Resolved by name: \(storedID) -> \(localCal.calendarIdentifier)")
                         resolvedID = localCal.calendarIdentifier
                     }
                 } else if let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
-                    print("ℹ️ Personal Calendar missing ID, resolved by name: \(name) -> \(localCal.calendarIdentifier)")
                     resolvedID = localCal.calendarIdentifier
                 }
 
@@ -1503,9 +1523,7 @@ struct CalendarView: View {
                     let dateKey = formatDateKey(eventDate)
 
                     let timeRange = event.startDate == event.endDate ? nil : {
-                        let formatter = DateFormatter()
-                        formatter.dateFormat = "HH:mm"
-                        return "\(formatter.string(from: event.startDate)) – \(formatter.string(from: event.endDate))"
+                        Self.timeFormatter.string(from: event.startDate) + " – " + Self.timeFormatter.string(from: event.endDate)
                     }()
 
                     let driverName = fetchDriverForEvent(event.id)
@@ -1534,13 +1552,15 @@ struct CalendarView: View {
                         calendarTitle: event.calendarTitle,
                         startDate: event.startDate,
                         endDate: event.endDate,
-                        hasRecurrence: event.hasRecurrence,
-                        isAllDay: event.isAllDay,
-                        driverName: driverName,
-                        driverPhone: driverPhone,
-                        hasChecklist: hasChecklist,
-                        checklistProgress: checklistProgress
-                    )
+            hasRecurrence: event.hasRecurrence,
+            isAllDay: event.isAllDay,
+            driverName: driverName,
+            driverPhone: driverPhone,
+            hasChecklist: hasChecklist,
+            checklistProgress: checklistProgress,
+            travelTimeMinutes: event.travelTimeMinutes,
+            showAs: event.showAs
+        )
 
                     if tempEventsDict[dateKey] == nil {
                         tempEventsDict[dateKey] = []
@@ -1586,7 +1606,7 @@ struct CalendarView: View {
 
     private func reloadEvents() async {
         // Force refresh data when user manually pulls down (bypass change detection)
-        await dataManager.fetchUserDataIfNeeded(force: true)
+        await dataManager.fetchUserDataIfNeeded()
         loadEvents()
     }
 
@@ -1774,13 +1794,14 @@ struct CalendarView: View {
                         meetingLink: event.meetingLink,
                         startDate: startDate,
                     endDate: event.endDate,
-                    calendarID: calendarId,
-                    calendarColor: event.calendarColor,
-                    calendarTitle: event.calendarTitle,
-                    hasRecurrence: event.hasRecurrence,
-                    recurrenceRule: event.recurrenceRule,
-                    isAllDay: event.isAllDay
-                )
+                        calendarID: calendarId,
+                        calendarColor: event.calendarColor,
+                        calendarTitle: event.calendarTitle,
+                        hasRecurrence: event.hasRecurrence,
+                        recurrenceRule: event.recurrenceRule,
+                        travelTimeMinutes: event.travelTimeMinutes,
+                        isAllDay: event.isAllDay
+                    )
             }
             targets.append(contentsOf: extras)
         }
@@ -1870,6 +1891,7 @@ struct CalendarView: View {
                     calendarTitle: firstRecurring.calendarTitle,
                     hasRecurrence: firstRecurring.hasRecurrence,
                     recurrenceRule: nil,
+                    travelTimeMinutes: nil,
                     isAllDay: firstRecurring.isAllDay
                 )
                 pendingDeleteEvent = upcomingEvent
@@ -1912,6 +1934,7 @@ struct CalendarView: View {
                     calendarTitle: nextRecurring.calendarTitle,
                     hasRecurrence: nextRecurring.hasRecurrence,
                     recurrenceRule: nil,
+                    travelTimeMinutes: nil,
                     isAllDay: nextRecurring.isAllDay
                 )
                 pendingDeleteEvent = upcomingEvent
@@ -1943,6 +1966,7 @@ struct CalendarView: View {
                 calendarTitle: event.calendarTitle,
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
+                travelTimeMinutes: nil,
                 isAllDay: event.isAllDay
             )
 
@@ -2021,6 +2045,60 @@ struct DayEventItem: Identifiable {
     let driverPhone: String?
     let hasChecklist: Bool
     let checklistProgress: ChecklistProgress?
+    let travelTimeMinutes: Int?
+    let showAs: ShowAsOption
+
+    init(
+        id: UUID,
+        title: String,
+        timeRange: String?,
+        location: String?,
+        meetingLink: String?,
+        memberNames: [String],
+        memberIDs: [NSManagedObjectID],
+        memberInitials: String,
+        memberColor: UIColor,
+        color: UIColor,
+        eventIdentifier: String,
+        calendarID: String,
+        calendarColor: UIColor,
+        calendarTitle: String,
+        startDate: Date,
+        endDate: Date,
+        hasRecurrence: Bool,
+        isAllDay: Bool,
+        driverName: String?,
+        driverPhone: String?,
+        hasChecklist: Bool,
+        checklistProgress: ChecklistProgress?,
+        travelTimeMinutes: Int?,
+        showAs: ShowAsOption = .busy
+    ) {
+        self.id = id
+        self.title = title
+        self.timeRange = timeRange
+        self.location = location
+        self.meetingLink = meetingLink
+        self.memberNames = memberNames
+        self.memberIDs = memberIDs
+        self.memberInitials = memberInitials
+        self.memberColor = memberColor
+        self.color = color
+        self.eventIdentifier = eventIdentifier
+        self.calendarID = calendarID
+        self.calendarColor = calendarColor
+        self.calendarTitle = calendarTitle
+        self.startDate = startDate
+        self.endDate = endDate
+        self.hasRecurrence = hasRecurrence
+        self.isAllDay = isAllDay
+        self.driverName = driverName
+        self.driverPhone = driverPhone
+        self.hasChecklist = hasChecklist
+        self.checklistProgress = checklistProgress
+        self.travelTimeMinutes = travelTimeMinutes
+        self.showAs = showAs
+    }
 
     var startTime: String? {
         guard let timeRange = timeRange else { return nil }
@@ -2050,6 +2128,58 @@ struct GroupedDayEvent: Identifiable {
     let driverName: String?
     let hasChecklist: Bool
     let checklistProgress: ChecklistProgress?
+    let travelTimeMinutes: Int?
+    let showAs: ShowAsOption
+
+    init(
+        id: UUID,
+        title: String,
+        timeRange: String?,
+        location: String?,
+        meetingLink: String?,
+        memberNames: [String],
+        memberInitials: String,
+        memberColor: UIColor,
+        color: UIColor,
+        memberColors: [UIColor] = [],
+        eventIdentifier: String,
+        calendarID: String,
+        calendarColor: UIColor,
+        calendarTitle: String,
+        startDate: Date,
+        endDate: Date,
+        hasRecurrence: Bool,
+        isAllDay: Bool,
+        driverName: String?,
+        hasChecklist: Bool,
+        checklistProgress: ChecklistProgress?,
+        travelTimeMinutes: Int?,
+        showAs: ShowAsOption = .busy
+    ) {
+        self.id = id
+        self.title = title
+        self.timeRange = timeRange
+        self.location = location
+        self.meetingLink = meetingLink
+        self.memberNames = memberNames
+        self.memberInitials = memberInitials
+        self.memberColor = memberColor
+        self.color = color
+        self.memberColors = memberColors
+        self.eventIdentifier = eventIdentifier
+        self.calendarID = calendarID
+        self.calendarColor = calendarColor
+        self.calendarTitle = calendarTitle
+        self.startDate = startDate
+        self.endDate = endDate
+        self.hasRecurrence = hasRecurrence
+        self.isAllDay = isAllDay
+        self.driverName = driverName
+        self.hasChecklist = hasChecklist
+        self.checklistProgress = checklistProgress
+        self.travelTimeMinutes = travelTimeMinutes
+        self.showAs = showAs
+    }
 
     var startTime: String? {
         guard let timeRange = timeRange else { return nil }
@@ -2080,7 +2210,9 @@ private extension GroupedDayEvent {
             isAllDay: isAllDay,
             driverName: driverName,
             hasChecklist: hasChecklist,
-            checklistProgress: checklistProgress
+            checklistProgress: checklistProgress,
+            travelTimeMinutes: travelTimeMinutes,
+            showAs: showAs
         )
     }
 }
