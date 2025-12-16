@@ -30,6 +30,11 @@ struct EditEventView: View {
     )
     private var familyMembers: FetchedResults<FamilyMember>
 
+    init(upcomingEvent: UpcomingCalendarEvent, editSpan: EKSpan? = nil) {
+        self.upcomingEvent = upcomingEvent
+        _selectedEditSpan = State(initialValue: editSpan ?? .futureEvents)
+    }
+
     // Family members who are marked as drivers
     private var driverFamilyMembers: [FamilyMember] {
         familyMembers.filter { $0.isDriver }
@@ -76,6 +81,8 @@ struct EditEventView: View {
     @State private var showingCustomRepeatSheet = false
     @State private var alertOption: AlertOption = .none
     @State private var eventDuration: TimeInterval = 3600 // Default 1 hour
+    @State private var travelTimeMinutes: Int? = nil
+    @State private var showingTravelTimePicker = false
 
     // Location search
     @State private var showingLocationSearch = false
@@ -88,7 +95,6 @@ struct EditEventView: View {
     // Driver selection
     @State private var selectedDriver: DriverWrapper?
     @State private var driverTravelTimeMinutes: Int = 15
-    @State private var shouldCreateTravelEvent: Bool = false
 
     // Attendee selection
     @State private var selectedAttendees: Set<NSManagedObjectID> = []
@@ -102,18 +108,16 @@ struct EditEventView: View {
     @State private var errorMessage = ""
     @State private var showingDeleteConfirmation = false
     @State private var showingRecurringDeleteOptions = false
-    @State private var showingSuccessMessage = false
     @State private var showingDeleteSuccess = false
     @State private var showingUpdateScopeDialog = false
     @State private var showingLinkedDeleteOptions = false
     @State private var pendingDeleteScope: DeleteScope = .singleCalendar
     @State private var linkedFamilyEvents: [FamilyEvent] = []
     @State private var externalEditCalendars: [String] = []
-    @State private var showingCreateEventForDriverAlert = false
-    @State private var driverToCreateEventFor: DriverWrapper?
     @State private var showingRecurringDriverChangeOptions = false
     @State private var pendingDriverChange: DriverWrapper?
     @State private var pendingDriverChangeSpan: EKSpan = .thisEvent
+    @State private var selectedEditSpan: EKSpan
 
     // New deletion flow state
     @State private var showingInitialDeleteConfirm = false
@@ -202,6 +206,17 @@ struct EditEventView: View {
         let selected = familyMembers.filter { selectedAttendees.contains($0.objectID) }
         let names = selected.map { $0.name ?? "Unknown" }
         return names.joined(separator: ", ")
+    }
+
+    private var driverFamilyMember: FamilyMember? {
+        if case .familyMember(let member) = selectedDriver { return member }
+        return nil
+    }
+
+    private func togglePicker(_ picker: TimePicker) {
+        withAnimation {
+            activeTimePicker = activeTimePicker == picker ? .none : picker
+        }
     }
 
     private var deletionContext: DeletionContext? {
@@ -329,6 +344,7 @@ struct EditEventView: View {
                 eventTitle = upcomingEvent.title
                 eventDate = upcomingEvent.startDate
                 eventEndDate = upcomingEvent.endDate
+                UIDatePicker.appearance().minuteInterval = 5
                 // existing logic
                 // Initialize duration from the loaded event
                 eventDuration = upcomingEvent.endDate.timeIntervalSince(upcomingEvent.startDate)
@@ -340,6 +356,7 @@ struct EditEventView: View {
                 fetchCalendarId()
                 fetchDriver()
                 loadExistingAlertOption()
+                loadExistingTravelTime()
                 loadLinkedFamilyEvents()
                 loadAvailableCalendars()
                 let validMemberIDs = Set(familyMembers.map { $0.objectID })
@@ -495,9 +512,11 @@ struct EditEventView: View {
             .confirmationDialog("Update Linked Calendars?", isPresented: $showingUpdateScopeDialog, titleVisibility: .visible) {
                 if upcomingEvent.hasRecurrence {
                     Button("Update all linked calendars (this event only)") {
+                        selectedEditSpan = .thisEvent
                         Task { await saveEvent(applyToGroup: true) }
                     }
                     Button("Update all linked calendars (this & future)") {
+                        selectedEditSpan = .futureEvents
                         Task { await saveEvent(applyToGroup: true) }
                     }
                 } else {
@@ -604,33 +623,13 @@ struct EditEventView: View {
             } message: {
                 Text(errorMessage)
             }
-            .alert("Event Updated", isPresented: $showingSuccessMessage) {
-                Button("Done") {
-                    dismiss()
-                }
-            } message: {
-                Text("Your event has been updated successfully!")
-            }
+
             .alert("Event Deleted", isPresented: $showingDeleteSuccess) {
                 Button("Done") {
                     dismiss()
                 }
             } message: {
                 Text("Your event has been deleted successfully!")
-            }
-            .alert("Create Event for Driver?", isPresented: $showingCreateEventForDriverAlert) {
-                Button("Yes") {
-                    shouldCreateTravelEvent = true
-                    driverToCreateEventFor = nil
-                }
-                Button("No") {
-                    shouldCreateTravelEvent = false
-                    driverToCreateEventFor = nil
-                }
-            } message: {
-                if let driver = driverToCreateEventFor {
-                    Text("Would you like to create a separate event for \(driver.name)'s drive?")
-                }
             }
     }
 
@@ -649,7 +648,7 @@ struct EditEventView: View {
             return true
         }
 
-        let store = EKEventStore()
+        let store = CalendarManager.shared.eventStore
         guard let event = store.event(withIdentifier: upcomingEvent.id),
               let targetCalendar = store.calendar(withIdentifier: newCalendarId) else {
             print("❌ Unable to move event - missing event or calendar")
@@ -737,6 +736,153 @@ struct EditEventView: View {
             return .oneDayBefore
         default:
             return .custom
+        }
+    }
+
+    private func loadExistingTravelTime() {
+        let ekEvent = CalendarManager.shared.fetchEventDetails(
+            withIdentifier: upcomingEvent.id,
+            occurrenceStartDate: upcomingEvent.startDate
+        ) ?? CalendarManager.shared.fetchEventDetails(withIdentifier: upcomingEvent.id)
+
+        guard let ekEvent else {
+            travelTimeMinutes = nil
+            return
+        }
+
+        travelTimeMinutes = CalendarManager.shared.getTravelTimeMinutes(from: ekEvent)
+    }
+
+    private func calendarIds(for member: FamilyMember) -> Set<String> {
+        var ids: Set<String> = []
+        if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar> {
+            ids.formUnion(memberCals.compactMap { $0.calendarID })
+        }
+        if let personalCals = member.personalCalendars as? Set<PersonalCalendar> {
+            ids.formUnion(personalCals.compactMap { $0.calendarID })
+        }
+        return ids
+    }
+
+    private func applyTravelTime(
+        baseMinutes: Int?,
+        driverExtraMinutes: Int?,
+        to eventId: String,
+        occurrenceStart: Date?,
+        calendarId: String?,
+        span: EKSpan,
+        driverCalendarIds: Set<String>
+    ) {
+        guard let calendarId else { return }
+
+        let totalMinutes: Int?
+        if let base = baseMinutes {
+            if let extra = driverExtraMinutes, driverCalendarIds.contains(calendarId) {
+                totalMinutes = base + extra
+            } else {
+                totalMinutes = base
+            }
+        } else {
+            totalMinutes = nil
+        }
+
+        guard let ekEvent = CalendarManager.shared.fetchEventDetails(withIdentifier: eventId, occurrenceStartDate: occurrenceStart) ?? CalendarManager.shared.fetchEventDetails(withIdentifier: eventId) else {
+            return
+        }
+
+        _ = CalendarManager.shared.setTravelTime(on: ekEvent, travelTimeMinutes: totalMinutes, span: span)
+    }
+
+    private func applyTravelTimesToTargets(
+        baseMinutes: Int?,
+        driverExtraMinutes: Int?,
+        driverCalendarIds: Set<String>,
+        span: EKSpan,
+        applyToGroup: Bool,
+        currentCalendarId: String,
+        currentOccurrence: Date
+    ) {
+        var targets: [(id: String, calendarId: String, occurrence: Date?)] = [
+            (id: upcomingEvent.id, calendarId: currentCalendarId, occurrence: currentOccurrence)
+        ]
+
+        if applyToGroup || span == .futureEvents {
+            for familyEvent in linkedFamilyEvents {
+                guard let eid = familyEvent.eventIdentifier,
+                      let calId = familyEvent.calendarId else { continue }
+                targets.append((id: eid, calendarId: calId, occurrence: nil))
+            }
+        }
+
+        var seen = Set<String>()
+        for target in targets {
+            let key = "\(target.id)|\(target.calendarId)"
+            guard seen.insert(key).inserted else { continue }
+            applyTravelTime(
+                baseMinutes: baseMinutes,
+                driverExtraMinutes: driverExtraMinutes,
+                to: target.id,
+                occurrenceStart: target.occurrence,
+                calendarId: target.calendarId,
+                span: span,
+                driverCalendarIds: driverCalendarIds
+            )
+        }
+    }
+
+    private func driverCalendarId(for member: FamilyMember) -> String? {
+        if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar>,
+           let auto = memberCals.first(where: { $0.isAutoLinked })?.calendarID {
+            return auto
+        }
+        if let memberCals = member.memberCalendars as? Set<FamilyMemberCalendar>,
+           let first = memberCals.first?.calendarID {
+            return first
+        }
+        if let personal = member.personalCalendars as? Set<PersonalCalendar>,
+           let first = personal.first?.calendarID {
+            return first
+        }
+        return nil
+    }
+
+    private func createDriverTravelEvents(
+        driver: FamilyMember,
+        calendarId: String,
+        eventName: String,
+        eventStartDate: Date,
+        eventEndDate: Date,
+        outboundMinutes: Int?,
+        returnMinutes: Int?
+    ) {
+        if let outbound = outboundMinutes, outbound > 0 {
+            let start = eventStartDate.addingTimeInterval(-Double(outbound) * 60)
+            _ = CalendarManager.shared.createEvent(
+                title: "Travel to \(eventName)",
+                startDate: start,
+                endDate: eventStartDate,
+                location: locationAddress.isEmpty ? nil : locationAddress,
+                notes: notes.isEmpty ? nil : notes,
+                isAllDay: false,
+                in: calendarId,
+                alertOption: AlertOption.none
+            )
+            print("🚗 Created outbound travel for driver \(driver.name ?? "Unknown")")
+        }
+
+        if let ret = returnMinutes, ret > 0 {
+            let end = eventEndDate.addingTimeInterval(Double(ret) * 60)
+            _ = CalendarManager.shared.createEvent(
+                title: "Return journey from \(eventName)",
+                startDate: eventEndDate,
+                endDate: end,
+                location: locationAddress.isEmpty ? nil : locationAddress,
+                notes: notes.isEmpty ? nil : notes,
+                isAllDay: false,
+                in: calendarId,
+                alertOption: AlertOption.none
+            )
+            print("🚗 Created return journey for driver \(driver.name ?? "Unknown")")
         }
     }
 
@@ -843,7 +989,7 @@ struct EditEventView: View {
 
     private func loadExistingAttendees() {
         var attendeeIDs = Set<NSManagedObjectID>()
-        let store = EKEventStore()
+        let store = CalendarManager.shared.eventStore
 
         // Check if this was originally an "Everyone" event
         let fetchRequest = FamilyEvent.fetchRequest()
@@ -966,17 +1112,12 @@ struct EditEventView: View {
         pendingDriverChange = nil
         pendingDriverChangeSpan = span
 
-        // Only show alert if selecting a family member driver
-        if let driver = selectedDriver, case .familyMember(_) = driver {
-            driverToCreateEventFor = driver
-            showingCreateEventForDriverAlert = true
-        }
     }
 
     private func getLinkedCalendarNames() -> [String] {
         return linkedFamilyEvents.compactMap { familyEvent in
             // Try to get the calendar title from EventKit
-            let eventKit = EKEventStore()
+            let eventKit = CalendarManager.shared.eventStore
             if let calendarId = familyEvent.calendarId,
                let calendar = eventKit.calendar(withIdentifier: calendarId) {
                 return calendar.title
@@ -1034,7 +1175,7 @@ struct EditEventView: View {
         var foundLinkedCalendars: [String] = []
 
         for (calendarId, calendarName) in allMemberCalendars {
-            let store = EKEventStore()
+            let store = CalendarManager.shared.eventStore
             if let calendar = store.calendar(withIdentifier: calendarId) {
                 let predicate = store.predicateForEvents(withStart: upcomingEvent.startDate.addingTimeInterval(-86400), end: upcomingEvent.startDate.addingTimeInterval(86400), calendars: [calendar])
                 let events = store.events(matching: predicate).filter { $0.title == upcomingEvent.title }
@@ -1051,8 +1192,11 @@ struct EditEventView: View {
 
         if !foundLinkedCalendars.isEmpty {
             // Found linked events - show the dialog
-            externalEditCalendars = foundLinkedCalendars
-            showingUpdateScopeDialog = true
+            let calendars = foundLinkedCalendars
+            Task { @MainActor in
+                self.externalEditCalendars = calendars
+                self.showingUpdateScopeDialog = true
+            }
             print("🔗 Found \(foundLinkedCalendars.count) calendar(s) with linked event")
         } else {
             // No linked events found - save normally
@@ -1156,7 +1300,7 @@ struct EditEventView: View {
 
             // Search each calendar for the event by title
             for (calendarId, _) in allMemberCalendars {
-                let store = EKEventStore()
+                let store = CalendarManager.shared.eventStore
                 if let calendar = store.calendar(withIdentifier: calendarId) {
                     let predicate = store.predicateForEvents(withStart: upcomingEvent.startDate.addingTimeInterval(-86400), end: upcomingEvent.startDate.addingTimeInterval(86400), calendars: [calendar])
                     let events = store.events(matching: predicate).filter { $0.title == upcomingEvent.title }
@@ -1264,6 +1408,10 @@ struct EditEventView: View {
         }
 
         let title = eventTitle.trimmingCharacters(in: .whitespaces)
+        let driverNotAttending: Bool = {
+            guard let driver = driverFamilyMember else { return false }
+            return !selectEveryone && !selectedAttendees.contains(driver.objectID)
+        }()
 
         // Use eventDate and eventEndDate directly
         let eventStartDate = eventDate
@@ -1292,7 +1440,18 @@ struct EditEventView: View {
         print("   Location: \(locationValue ?? "(none)")")
 
         let recurrenceRule = selectedRecurrenceRule(startDate: eventStartDate)
-        let updateSpan: EKSpan = (upcomingEvent.hasRecurrence || recurrenceRule != nil) ? .futureEvents : .thisEvent
+        let isExistingRecurring = upcomingEvent.hasRecurrence
+        let isCreatingRecurrence = !upcomingEvent.hasRecurrence && recurrenceRule != nil
+        let updateSpan: EKSpan
+        if isCreatingRecurrence {
+            updateSpan = .futureEvents
+        } else if isExistingRecurring {
+            updateSpan = selectedEditSpan
+        } else if recurrenceRule != nil {
+            updateSpan = .futureEvents
+        } else {
+            updateSpan = .thisEvent
+        }
 
         if calId != upcomingEvent.calendarID {
             let moved = moveEventToCalendarIfNeeded(newCalendarId: calId)
@@ -1324,6 +1483,10 @@ struct EditEventView: View {
         )
 
         if success {
+            let baseTravelMinutes = travelTimeMinutes
+            let driverExtraMinutes: Int? = (driverNotAttending && driverFamilyMember != nil) ? driverTravelTimeMinutes : nil
+            let driverCalendarIds: Set<String> = driverFamilyMember.map { calendarIds(for: $0) } ?? []
+
             if applyToGroup {
                 await propagateUpdateToLinkedEvents(
                     title: title,
@@ -1336,6 +1499,30 @@ struct EditEventView: View {
                     recurrenceRule: recurrenceRule,
                     span: updateSpan,
                     alertOption: alertOption
+                )
+            }
+
+            applyTravelTimesToTargets(
+                baseMinutes: baseTravelMinutes,
+                driverExtraMinutes: driverExtraMinutes,
+                driverCalendarIds: driverCalendarIds,
+                span: updateSpan,
+                applyToGroup: applyToGroup,
+                currentCalendarId: calId,
+                currentOccurrence: eventStartDate
+            )
+
+            if driverNotAttending,
+               let driver = driverFamilyMember,
+               let driverCalId = driverCalendarId(for: driver) {
+                createDriverTravelEvents(
+                    driver: driver,
+                    calendarId: driverCalId,
+                    eventName: title,
+                    eventStartDate: eventStartDate,
+                    eventEndDate: finalEventEndDate,
+                    outboundMinutes: baseTravelMinutes,
+                    returnMinutes: driverTravelTimeMinutes
                 )
             }
 
@@ -1376,14 +1563,7 @@ struct EditEventView: View {
                 // Trigger haptic feedback
                 let notificationFeedback = UINotificationFeedbackGenerator()
                 notificationFeedback.notificationOccurred(.success)
-
-                // Show success message and auto-dismiss
-                showingSuccessMessage = true
-            }
-
-            // Auto-dismiss after 2 seconds
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            await MainActor.run {
+                
                 dismiss()
             }
         } else {
@@ -1443,21 +1623,6 @@ struct EditEventView: View {
                     // Clear any regular driver that was previously set
                     familyEvent.driver = nil
                     print("🚗 Set family member as driver: \(member.name ?? "Unknown")")
-
-                    // Update or create travel event only if user confirmed
-                    if shouldCreateTravelEvent {
-                        updateTravelEvent(
-                            for: member,
-                            eventName: eventTitle,
-                            eventStartTime: eventDate,
-                            travelTimeMinutes: driverTravelTimeMinutes,
-                            driver: nil
-                        )
-
-                        print("🚗 Updated travel event for family member driver: \(member.name ?? "Unknown"), travel time: \(driverTravelTimeMinutes) min")
-                    } else if !shouldCreateTravelEvent {
-                        print("🚗 Skipped travel event update for family member driver: \(member.name ?? "Unknown")")
-                    }
                 }
             } else {
                 // No driver selected - clear the driver
@@ -1599,64 +1764,6 @@ struct EditEventView: View {
                 payload["family_member_id"] = .string(memberId)
             }
             return payload
-        }
-    }
-
-    private func updateTravelEvent(
-        for familyMember: FamilyMember,
-        eventName: String,
-        eventStartTime: Date,
-        travelTimeMinutes: Int,
-        driver: Driver?
-    ) {
-        // Get the family member's linked personal calendar
-        guard let memberCalendars = familyMember.memberCalendars as? Set<FamilyMemberCalendar>,
-              let personalCalendar = memberCalendars.first(where: { $0.isAutoLinked }),
-              let calendarID = personalCalendar.calendarID else {
-            print("❌ Travel Event: Could not find linked calendar for family member \(familyMember.name ?? "Unknown")")
-            return
-        }
-
-        // Calculate travel event timing
-        let travelEventStartTime = eventStartTime.addingTimeInterval(-Double(travelTimeMinutes) * 60)
-        let travelEventEndTime = eventStartTime
-        let travelEventTitle = "Travel to \(eventName)"
-
-        // If there's an existing travel event, update it
-        if let existingTravelEventId = driver?.travelEventIdentifier, !existingTravelEventId.isEmpty {
-            let success = CalendarManager.shared.updateEvent(
-                withIdentifier: existingTravelEventId,
-                occurrenceStartDate: travelEventStartTime,
-                in: calendarID,
-                title: travelEventTitle,
-                startDate: travelEventStartTime,
-                endDate: travelEventEndTime,
-                location: nil,
-                notes: "Travel time to \(eventName)"
-            )
-
-            if success {
-                print("✈️ Travel event updated: '\(travelEventTitle)' on \(personalCalendar.calendarName ?? "Personal Calendar"), duration: \(travelTimeMinutes) min")
-            } else {
-                print("❌ Failed to update travel event")
-            }
-        } else {
-            // Create a new travel event if one doesn't exist
-            let travelEventId = CalendarManager.shared.createEvent(
-                title: travelEventTitle,
-                startDate: travelEventStartTime,
-                endDate: travelEventEndTime,
-                location: nil,
-                notes: "Travel time to \(eventName)",
-                in: calendarID
-            )
-
-            if let eventId = travelEventId {
-                driver?.travelEventIdentifier = eventId
-                print("✈️ Travel event created: '\(travelEventTitle)' on \(personalCalendar.calendarName ?? "Personal Calendar"), duration: \(travelTimeMinutes) min")
-            } else {
-                print("❌ Failed to create travel event")
-            }
         }
     }
 
@@ -2175,7 +2282,68 @@ struct EditEventView: View {
             }
             
             Divider().padding(.leading, 44)
-            
+
+            // Travel Time
+            QuickRow(icon: "car.fill", title: "Travel Time", showChevron: false, color: .orange) {
+                Button(action: { showingTravelTimePicker.toggle() }) {
+                    if let minutes = travelTimeMinutes {
+                        Text("\(minutes) min")
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    } else {
+                        Text("Add")
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+            }
+
+            if showingTravelTimePicker {
+                Divider().padding(.leading, 44)
+
+                VStack(spacing: 12) {
+                    // Preset options
+                    HStack(spacing: 8) {
+                        ForEach([15, 30, 45, 60], id: \.self) { minutes in
+                            Button(action: { travelTimeMinutes = minutes }) {
+                                Text("\(minutes)")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(travelTimeMinutes == minutes ? Color.orange.opacity(0.3) : Color.gray.opacity(0.1))
+                                    .foregroundColor(travelTimeMinutes == minutes ? .orange : .primary)
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+
+                    // Custom input
+                    HStack(spacing: 12) {
+                        Text("Custom:")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        TextField("Minutes", value: $travelTimeMinutes, format: .number)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+
+                        Button(action: { travelTimeMinutes = nil }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
+                .padding(.vertical, 8)
+                .background(Color(uiColor: .systemGray6))
+            }
+
+            Divider().padding(.leading, 44)
+
             // Link
             QuickRow(icon: "link", title: "Video Call", showChevron: false, color: .blue) {
                 TextField("Add URL", text: $meetingLink)
@@ -2268,10 +2436,6 @@ struct EditEventView: View {
                                 showingRecurringDriverChangeOptions = true
                             } else {
                                 selectedDriver = driverWrapper
-                                if case .familyMember(_) = driverWrapper {
-                                    driverToCreateEventFor = driverWrapper
-                                    showingCreateEventForDriverAlert = true
-                                }
                             }
                         }) {
                             Label(driverWrapper.name, systemImage: selectedDriver?.id == driverWrapper.id ? "checkmark" : "")
@@ -2286,7 +2450,7 @@ struct EditEventView: View {
 
             if let driver = selectedDriver, driver.isFamilyMember {
                 Divider().padding(.leading, 44)
-                QuickRow(icon: "timer", title: "Travel Time", showChevron: true, color: .orange) {
+                QuickRow(icon: "timer", title: "Return Journey", showChevron: true, color: .orange) {
                     Menu {
                         ForEach([5, 10, 15, 20, 25, 30, 45, 60], id: \.self) { minutes in
                             Button(action: { driverTravelTimeMinutes = minutes }) {
@@ -2352,32 +2516,25 @@ struct EditEventView: View {
             // Starts
             VStack(spacing: 0) {
                 QuickRow(icon: "", title: "Starts", showChevron: false) {
-                    Button(action: {
-                        withAnimation {
-                            if activeTimePicker == .startDate || activeTimePicker == .startTime {
-                                activeTimePicker = .none
-                            } else {
-                                activeTimePicker = isAllDay ? .startDate : .startTime
-                            }
-                        }
-                    }) {
-                        HStack {
-                            Text(eventDate.formatted(date: .abbreviated, time: .omitted))
-                                .foregroundColor(activeTimePicker == .startDate ? .blue : .primary)
+                    HStack {
+                        Text(eventDate.formatted(date: .abbreviated, time: .omitted))
+                            .foregroundColor(activeTimePicker == .startDate ? .blue : .primary)
+                            .padding(6)
+                            .background(activeTimePicker == .startDate ? Color.blue.opacity(0.1) : Color.clear)
+                            .cornerRadius(6)
+                            .contentShape(Rectangle())
+                            .onTapGesture { togglePicker(.startDate) }
+                        
+                        if !isAllDay {
+                            Text(eventDate.formatted(date: .omitted, time: .shortened))
+                                .foregroundColor(activeTimePicker == .startTime ? .blue : .primary)
                                 .padding(6)
-                                .background(activeTimePicker == .startDate ? Color.blue.opacity(0.1) : Color.clear)
+                                .background(activeTimePicker == .startTime ? Color.blue.opacity(0.1) : Color.clear)
                                 .cornerRadius(6)
-                            
-                            if !isAllDay {
-                                Text(eventDate.formatted(date: .omitted, time: .shortened))
-                                    .foregroundColor(activeTimePicker == .startTime ? .blue : .primary)
-                                    .padding(6)
-                                    .background(activeTimePicker == .startTime ? Color.blue.opacity(0.1) : Color.clear)
-                                    .cornerRadius(6)
-                            }
+                                .contentShape(Rectangle())
+                                .onTapGesture { togglePicker(.startTime) }
                         }
                     }
-                    .buttonStyle(.plain)
                 }
                 
                 if activeTimePicker == .startDate {
@@ -2398,32 +2555,25 @@ struct EditEventView: View {
             // Ends
             VStack(spacing: 0) {
                 QuickRow(icon: "", title: "Ends", showChevron: false) {
-                    Button(action: {
-                        withAnimation {
-                            if activeTimePicker == .endDate || activeTimePicker == .endTime {
-                                activeTimePicker = .none
-                            } else {
-                                activeTimePicker = isAllDay ? .endDate : .endTime
-                            }
-                        }
-                    }) {
-                        HStack {
-                            Text(eventEndDate.formatted(date: .abbreviated, time: .omitted))
-                                .foregroundColor(activeTimePicker == .endDate ? .blue : .primary)
+                    HStack {
+                        Text(eventEndDate.formatted(date: .abbreviated, time: .omitted))
+                            .foregroundColor(activeTimePicker == .endDate ? .blue : .primary)
+                            .padding(6)
+                            .background(activeTimePicker == .endDate ? Color.blue.opacity(0.1) : Color.clear)
+                            .cornerRadius(6)
+                            .contentShape(Rectangle())
+                            .onTapGesture { togglePicker(.endDate) }
+                        
+                        if !isAllDay {
+                            Text(eventEndDate.formatted(date: .omitted, time: .shortened))
+                                .foregroundColor(activeTimePicker == .endTime ? .blue : .primary)
                                 .padding(6)
-                                .background(activeTimePicker == .endDate ? Color.blue.opacity(0.1) : Color.clear)
+                                .background(activeTimePicker == .endTime ? Color.blue.opacity(0.1) : Color.clear)
                                 .cornerRadius(6)
-                            
-                            if !isAllDay {
-                                Text(eventEndDate.formatted(date: .omitted, time: .shortened))
-                                    .foregroundColor(activeTimePicker == .endTime ? .blue : .primary)
-                                    .padding(6)
-                                    .background(activeTimePicker == .endTime ? Color.blue.opacity(0.1) : Color.clear)
-                                    .cornerRadius(6)
-                            }
+                                .contentShape(Rectangle())
+                                .onTapGesture { togglePicker(.endTime) }
                         }
                     }
-                    .buttonStyle(.plain)
                 }
                 
                 if activeTimePicker == .endDate {
@@ -2509,7 +2659,7 @@ struct EditEventView: View {
         calendarID: "demo-calendar",
         calendarColor: UIColor(red: 0.33, green: 0.33, blue: 0.33, alpha: 1.0),
         calendarTitle: "Work",
-        hasRecurrence: false, recurrenceRule: nil, isAllDay: false
+        hasRecurrence: false, recurrenceRule: nil, travelTimeMinutes: nil, isAllDay: false
     )
 
     EditEventView(upcomingEvent: testEvent)

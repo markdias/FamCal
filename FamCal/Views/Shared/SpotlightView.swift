@@ -56,7 +56,8 @@ struct SpotlightView: View {
     @State private var events: [GroupedEvent] = []
     @State private var selectedEvent: UpcomingCalendarEvent? = nil
     @State private var showingEventDetail = false
-    @State private var eventStore = EKEventStore()
+    @State private var reloadTask: Task<Void, Never>?
+    private var eventStore: EKEventStore { CalendarManager.shared.eventStore }
     @State private var refreshTimer: Timer? = nil
     @State private var availableCalendars: [EKCalendar] = []
     @State private var pendingDeleteEvent: UpcomingCalendarEvent?
@@ -78,6 +79,7 @@ struct SpotlightView: View {
     @State private var tempBedMinute: Int = 0
     @State private var selectedEventBlock: BusyBlock?
     @State private var selectedGap: TimeGap?
+    @State private var selectedTravelId: UUID?
     @State private var noteInput: String = ""
     @State private var notesContentWidth: CGFloat?
     @State private var editingNoteId: UUID?
@@ -119,14 +121,26 @@ struct SpotlightView: View {
     }
 
     // Combined schedule items for ordered list display
+    private struct TravelSegment: Identifiable {
+        let id = UUID()
+        let start: Date
+        let end: Date
+        let title: String
+        let calendarColor: UIColor
+        let parentBlock: BusyBlock
+    }
+
     private enum ScheduleItem: Identifiable {
         case busy(BusyBlock)
+        case travel(TravelSegment)
         case gap(TimeGap)
 
         var id: UUID {
             switch self {
             case .busy(let block):
                 return block.id
+            case .travel(let travel):
+                return travel.id
             case .gap(let gap):
                 return gap.id
             }
@@ -136,6 +150,8 @@ struct SpotlightView: View {
             switch self {
             case .busy(let block):
                 return block.start
+            case .travel(let travel):
+                return travel.start
             case .gap(let gap):
                 return gap.start
             }
@@ -185,8 +201,17 @@ struct SpotlightView: View {
         }
         .navigationViewStyle(.stack)
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
-            print("🔔 SpotlightView: Received EKEventStoreChanged")
-            loadEvents()
+            print("🔔 SpotlightView: Received EKEventStoreChanged (Debouncing)")
+            reloadTask?.cancel()
+            reloadTask = Task {
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s debounce
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        loadEvents()
+                        loadAvailableCalendars()
+                    }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             print("📱 SpotlightView: Received didBecomeActive")
@@ -200,9 +225,7 @@ struct SpotlightView: View {
         .onAppear {
             loadAvailableCalendars()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
-            loadAvailableCalendars()
-        }
+        
         .sheet(isPresented: $showingLinkedDeleteDialog) {
             linkedDeleteDialog
         }
@@ -364,7 +387,8 @@ struct SpotlightView: View {
                     : [GridItem(.flexible())]
 
                 LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                    ForEach(Array(events.indices), id: \.self) { index in
+                        let event = events[index]
                         if spotlightShowGapsBetweenEvents,
                            index > 0,
                            let gapText = gapText(between: events[index - 1], and: event) {
@@ -395,6 +419,7 @@ struct SpotlightView: View {
                                 calendarTitle: event.calendarTitle,
                                 hasRecurrence: event.hasRecurrence,
                                 recurrenceRule: nil,
+                                travelTimeMinutes: event.travelTimeMinutes,
                                 isAllDay: event.isAllDay
                             )
 
@@ -560,21 +585,33 @@ struct SpotlightView: View {
                             }
                         }
 
-                        Spacer(minLength: 0)
+                    }
 
-                        if !event.isAllDay, let timeRange = event.timeRange {
-                            let startTime = timeRange.split(separator: "–").first.map(String.init).map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-                            Text(startTime)
+                    HStack(spacing: 8) {
+                        if let departureText = departureTimeString(for: event) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "car.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.orange)
+                                Text(departureText)
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                        if let timeRange = event.timeRange {
+                            Text(timeRange)
                                 .font(.system(size: 11, weight: .semibold))
                                 .monospacedDigit()
                                 .foregroundColor(.gray)
-                                .lineLimit(1)
-                                .frame(width: 36, alignment: .trailing)
+                        } else {
+                            Text("All Day")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.gray)
                         }
                     }
 
-                        if let location = event.location {
-                            let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
+                    if let location = event.location {
+                        let firstLine = location.split(separator: "\n").first.map(String.init) ?? location
                             let savedAddress = getSavedAddress(for: firstLine)
                             let displayText = savedAddress?.name ?? firstLine
                             let mapAddress = savedAddress?.address ?? firstLine
@@ -757,6 +794,7 @@ struct SpotlightView: View {
                     calendarTitle: event.calendarTitle,
                     hasRecurrence: event.hasRecurrence,
                     recurrenceRule: nil,
+                    travelTimeMinutes: event.travelTimeMinutes,
                     isAllDay: event.isAllDay
                 )
                 showingEventDetail = true
@@ -785,6 +823,7 @@ struct SpotlightView: View {
                         calendarTitle: event.calendarTitle,
                         hasRecurrence: event.hasRecurrence,
                         recurrenceRule: nil,
+                        travelTimeMinutes: event.travelTimeMinutes,
                         isAllDay: event.isAllDay
                     )
 
@@ -994,7 +1033,8 @@ struct SpotlightView: View {
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
                 isAllDay: event.isAllDay,
-                driverName: driverName
+                driverName: driverName,
+                travelTimeMinutes: event.travelTimeMinutes
             ))
         }
 
@@ -1056,16 +1096,17 @@ struct SpotlightView: View {
                         timeRange: existing.timeRange,
                         location: existing.location,
                         meetingLink: existing.meetingLink,
-                        startDate: existing.startDate,
-                    endDate: existing.endDate,
-                    memberNames: updatedNames,
-                    memberColor: existing.memberColor,
-                    calendarTitle: existing.calendarTitle,
-                    calendarID: existing.calendarID,
-                    memberColors: existing.memberColors,
-                    hasRecurrence: existing.hasRecurrence || event.hasRecurrence,
-                    isAllDay: existing.isAllDay,
-                    driverName: existing.driverName ?? event.driverName
+                    startDate: existing.startDate,
+                endDate: existing.endDate,
+                memberNames: updatedNames,
+                memberColor: existing.memberColor,
+                calendarTitle: existing.calendarTitle,
+                calendarID: existing.calendarID,
+                memberColors: existing.memberColors,
+                hasRecurrence: existing.hasRecurrence || event.hasRecurrence,
+                isAllDay: existing.isAllDay,
+                driverName: existing.driverName ?? event.driverName,
+                travelTimeMinutes: existing.travelTimeMinutes ?? event.travelTimeMinutes
                 )
             } else {
                 grouped[key] = GroupedEvent(
@@ -1084,7 +1125,8 @@ struct SpotlightView: View {
                     memberColors: [event.memberColor],
                     hasRecurrence: event.hasRecurrence,
                     isAllDay: event.isAllDay,
-                    driverName: event.driverName
+                    driverName: event.driverName,
+                    travelTimeMinutes: event.travelTimeMinutes
                 )
             }
         }
@@ -1238,6 +1280,7 @@ struct SpotlightView: View {
                     calendarTitle: event.calendarTitle,
                     hasRecurrence: event.hasRecurrence,
                     recurrenceRule: event.recurrenceRule,
+                    travelTimeMinutes: event.travelTimeMinutes,
                     isAllDay: event.isAllDay
                 )
             }
@@ -1330,6 +1373,7 @@ private struct EventItem: Identifiable {
     let recurrenceRule: Any?
     let isAllDay: Bool
     let driverName: String?
+    let travelTimeMinutes: Int?
 }
 
 private struct GroupedEvent: Identifiable {
@@ -1349,6 +1393,7 @@ private struct GroupedEvent: Identifiable {
     let hasRecurrence: Bool
     let isAllDay: Bool
     let driverName: String?
+    let travelTimeMinutes: Int?
 }
 
 // MARK: - Notes Section
@@ -1771,6 +1816,7 @@ extension SpotlightView {
     private func eventsListForSelectedDay(analytics: TimeAnalytics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             let scheduleItems = combinedScheduleItems(analytics: analytics)
+            let busyLookup = Dictionary(uniqueKeysWithValues: analytics.busyBlocks.map { ($0.id, $0) })
 
             if !scheduleItems.isEmpty {
                 Text("Events")
@@ -1782,10 +1828,11 @@ extension SpotlightView {
                         switch item {
                         case .busy(let busyBlock):
                             eventBlockCard(busyBlock, isSelected: selectedEventBlock?.id == busyBlock.id)
-                                .onTapGesture {
-                                    selectedEventBlock = busyBlock
-                                    selectedGap = nil
-                                }
+                        .onTapGesture {
+                            selectedEventBlock = busyBlock
+                            selectedGap = nil
+                            selectedTravelId = nil
+                        }
                                 .contextMenu {
                                     if let eventTitle = busyBlock.eventTitles.first {
                                         Button {
@@ -1796,11 +1843,19 @@ extension SpotlightView {
                                         }
                                     }
                                 }
+                        case .travel(let travel):
+                    travelBlockCard(travel, isSelected: selectedTravelId == travel.id)
+                        .onTapGesture {
+                            selectedTravelId = travel.id
+                            selectedEventBlock = nil
+                            selectedGap = nil
+                        }
                         case .gap(let gap):
                             gapListCard(gap, isSelected: selectedGap?.id == gap.id)
                                 .onTapGesture {
                                     selectedGap = gap
                                     selectedEventBlock = nil
+                                    selectedTravelId = nil
                                 }
                         }
                     }
@@ -1824,15 +1879,54 @@ extension SpotlightView {
     }
 
     private func combinedScheduleItems(analytics: TimeAnalytics) -> [ScheduleItem] {
-        let busyItems = analytics.busyBlocks.map { ScheduleItem.busy($0) }
+        var items: [ScheduleItem] = []
+
+        for block in analytics.busyBlocks {
+            if block.travelDurationMinutes > 0 {
+                let travelEnd = block.start.addingTimeInterval(TimeInterval(block.travelDurationMinutes * 60))
+                let travel = TravelSegment(
+                    start: block.start,
+                    end: travelEnd,
+                    title: block.eventTitles.first ?? "Travel",
+                    calendarColor: block.calendarColors.first ?? UIColor.systemOrange,
+                    parentBlock: block
+                )
+                items.append(.travel(travel))
+                items.append(.busy(block))
+            } else {
+                items.append(.busy(block))
+            }
+        }
+
         let gapItems = analytics.gaps.map { ScheduleItem.gap($0) }
-        return (busyItems + gapItems).sorted { $0.start < $1.start }
+        items.append(contentsOf: gapItems)
+
+        return items.sorted {
+            if $0.start == $1.start {
+                return priority($0) < priority($1)
+            }
+            return $0.start < $1.start
+        }
+    }
+
+    private func priority(_ item: ScheduleItem) -> Int {
+        switch item {
+        case .travel:
+            return 0
+        case .busy:
+            return 1
+        case .gap:
+            return 2
+        }
     }
 
     private func eventBlockCard(_ block: BusyBlock, isSelected: Bool) -> some View {
         let cardCornerRadius: CGFloat = 12
         let calendarColor = block.calendarColors.first ?? UIColorFromHex(member.colorHex ?? "#007AFF")
         let colorBarWidth: CGFloat = 4
+        let eventStart = block.start.addingTimeInterval(TimeInterval(block.travelDurationMinutes * 60))
+        let eventEnd = block.end
+        let eventDuration = max(0, block.durationMinutes - block.travelDurationMinutes)
 
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
@@ -1862,13 +1956,13 @@ extension SpotlightView {
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
-                        Text(timeString(block.start) + " – " + timeString(block.end))
+                        Text(timeString(eventStart) + " – " + timeString(eventEnd))
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
 
                         Spacer(minLength: 0)
 
-                        Text(durationString(block.durationMinutes))
+                        Text(durationString(eventDuration))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -1940,6 +2034,59 @@ extension SpotlightView {
         )
     }
 
+    private func travelBlockCard(_ travel: TravelSegment, isSelected: Bool) -> some View {
+        let cardCornerRadius: CGFloat = 12
+        let colorBarWidth: CGFloat = 4
+        let durationMinutes = Int(travel.end.timeIntervalSince(travel.start) / 60)
+
+        return ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .fill(isSelected ? Color.orange.opacity(0.1) : Color(uiColor: .systemBackground))
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.orange)
+                .frame(width: colorBarWidth)
+
+            HStack(spacing: 12) {
+                VStack(spacing: 2) {
+                    Text("Leave")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.orange)
+
+                    Text(timeString(travel.start))
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundColor(.orange)
+                }
+                .frame(width: 50, alignment: .center)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(timeString(travel.start) + " – " + timeString(travel.end))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.orange)
+                    Text(travel.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Text(durationString(durationMinutes))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.orange)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.leading, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cornerRadius(cardCornerRadius)
+        .overlay(
+            isSelected ? RoundedRectangle(cornerRadius: cardCornerRadius).stroke(Color.orange, lineWidth: 2) : nil
+        )
+    }
+
     private func saveWakeTimeChanges() {
         member.wakeTimeHour = Int16(tempWakeHour)
         member.wakeTimeMinute = Int16(tempWakeMinute)
@@ -1984,6 +2131,7 @@ extension SpotlightView {
                 calendarTitle: event.calendarTitle,
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
+                travelTimeMinutes: event.travelTimeMinutes,
                 isAllDay: event.isAllDay
             )
             showingEventDetail = true
@@ -2012,6 +2160,17 @@ extension SpotlightView {
         } else {
             return "\(mins)m"
         }
+    }
+
+    private func departureTimeString(for event: GroupedEvent) -> String? {
+        guard let travelMinutes = event.travelTimeMinutes, travelMinutes > 0 else { return nil }
+        let departure = CalendarManager.shared.calculateDepartureTime(
+            eventStartDate: event.startDate,
+            travelTimeMinutes: travelMinutes
+        )
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: departure)
     }
 
     private func calculateAnalytics() {
@@ -2120,6 +2279,7 @@ extension SpotlightView {
                 calendarTitle: event.calendarTitle,
                 hasRecurrence: event.hasRecurrence,
                 recurrenceRule: nil,
+                travelTimeMinutes: event.travelTimeMinutes,
                 isAllDay: event.isAllDay
             )
         }
