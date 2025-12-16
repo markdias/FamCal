@@ -285,23 +285,17 @@ final class CalendarManager {
             }
         }
 
-        // The event(withIdentifier:) method doesn't always work reliably, but try it next
-        if let event = eventStore.event(withIdentifier: identifier) {
-            // If we were looking for a specific occurrence, make sure the dates match before returning
-            if let occurrenceDate = occurrenceStartDate {
-                if abs(event.startDate.timeIntervalSince(occurrenceDate)) < 1 {
-                    return event
-                }
-            } else {
-                return event
-            }
-        }
-
-        // Fallback: search through all event calendars
+        // Fallback: search through all event calendars without using event(withIdentifier:)
+        // This avoids EKCADErrorDomain 1010 spam when identifiers are stale or the event was deleted.
         for calendar in calendars {
-            let predicate = eventStore.predicateForEvents(withStart: Date(timeIntervalSince1970: 0),
-                                                           end: Date(timeIntervalSince1970: Date().timeIntervalSince1970 + 86400 * 365 * 2),
-                                                           calendars: [calendar])
+            let searchStart = occurrenceStartDate ?? Date(timeIntervalSince1970: 0)
+            // Use a reasonable horizon (~2 years) when no occurrence date is provided
+            let searchEnd = occurrenceStartDate?.addingTimeInterval(86400) ??
+                Date(timeIntervalSince1970: Date().timeIntervalSince1970 + 86400 * 365 * 2)
+
+            let predicate = eventStore.predicateForEvents(withStart: searchStart,
+                                                          end: searchEnd,
+                                                          calendars: [calendar])
             let events = eventStore.events(matching: predicate)
             if let event = events.first(where: {
                 guard $0.eventIdentifier == identifier else { return false }
@@ -339,6 +333,22 @@ final class CalendarManager {
         }
     }
 
+    func fetchEventsAsync(for calendarIDs: [String], startDate: Date, endDate: Date) async -> [UpcomingCalendarEvent] {
+        return await withCheckedContinuation { continuation in
+            let store = eventStore
+            let ids = calendarIDs
+            eventStoreQueue.async {
+                let results = Self.fetchEvents(
+                    in: store,
+                    calendarIDs: ids,
+                    startDate: startDate,
+                    endDate: endDate
+                )
+                continuation.resume(returning: results)
+            }
+        }
+    }
+
     func fetchNextEvents(for calendarIDs: [String], limit: Int, pastDays: Int = 90, futureDays: Int = 180) -> [UpcomingCalendarEvent] {
         Self.fetchNextEvents(
             in: eventStore,
@@ -347,6 +357,48 @@ final class CalendarManager {
             pastDays: pastDays,
             futureDays: futureDays
         )
+    }
+
+    private static func fetchEvents(in store: EKEventStore, calendarIDs: [String], startDate: Date, endDate: Date) -> [UpcomingCalendarEvent] {
+        let calendars = store.calendars(for: .event).filter { calendarIDs.contains($0.calendarIdentifier) }
+        guard !calendars.isEmpty else { return [] }
+
+        let predicate = store.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
+        let events = store.events(matching: predicate).sorted { $0.startDate < $1.startDate }
+
+        var results: [UpcomingCalendarEvent] = []
+
+        for event in events {
+            if isSoftDeletedEvent(eventIdentifier: event.eventIdentifier) {
+                print("⊘ Filtering out soft-deleted event: \(event.title ?? "Unknown") (\(event.eventIdentifier ?? "Unknown"))")
+                continue
+            }
+
+            guard let eventId = event.eventIdentifier else { continue }
+
+            let calendarColor = event.calendar.cgColor.map { UIColor(cgColor: $0) } ?? .systemBlue
+            let travelMinutes = CalendarManager.shared.getTravelTimeMinutes(from: event)
+
+            let upcomingEvent = UpcomingCalendarEvent(
+                id: eventId,
+                title: event.title,
+                location: event.location,
+                meetingLink: event.url?.absoluteString,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                calendarID: event.calendar.calendarIdentifier,
+                calendarColor: calendarColor,
+                calendarTitle: event.calendar.title,
+                hasRecurrence: event.hasRecurrenceRules,
+                recurrenceRule: event.recurrenceRules?.first,
+                travelTimeMinutes: travelMinutes,
+                isAllDay: event.isAllDay,
+                showAs: Self.showAsOption(for: event)
+            )
+            results.append(upcomingEvent)
+        }
+
+        return results
     }
 
     private static func fetchNextEvents(in store: EKEventStore, calendarIDs: [String], limit: Int, pastDays: Int, futureDays: Int) -> [UpcomingCalendarEvent] {
@@ -369,11 +421,13 @@ final class CalendarManager {
                 continue
             }
 
+            guard let eventId = event.eventIdentifier else { continue }
+
             let calendarColor = event.calendar.cgColor.map { UIColor(cgColor: $0) } ?? .systemBlue
             let travelMinutes = CalendarManager.shared.getTravelTimeMinutes(from: event)
 
             let upcomingEvent = UpcomingCalendarEvent(
-                id: event.eventIdentifier,
+                id: eventId,
                 title: event.title,
                 location: event.location,
                 meetingLink: event.url?.absoluteString,

@@ -164,6 +164,8 @@ class SupabaseDataSync {
                             // Better: Check if the member itself is pending? No.
                             
                             print("🗑️ Removing calendar \(calendar.calendarName ?? "Unknown") for member \(supabaseDTO.name) - no longer in Supabase")
+                            // Detach relationship before delete to avoid CoreData repair logs
+                            calendar.familyMember = nil
                             context.delete(calendar)
                         }
                     }
@@ -227,19 +229,11 @@ class SupabaseDataSync {
         let eventStore = EKEventStore()
         let calendars = eventStore.calendars(for: .event)
 
-        print("🔍 Searching for calendar named: '\(calendarName)'")
-        print("📋 Available iOS calendars:")
-        for cal in calendars {
-            print("  - '\(cal.title)' (ID: \(cal.calendarIdentifier))")
-        }
-
         // Case-insensitive exact match
         if let matched = calendars.first(where: { $0.title.lowercased() == calendarName.lowercased() }) {
-            print("✅ Found matching calendar: '\(matched.title)' -> \(matched.calendarIdentifier)")
             return matched.calendarIdentifier
         }
 
-        print("⚠️ No matching calendar found for: '\(calendarName)'")
         return nil
     }
 
@@ -260,6 +254,13 @@ class SupabaseDataSync {
             // Delete calendars that no longer exist in Supabase
             for existingCalendar in existingCalendars {
                 if let calendarId = existingCalendar.id?.uuidString, !supabaseIds.contains(calendarId) {
+                    // Detach members before deletion to satisfy CoreData delete rules
+                    if let members = existingCalendar.members as? Set<FamilyMember> {
+                        for member in members {
+                            existingCalendar.removeFromMembers(member)
+                        }
+                    }
+
                     context.delete(existingCalendar)
                 }
             }
@@ -291,13 +292,8 @@ class SupabaseDataSync {
                 // This ensures device-specific calendar IDs are populated during sync
                 if isNewCalendar || calendar.calendarID == nil || calendar.calendarID!.isEmpty {
                     if !supabaseDTO.calendar_name.isEmpty {
-                        print("ℹ️ Attempting to match calendar '\(supabaseDTO.calendar_name)' to iOS calendar...")
                         if let matched = findCalendarIdByName(supabaseDTO.calendar_name) {
                             calendar.calendarID = matched
-                            print("✅ Matched shared calendar '\(supabaseDTO.calendar_name)' to iOS calendar ID: \(matched)")
-                        } else {
-                            print("⚠️ Could not match shared calendar '\(supabaseDTO.calendar_name)' to any iOS calendar")
-                            print("   This calendar will not show events until it matches an iOS calendar")
                         }
                     }
                 } else {
@@ -351,6 +347,8 @@ class SupabaseDataSync {
             // Delete calendars that no longer exist in Supabase
             for existingCalendar in existingCalendars {
                 if let calendarId = existingCalendar.id?.uuidString, !supabaseIds.contains(calendarId) {
+                    // Detach owner before deletion to satisfy CoreData delete rules
+                    existingCalendar.owner = nil
                     context.delete(existingCalendar)
                 }
             }

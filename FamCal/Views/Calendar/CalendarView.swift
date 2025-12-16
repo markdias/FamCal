@@ -22,6 +22,7 @@ struct CalendarView: View {
 
     private var autoRefreshInterval: Int { appSettingsManager.autoRefreshInterval }
     private var defaultMapsApp: String { appSettingsManager.defaultMapsApp }
+    private var isExpandedMonth: Bool { appSettingsManager.expandedMonthView }
 
     var onAddEventRequested: ((Date) -> Void)? = nil
     @Binding var selectedDateBinding: Date
@@ -82,10 +83,17 @@ struct CalendarView: View {
     @State private var showingBatchDeleteDialog = false
     @State private var batchDeleteInProgress = false
     @State private var monthViewSelectionMode = false
+    @State private var lastRevision: Int = 0
+    @State private var currentRevision: Int = 0
+    @State private var lastMonthKey: Date?
+    @State private var lastDisplayMode: CalendarDisplayMode?
+    @State private var cachedDayEvents: [String: [DayEventItem]] = [:]
+    @State private var cachedMemberColors: [NSManagedObjectID: UIColor] = [:]
     @State private var lastTapTimeMonth: Date = .distantPast
     @State private var lastTappedEventIdMonth: String = ""
     @State private var tapDelayTimerMonth: Timer?
     @State private var dataChangeDebounceTimer: Timer?
+    @State private var showingExpandedDayDetails = false
     private var externalDisplayMode: Binding<CalendarDisplayMode>?
     private var todayTrigger: Binding<UUID>?
 
@@ -107,6 +115,13 @@ struct CalendarView: View {
     }
     private var isCompactHeight: Bool { verticalSizeClass == .compact }
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
+
+    private struct MemberCalendarSnapshot {
+        let objectID: NSManagedObjectID
+        let name: String
+        let initials: String
+        let calendarIDs: Set<String>
+    }
 
     private static let monthFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -174,6 +189,18 @@ struct CalendarView: View {
                 // When checklists load or change, refresh the calendar view to show/update checklist indicators
                 loadEvents()
             }
+            .onChange(of: appSettingsManager.eventsPastDays) { _, _ in
+                // Settings change should invalidate cache and reload
+                incrementRevisionAndReload(force: true)
+            }
+            .onChange(of: appSettingsManager.eventsFutureDays) { _, _ in
+                // Settings change should invalidate cache and reload
+                incrementRevisionAndReload(force: true)
+            }
+            .onChange(of: familyEvents.count) { _, _ in incrementRevisionAndReload() }
+            .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
+                incrementRevisionAndReload()
+            }
             .onChange(of: autoRefreshInterval) { _, _ in startRefreshTimer() }
             .onChange(of: verticalSizeClass) { _, newValue in
                 if newValue == .compact {
@@ -194,11 +221,16 @@ struct CalendarView: View {
                     .ignoresSafeArea()
 
                 if calendarDisplayMode == .month {
-                    ScrollView {
+                    if isExpandedMonth {
                         content
-                    }
-                    .refreshable {
-                        await reloadEvents()
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            content
+                        }
+                        .refreshable {
+                            await reloadEvents()
+                        }
                     }
                 } else {
                     content
@@ -209,6 +241,9 @@ struct CalendarView: View {
         .navigationViewStyle(.stack)
         .sheet(item: $selectedEvent) { event in
             EventDetailView(event: event)
+        }
+        .sheet(isPresented: $showingExpandedDayDetails) {
+            expandedDayDetailsSheet
         }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
             print("🔔 CalendarView: Received EKEventStoreChanged")
@@ -321,47 +356,60 @@ struct CalendarView: View {
 
         VStack(alignment: .leading, spacing: isDayMode ? 16 : 24) {
             if !fullScreenDay {
-                // Header with centered month/year
-                HStack {
-                    // Calendar layout mode picker (left side)
-                    if calendarDisplayMode == .month {
-                        Menu {
-                            Button(action: { appSettingsManager.calendarCellLayoutMode = "dots" }) {
-                                Label("Dots Only", systemImage: appSettingsManager.calendarCellLayoutMode == "dots" ? "checkmark" : "")
+                if !isExpandedMonth {
+                    // Header with centered month/year
+                    HStack {
+                        // Calendar layout mode picker (left side)
+                        if calendarDisplayMode == .month {
+                            Menu {
+                                Button(action: { appSettingsManager.calendarCellLayoutMode = "dots" }) {
+                                    Label("Dots Only", systemImage: appSettingsManager.calendarCellLayoutMode == "dots" ? "checkmark" : "")
+                                }
+                                Button(action: { appSettingsManager.calendarCellLayoutMode = "option1" }) {
+                                    Label("Pills with Bar", systemImage: appSettingsManager.calendarCellLayoutMode == "option1" ? "checkmark" : "")
+                                }
+                                Button(action: { appSettingsManager.calendarCellLayoutMode = "option2" }) {
+                                    Label("Colored Pills", systemImage: appSettingsManager.calendarCellLayoutMode == "option2" ? "checkmark" : "")
+                                }
+                            } label: {
+                                Image(systemName: "calendar.badge.clock")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(theme.accentColor)
+                                    .frame(width: 32, height: 32)
+                                    .background(Circle().fill(theme.chromeOverlay))
                             }
-                            Button(action: { appSettingsManager.calendarCellLayoutMode = "option1" }) {
-                                Label("Pills with Bar", systemImage: appSettingsManager.calendarCellLayoutMode == "option1" ? "checkmark" : "")
-                            }
-                            Button(action: { appSettingsManager.calendarCellLayoutMode = "option2" }) {
-                                Label("Colored Pills", systemImage: appSettingsManager.calendarCellLayoutMode == "option2" ? "checkmark" : "")
-                            }
-                        } label: {
-                            Image(systemName: "calendar.badge.clock")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(theme.accentColor)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(theme.chromeOverlay))
+                        } else {
+                            Spacer().frame(width: 32)
                         }
-                    } else {
+
+                        Spacer()
+
+                        VStack(spacing: 2) {
+                            Text(Self.monthOnlyFormatter.string(from: currentMonth))
+                                .font(.system(size: 22, weight: .bold))
+                            Text(Self.yearFormatter.string(from: currentMonth))
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                        }
+
+                        Spacer()
+
+                        // Balance the layout with empty space on right
                         Spacer().frame(width: 32)
                     }
-
-                    Spacer()
-
-                    VStack(spacing: 2) {
-                        Text(Self.monthOnlyFormatter.string(from: currentMonth))
-                            .font(.system(size: 22, weight: .bold))
-                        Text(Self.yearFormatter.string(from: currentMonth))
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
+                    .padding(.vertical, 12)
+                } else {
+                    // Expanded Month Header (Simplified)
+                    HStack {
+                         Text("\(Self.monthOnlyFormatter.string(from: currentMonth)) \(Self.yearFormatter.string(from: currentMonth))")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(Color.primary)
+                        
+                        Spacer()
                     }
-
-                    Spacer()
-
-                    // Balance the layout with empty space on right
-                    Spacer().frame(width: 32)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 12)
             }
 
             // Calendar grid
@@ -383,63 +431,202 @@ struct CalendarView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .padding(.horizontal, 0)
-        .padding(.top, fullScreenDay ? 0 : 16)
-        .padding(.bottom, fullScreenDay ? 0 : 120)
+        .padding(.horizontal, isExpandedMonth ? 0 : 0)
+        .padding(.top, fullScreenDay ? 0 : (isExpandedMonth ? 4 : 16))
+        .padding(.bottom, fullScreenDay ? 0 : (isExpandedMonth ? 80 : 120))
         .frame(maxWidth: .infinity, maxHeight: isDayMode ? .infinity : nil, alignment: .top)
         .modifier(FullScreenDayModifier(enabled: fullScreenDay))
     }
 
-    private var monthView: some View {
-        VStack {
-            VStack(spacing: 8) {
-                // Day headers (Mon ... Sun)
-                HStack(spacing: 0) {
-                    ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
-                        Text(day)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(secondaryTextColor)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                }
-                .padding(.bottom, 4)
+    private var expandedDayDetailsSheet: some View {
+        let events = dayEvents[formatDateKey(selectedDate)] ?? []
 
-                // Calendar days
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(getDaysInMonth(), id: \.self) { date in
-                        calendarDayCell(for: date)
+        return ZStack(alignment: .topLeading) {
+            theme.backgroundLayer()
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Header with close button and date
+                HStack(alignment: .center, spacing: 12) {
+                    Button(action: { showingExpandedDayDetails = false }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(theme.accentColor)
+                            .frame(width: 32, height: 32)
                     }
-                }
-            }
-            .padding(.horizontal, 0)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(theme.cardBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(theme.cardStroke, lineWidth: 1)
-            )
-            .gesture(
-                DragGesture()
-                    .onEnded { value in
-                        if value.translation.width > 50 {
-                            previousMonth()
-                        } else if value.translation.width < -50 {
-                            nextMonth()
+
+                    Text(Self.fullDateFormatter.string(from: selectedDate))
+                        .font(.system(size: 18, weight: .semibold))
+
+                    Spacer()
+
+                    // Density toggle button
+                    if selectedEventIdsForDeletion.isEmpty {
+                        Button(action: {
+                            appSettingsManager.calendarEventsDensityMode =
+                                appSettingsManager.calendarEventsDensityMode == "detailed" ? "compact" : "detailed"
+                        }) {
+                            Image(systemName: appSettingsManager.calendarEventsDensityMode == "detailed" ? "list.bullet" : "list.bullet.rectangle")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(theme.accentColor)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    Circle()
+                                        .fill(theme.chromeOverlay)
+                                )
                         }
                     }
-            )
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(theme.cardBackground)
 
-            // Selected day details
-            if let events = dayEvents[formatDateKey(selectedDate)], !events.isEmpty {
-                dayDetailsView(for: events)
-                    .padding(.horizontal, 16)
-            } else {
-                noEventsView
-                    .padding(.horizontal, 16)
+                // Events list
+                if !events.isEmpty {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            let groupedEvents = groupEventsByDetails(events)
+                            let allDayEvents = groupedEvents.filter { $0.isAllDay }
+                            let timedEvents = groupedEvents.filter { !$0.isAllDay }
+
+                            VStack(spacing: 4) {
+                                ForEach(allDayEvents) { groupedEvent in
+                                    dayEventButton(for: groupedEvent, isCompact: true)
+                                }
+                                ForEach(timedEvents) { groupedEvent in
+                                    dayEventButton(for: groupedEvent, isCompact: false)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                    }
+                } else {
+                    VStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .font(.system(size: 32))
+                            .foregroundColor(secondaryTextColor)
+
+                        Text("No events scheduled")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
+
+                        Text("This day has no events")
+                            .font(.system(size: 14))
+                            .foregroundColor(secondaryTextColor)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(theme.backgroundLayer())
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    @ViewBuilder
+    private var monthView: some View {
+        if isExpandedMonth {
+            // Expanded view - with GeometryReader for dynamic sizing
+            GeometryReader { geometry in
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 0) {
+                        // Day headers (Mon ... Sun)
+                        HStack(spacing: 0) {
+                            ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
+                                Text(day)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(secondaryTextColor)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 4)
+                            }
+                        }
+                        .padding(.bottom, 2)
+
+                        // Calendar days
+                        let availableHeight = geometry.size.height - 28
+                        let cellFixedRows = 6.0
+                        let cellHeight = (availableHeight / cellFixedRows) - 4
+
+                        LazyVGrid(columns: columns, spacing: 4) {
+                            ForEach(getDaysInMonth(), id: \.self) { date in
+                                calendarDayCell(for: date, fixedHeight: cellHeight)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(theme.cardBackground)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(theme.cardStroke, lineWidth: 1)
+                    )
+                    .gesture(
+                        DragGesture()
+                            .onEnded { value in
+                                if value.translation.width > 50 {
+                                    previousMonth()
+                                } else if value.translation.width < -50 {
+                                    nextMonth()
+                                }
+                            }
+                    )
+                }
+            }
+        } else {
+            // Standard view - original layout (no GeometryReader)
+            VStack {
+                VStack(spacing: 8) {
+                    // Day headers (Mon ... Sun)
+                    HStack(spacing: 0) {
+                        ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
+                            Text(day)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(secondaryTextColor)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                        }
+                    }
+                    .padding(.bottom, 4)
+
+                    // Calendar days - constrained height for scrolling
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(getDaysInMonth(), id: \.self) { date in
+                            calendarDayCell(for: date, fixedHeight: 70)
+                        }
+                    }
+                }
+                .padding(.horizontal, 0)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(theme.cardBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(theme.cardStroke, lineWidth: 1)
+                )
+                .gesture(
+                    DragGesture()
+                        .onEnded { value in
+                            if value.translation.width > 50 {
+                                previousMonth()
+                            } else if value.translation.width < -50 {
+                                nextMonth()
+                            }
+                        }
+                )
+
+                // Selected day details
+                if let events = dayEvents[formatDateKey(selectedDate)], !events.isEmpty {
+                    dayDetailsView(for: events)
+                        .padding(.horizontal, 16)
+                } else {
+                    noEventsView
+                        .padding(.horizontal, 16)
+                }
             }
         }
     }
@@ -1099,35 +1286,45 @@ struct CalendarView: View {
         }
     }
 
-    private func calendarDayCell(for date: Date) -> some View {
+    private func calendarDayCell(for date: Date, fixedHeight: CGFloat? = nil) -> some View {
         let isCurrentMonth = calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
         let isToday = calendar.isDate(date, inSameDayAs: Date())
         let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
         let events = dayEvents[formatDateKey(date)] ?? []
         let eventCount = events.count
-        let now = Date()
-
-        // Filter to show only all-day events or events that haven't happened yet
-        let relevantEvents = events.filter { event in
-            event.isAllDay || event.startDate > now
-        }
 
         let layoutMode = appSettingsManager.calendarCellLayoutMode
 
         return Group {
-            if layoutMode == "dots" {
+            if layoutMode == "dots" && !isExpandedMonth {
                 // Original dots-only layout
                 dotsOnlyCell(date: date, isCurrentMonth: isCurrentMonth, isToday: isToday, isSelected: isSelected, events: events, eventCount: eventCount)
             } else {
-                // New layouts with event titles
-                eventsWithTitlesCell(date: date, isCurrentMonth: isCurrentMonth, isToday: isToday, isSelected: isSelected, events: relevantEvents, layoutMode: layoutMode)
+                // New layouts with event titles - Force full layout if expanded view
+                eventsWithTitlesCell(date: date, isCurrentMonth: isCurrentMonth, isToday: isToday, isSelected: isSelected, events: events, layoutMode: isExpandedMonth ? "option1" : layoutMode, fixedHeight: fixedHeight)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
             if isCurrentMonth {
-                withAnimation(.spring()) {
-                    selectedDate = date
+                if isExpandedMonth {
+                    // In expanded month view, use double-tap behavior
+                    let isAlreadySelected = calendar.isDate(date, inSameDayAs: selectedDate)
+
+                    if isAlreadySelected {
+                        // Second tap - open event list
+                        showingExpandedDayDetails = true
+                    } else {
+                        // First tap - select the date
+                        withAnimation(.spring()) {
+                            selectedDate = date
+                        }
+                    }
+                } else {
+                    // Standard month view - just select the date
+                    withAnimation(.spring()) {
+                        selectedDate = date
+                    }
                 }
             }
         }
@@ -1187,9 +1384,12 @@ struct CalendarView: View {
     }
 
     @ViewBuilder
-    private func eventsWithTitlesCell(date: Date, isCurrentMonth: Bool, isToday: Bool, isSelected: Bool, events: [DayEventItem], layoutMode: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // Day number with selection indicator
+    private func eventsWithTitlesCell(date: Date, isCurrentMonth: Bool, isToday: Bool, isSelected: Bool, events: [DayEventItem], layoutMode: String, fixedHeight: CGFloat? = nil) -> some View {
+        let allDayEvents = events.filter { $0.isAllDay }
+        let timedEvents = events.filter { !$0.isAllDay }
+
+        VStack(alignment: .leading, spacing: 0) {
+            // Day number with selection indicator - FIXED HEIGHT SECTION
             HStack {
                 Spacer()
                 Text(Self.dayFormatter.string(from: date))
@@ -1214,21 +1414,42 @@ struct CalendarView: View {
                             }
                         }
                     )
+                Spacer()
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 2)
+            .frame(height: isExpandedMonth ? 24 : 28)
+            .padding(.horizontal, isExpandedMonth ? 2 : 4)
+            .padding(.top, isExpandedMonth ? 2 : 4)
 
-            // Events based on layout mode
-            if layoutMode == "option1" {
-                option1EventList(events: events)
-            } else if layoutMode == "option2" {
-                option2EventList(events: events)
+            // All-day events - PINNED TO TOP IN FIXED AREA (all of them, no +X)
+            if !allDayEvents.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    if layoutMode == "option1" {
+                        option1EventList(events: allDayEvents, maxEvents: nil) // Show ALL all-day events
+                    } else if layoutMode == "option2" {
+                        option2EventList(events: allDayEvents)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 1)
+                .padding(.vertical, 1)
             }
 
-            Spacer(minLength: 0)
+            // Timed events - REMAINING SPACE
+            VStack(alignment: .leading, spacing: 0) {
+                if layoutMode == "option1" {
+                    option1EventList(events: timedEvents, maxEvents: isExpandedMonth ? (allDayEvents.isEmpty ? 6 : 5) : 2)
+                } else if layoutMode == "option2" {
+                    option2EventList(events: timedEvents)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 1)
+            .padding(.bottom, 1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
+        .frame(height: fixedHeight, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(
@@ -1238,38 +1459,39 @@ struct CalendarView: View {
     }
 
     @ViewBuilder
-    private func option1EventList(events: [DayEventItem]) -> some View {
-        let maxEvents = 2
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(events.prefix(maxEvents).enumerated()), id: \.offset) { _, event in
-                HStack(spacing: 1) {
-                    RoundedRectangle(cornerRadius: 1)
+    private func option1EventList(events: [DayEventItem], maxEvents: Int? = nil) -> some View {
+        let eventLimit: Int? = maxEvents == nil ? nil : (maxEvents ?? (isExpandedMonth ? 6 : 2))
+        let eventsToShow = eventLimit.map { Array(events.prefix($0)) } ?? events
+
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(eventsToShow.enumerated()), id: \.offset) { _, event in
+                HStack(spacing: 0) {
+                    RoundedRectangle(cornerRadius: 0.5)
                         .fill(Color(uiColor: event.color))
                         .frame(width: 2)
-                    HStack(spacing: 2) {
+                    HStack(spacing: 1) {
                         Text(event.title)
                             .font(.system(size: 8))
                             .lineLimit(1)
                             .foregroundColor(.primary)
-                        if event.hasRecurrence {
-                            RecurrenceIcon(color: Color(uiColor: event.color), fontSize: 8.0)
-                        }
                     }
+                    .padding(.horizontal, 2)
                     Spacer(minLength: 0)
                 }
-                .frame(height: 10)
-                .padding(.horizontal, 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 11)
                 .background(Color(uiColor: event.color).opacity(0.12))
-                .cornerRadius(2)
+                .cornerRadius(1.5)
             }
-            if events.count > maxEvents {
-                Text("+\(events.count - maxEvents)")
+            // Only show +X if maxEvents is specified and we're limiting events
+            if let limit = eventLimit, events.count > limit {
+                Text("+\(events.count - limit)")
                     .font(.system(size: 7, weight: .medium))
                     .foregroundColor(.secondary)
                     .padding(.leading, 2)
+                    .padding(.top, 1)
             }
         }
-        .padding(.horizontal, 2)
     }
 
     @ViewBuilder
@@ -1406,76 +1628,114 @@ struct CalendarView: View {
         return nil
     }
 
+    private func incrementRevisionAndReload(force: Bool = false) {
+        currentRevision += 1
+        if force {
+            lastRevision = -1 // ensure mismatch
+            cachedDayEvents = [:]
+            cachedMemberColors = [:]
+            lastMonthKey = nil
+            lastDisplayMode = nil
+        }
+        loadEvents()
+    }
+
     private func loadEvents() {
+        // If cache is valid for current state, reuse it
+        let monthKey = calendar.startOfDay(for: calendar.date(from: calendar.dateComponents([.year, .month], from: currentMonth)) ?? currentMonth)
+        if !isLoadingEvents,
+           lastRevision == currentRevision,
+           lastMonthKey == monthKey,
+           lastDisplayMode == calendarDisplayMode,
+           !cachedDayEvents.isEmpty {
+            self.dayEvents = cachedDayEvents
+            self.memberColors = cachedMemberColors
+            return
+        }
+
         if isLoadingEvents { return }
         isLoadingEvents = true
 
-        var tempEventsDict: [String: [DayEventItem]] = [:]
-        var memberColors: [NSManagedObjectID: UIColor] = [:]
-
+        // Snapshot inputs on main to avoid cross-queue CoreData access
         let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: currentMonth))!
         let endOfMonth = calendar.date(byAdding: .day, value: -1, to: calendar.date(byAdding: .month, value: 1, to: startOfMonth)!)!
+        let now = Date()
+        // Calculate the settings window for filtering
+        let settingsStartDate = calendar.date(byAdding: .day, value: -appSettingsManager.eventsPastDays, to: now) ?? now
+        let settingsEndDate = calendar.date(byAdding: .day, value: appSettingsManager.eventsFutureDays, to: now) ?? now
+        // Fetch events for the entire month
+        let startDate = startOfMonth
+        let endDate = endOfMonth
 
-        // Fetch all local calendars for resolution
         let localCalendars = eventStore.calendars(for: .event)
         let calendarById = Dictionary(uniqueKeysWithValues: localCalendars.map { ($0.calendarIdentifier, $0) })
         let calendarByTitle = Dictionary(grouping: localCalendars, by: { $0.title }).mapValues { $0.first! }
 
-        // Build map of member → their calendar IDs
-        var memberCalendarMap: [NSManagedObjectID: (Set<String>, FamilyMember)] = [:]
+        // Checklist and driver maps for quick lookup
+        let checklistProgressMap: [String: ChecklistProgress] = checklists.reduce(into: [:]) { dict, checklist in
+            guard checklist.deletedAt == nil, let eventId = checklist.eventIdentifier else { return }
+            dict[eventId] = ChecklistManager.shared.getProgress(for: checklist)
+        }
+
+        let driverNameMap: [String: String?] = familyEvents.reduce(into: [:]) { dict, event in
+            dict[event.eventIdentifier ?? ""] = event.driver?.name
+        }
+        let driverPhoneMap: [String: String?] = familyEvents.reduce(into: [:]) { dict, event in
+            dict[event.eventIdentifier ?? ""] = event.driver?.phone
+        }
+
+        // Build member calendar snapshots
+        var memberColors: [NSManagedObjectID: UIColor] = [:]
+        var memberSnapshots: [MemberCalendarSnapshot] = []
+
+        var memberCalendarMap: [NSManagedObjectID: Set<String>] = [:]
 
         for link in memberCalendarLinks {
             guard let member = link.familyMember,
                   let storedID = link.calendarID else { continue }
-            
-            var resolvedID = storedID
-            // If ID not found locally, try to find by name
-                if calendarById[storedID] == nil, let name = link.calendarName, let localCal = calendarByTitle[name] {
-                    resolvedID = localCal.calendarIdentifier
-                }
 
-            var entry = memberCalendarMap[member.objectID] ?? ([], member)
-            entry.0.insert(resolvedID)
+            var resolvedID = storedID
+            if calendarById[storedID] == nil, let name = link.calendarName, let localCal = calendarByTitle[name] {
+                resolvedID = localCal.calendarIdentifier
+            }
+
+            var entry = memberCalendarMap[member.objectID] ?? Set<String>()
+            entry.insert(resolvedID)
             memberCalendarMap[member.objectID] = entry
-            
+
             if memberColors[member.objectID] == nil, let calendar = calendarById[resolvedID] {
                 memberColors[member.objectID] = UIColor(cgColor: calendar.cgColor)
             }
         }
 
-        // Add shared calendars
         for member in familyMembers {
-            var entry = memberCalendarMap[member.objectID] ?? ([], member)
+            var entry = memberCalendarMap[member.objectID] ?? Set<String>()
             if let sharedCals = member.sharedCalendars as? Set<SharedCalendar> {
                 for sharedCal in sharedCals {
                     if let storedID = sharedCal.calendarID {
                         var resolvedID = storedID
-                        // If ID not found locally, try to find by name
                         if calendarById[storedID] == nil, let name = sharedCal.calendarName, let localCal = calendarByTitle[name] {
                             resolvedID = localCal.calendarIdentifier
                         }
-                        entry.0.insert(resolvedID)
+                        entry.insert(resolvedID)
                     }
                 }
             }
-            if !entry.0.isEmpty {
+            if !entry.isEmpty {
                 memberCalendarMap[member.objectID] = entry
             }
         }
 
-        // Add personal calendars for the current user
         if let linkedMemberId = appSettingsManager.linkedFamilyMemberId,
            let linkedMember = familyMembers.first(where: { $0.id?.uuidString.lowercased() == linkedMemberId.lowercased() }) {
-            var entry = memberCalendarMap[linkedMember.objectID] ?? ([], linkedMember)
+            var entry = memberCalendarMap[linkedMember.objectID] ?? Set<String>()
             for personalCal in personalCalendars {
-                // Check if calendar view is enabled (either month OR day)
                 let calendarViewEnabled = personalCal.showInMonth || personalCal.showInDay
                 guard calendarViewEnabled else { continue }
 
                 var resolvedID: String?
                 if let storedID = personalCal.calendarID {
                     resolvedID = storedID
-                    // If ID not found locally, try to find by name
                     if calendarById[storedID] == nil, let name = personalCal.calendarName, let localCal = calendarByTitle[name] {
                         resolvedID = localCal.calendarIdentifier
                     }
@@ -1484,110 +1744,123 @@ struct CalendarView: View {
                 }
 
                 if let resolvedID {
-                    entry.0.insert(resolvedID)
+                    entry.insert(resolvedID)
                 }
             }
-            if !entry.0.isEmpty {
+            if !entry.isEmpty {
                 memberCalendarMap[linkedMember.objectID] = entry
             }
         }
-        
+
         for member in familyMembers {
             if memberColors[member.objectID] == nil {
-                if let firstCalID = memberCalendarMap[member.objectID]?.0.first,
+                if let firstCalID = memberCalendarMap[member.objectID]?.first,
                    let calendar = eventStore.calendar(withIdentifier: firstCalID) {
                     memberColors[member.objectID] = UIColor(cgColor: calendar.cgColor)
                 } else {
                     memberColors[member.objectID] = .gray
                 }
             }
+
+            if let calendarIDs = memberCalendarMap[member.objectID], !calendarIDs.isEmpty {
+                let initialsValue = member.avatarInitials ?? initials(for: member.name)
+                let snapshot = MemberCalendarSnapshot(
+                    objectID: member.objectID,
+                    name: member.name ?? "Unknown",
+                    initials: initialsValue,
+                    calendarIDs: calendarIDs
+                )
+                memberSnapshots.append(snapshot)
+            }
         }
-        self.memberColors = memberColors
 
-        // Fetch events for each member
-        for (_, (calendarIDs, member)) in memberCalendarMap {
-            let events = CalendarManager.shared.fetchNextEvents(
-                for: Array(calendarIDs),
-                limit: 0,
-                pastDays: appSettingsManager.eventsPastDays,
-                futureDays: appSettingsManager.eventsFutureDays
-            )
+        Task(priority: .userInitiated) {
+            var tempEventsDict: [String: [DayEventItem]] = [:]
 
-            let initials = member.avatarInitials ?? initials(for: member.name)
+            for snapshot in memberSnapshots {
+                let events = await CalendarManager.shared.fetchEventsAsync(
+                    for: Array(snapshot.calendarIDs),
+                    startDate: startDate,
+                    endDate: endDate
+                )
 
-            for event in events {
-                let eventDate = calendar.startOfDay(for: event.startDate)
-                let monthDate = calendar.startOfDay(for: endOfMonth)
+                for event in events {
+                    let eventDate = calendar.startOfDay(for: event.startDate)
+                    let monthDate = calendar.startOfDay(for: endOfMonth)
 
-                if eventDate >= startOfMonth && eventDate <= monthDate {
-                    let dateKey = formatDateKey(eventDate)
+                    if eventDate >= startOfMonth && eventDate <= monthDate && event.startDate >= settingsStartDate && event.startDate <= settingsEndDate {
+                        let dateKey = formatDateKey(eventDate)
 
-                    let timeRange = event.startDate == event.endDate ? nil : {
-                        Self.timeFormatter.string(from: event.startDate) + " – " + Self.timeFormatter.string(from: event.endDate)
-                    }()
+                        let timeRange = event.startDate == event.endDate ? nil : {
+                            Self.timeFormatter.string(from: event.startDate) + " – " + Self.timeFormatter.string(from: event.endDate)
+                        }()
 
-                    let driverName = fetchDriverForEvent(event.id)
-                    let driverPhone = fetchDriverPhoneForEvent(event.id)
+                        let driverName = driverNameMap[event.id] ?? nil
+                        let driverPhone = driverPhoneMap[event.id] ?? nil
+                        let checklistProgress = checklistProgressMap[event.id]
+                        let hasChecklist = (checklistProgress?.isEmpty == false)
 
-                    // Fetch checklist data
-                    let checklist = checklists.first { $0.eventIdentifier == event.id && $0.deletedAt == nil }
-                    let checklistProgress = checklist.map { ChecklistManager.shared.getProgress(for: $0) }
-                    // Only show checklist if it has items (not empty)
-                    let hasChecklist = checklistProgress?.isEmpty == false
+                        let dayEvent = DayEventItem(
+                            id: UUID(),
+                            title: event.title,
+                            timeRange: timeRange,
+                            location: event.location,
+                            meetingLink: event.meetingLink,
+                            memberNames: [snapshot.name],
+                            memberIDs: [snapshot.objectID],
+                            memberInitials: snapshot.initials,
+                            memberColor: event.calendarColor,
+                            color: event.calendarColor,
+                            eventIdentifier: event.id,
+                            calendarID: event.calendarID,
+                            calendarColor: event.calendarColor,
+                            calendarTitle: event.calendarTitle,
+                            startDate: event.startDate,
+                            endDate: event.endDate,
+                            hasRecurrence: event.hasRecurrence,
+                            isAllDay: event.isAllDay,
+                            driverName: driverName ?? nil,
+                            driverPhone: driverPhone ?? nil,
+                            hasChecklist: hasChecklist,
+                            checklistProgress: checklistProgress,
+                            travelTimeMinutes: event.travelTimeMinutes,
+                            showAs: event.showAs
+                        )
 
-                    let dayEvent = DayEventItem(
-                        id: UUID(),
-                        title: event.title,
-                        timeRange: timeRange,
-                        location: event.location,
-                        meetingLink: event.meetingLink,
-                        memberNames: [member.name ?? "Unknown"],
-                        memberIDs: [member.objectID],
-                        memberInitials: initials,
-                        memberColor: event.calendarColor,
-                        color: event.calendarColor,
-                        eventIdentifier: event.id,
-                        calendarID: event.calendarID,
-                        calendarColor: event.calendarColor,
-                        calendarTitle: event.calendarTitle,
-                        startDate: event.startDate,
-                        endDate: event.endDate,
-            hasRecurrence: event.hasRecurrence,
-            isAllDay: event.isAllDay,
-            driverName: driverName,
-            driverPhone: driverPhone,
-            hasChecklist: hasChecklist,
-            checklistProgress: checklistProgress,
-            travelTimeMinutes: event.travelTimeMinutes,
-            showAs: event.showAs
-        )
-
-                    if tempEventsDict[dateKey] == nil {
-                        tempEventsDict[dateKey] = []
+                        if tempEventsDict[dateKey] == nil {
+                            tempEventsDict[dateKey] = []
+                        }
+                        tempEventsDict[dateKey]?.append(dayEvent)
                     }
-                    tempEventsDict[dateKey]?.append(dayEvent)
                 }
             }
-        }
 
-        // De-duplicate events
-        var finalEventsDict: [String: [DayEventItem]] = [:]
-        for (dateKey, dayEventItems) in tempEventsDict {
-            var uniqueEvents: [String: DayEventItem] = [:]
-            for event in dayEventItems {
-                if var existingEvent = uniqueEvents[event.eventIdentifier] {
-                    existingEvent.memberNames.append(contentsOf: event.memberNames)
-                    existingEvent.memberIDs.append(contentsOf: event.memberIDs)
-                    uniqueEvents[event.eventIdentifier] = existingEvent
-                } else {
-                    uniqueEvents[event.eventIdentifier] = event
+            var finalEventsDict: [String: [DayEventItem]] = [:]
+            for (dateKey, dayEventItems) in tempEventsDict {
+                var uniqueEvents: [String: DayEventItem] = [:]
+                for event in dayEventItems {
+                    if var existingEvent = uniqueEvents[event.eventIdentifier] {
+                        existingEvent.memberNames.append(contentsOf: event.memberNames)
+                        existingEvent.memberIDs.append(contentsOf: event.memberIDs)
+                        uniqueEvents[event.eventIdentifier] = existingEvent
+                    } else {
+                        uniqueEvents[event.eventIdentifier] = event
+                    }
                 }
+                finalEventsDict[dateKey] = Array(uniqueEvents.values)
             }
-            finalEventsDict[dateKey] = Array(uniqueEvents.values)
-        }
 
-        dayEvents = finalEventsDict
-        isLoadingEvents = false
+            await MainActor.run {
+                self.dayEvents = finalEventsDict
+                self.memberColors = memberColors
+                self.cachedDayEvents = finalEventsDict
+                self.cachedMemberColors = memberColors
+                self.lastRevision = self.currentRevision
+                self.lastMonthKey = monthKey
+                self.lastDisplayMode = calendarDisplayMode
+                self.isLoadingEvents = false
+            }
+        }
     }
 
     private func initials(for name: String?) -> String {
@@ -1607,7 +1880,7 @@ struct CalendarView: View {
     private func reloadEvents() async {
         // Force refresh data when user manually pulls down (bypass change detection)
         await dataManager.fetchUserDataIfNeeded()
-        loadEvents()
+        incrementRevisionAndReload(force: true)
     }
 
     private func setupView() {
@@ -1643,7 +1916,7 @@ struct CalendarView: View {
         // Debounce data changes to prevent cascading reloads
         dataChangeDebounceTimer?.invalidate()
         dataChangeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
-            loadEvents()
+            incrementRevisionAndReload()
         }
     }
 

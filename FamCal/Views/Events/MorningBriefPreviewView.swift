@@ -240,16 +240,12 @@ struct MorningBriefPreviewView: View {
 
     private func refreshEvents() {
         isLoading = true
-
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task { @MainActor in
             let notificationManager = NotificationManager.shared
             let events = notificationManager.fetchMorningBriefEvents()
-
-            DispatchQueue.main.async {
-                briefEvents = events
-                isLoading = false
-                print("✅ Morning brief preview loaded: \(events.count) events")
-            }
+            briefEvents = events
+            isLoading = false
+            print("✅ Morning brief preview loaded: \(events.count) events")
         }
     }
 }

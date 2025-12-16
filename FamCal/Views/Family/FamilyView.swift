@@ -1510,11 +1510,13 @@ struct FamilyView: View {
                 guard !calendarIDs.isEmpty else { continue }
 
                 // Fetch events for this member
-                let upcomingEvents = await CalendarManager.shared.fetchNextEventsAsync(
+                let startDate = Calendar.current.date(byAdding: .day, value: -appSettingsManager.eventsPastDays, to: Date()) ?? Date()
+                let endDate = Calendar.current.date(byAdding: .day, value: appSettingsManager.eventsFutureDays, to: Date()) ?? Date()
+
+                let upcomingEvents = await CalendarManager.shared.fetchEventsAsync(
                     for: Array(calendarIDs),
-                    limit: 0, // Unlimited so we don't miss future events
-                    pastDays: appSettingsManager.eventsPastDays,
-                    futureDays: appSettingsManager.eventsFutureDays
+                    startDate: startDate,
+                    endDate: endDate
                 )
 
                 // Convert to EventItem and expand recurring events

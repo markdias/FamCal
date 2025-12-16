@@ -32,6 +32,8 @@ class SupabaseDataManager: ObservableObject {
     private var networkMonitor: NWPathMonitor?
     private var wasOffline = false
     private var hasHydratedFromCache = false
+    private var wasPreviouslyAuthenticated = false
+    private var lastSmartFetchAt: Date?
 
     // Persist last authenticated user ID to prevent false "different user" detection on app restart
     private var lastAuthenticatedUserId: String? {
@@ -56,19 +58,29 @@ class SupabaseDataManager: ObservableObject {
         authManager.$isAuthenticated
             .combineLatest(authManager.$userId)
             .sink { [weak self] (isAuthenticated, userId) in
+                guard let self else { return }
+
                 if isAuthenticated {
                     Task { @MainActor in
+                        // We can only make comparisons once we have a userId
+                        guard let userId else {
+                            print("⚠️ Authenticated state received without userId - skipping fetch")
+                            return
+                        }
+
+                        self.wasPreviouslyAuthenticated = true
+
                         // Check if this is a different user than the last one
-                        let isDifferentUser = self?.lastAuthenticatedUserId != nil && self?.lastAuthenticatedUserId != userId
+                        let isDifferentUser = self.lastAuthenticatedUserId != nil && self.lastAuthenticatedUserId != userId
 
                         if isDifferentUser {
                             print("ℹ️ Different user detected, clearing previous user's data...")
                             // Clear previous user's data before fetching new user's data
-                            self?.clearData()
+                            self.clearData()
 
                             // Clear CoreData and sync metadata
-                            if let context = self?.managedObjectContext {
-                                self?.clearAllLocalData()
+                            if let context = self.managedObjectContext {
+                                self.clearAllLocalData()
 
                                 // Clear sync metadata so data is fetched fresh
                                 SyncMetadataManager.shared.clearAllMetadata(context: context)
@@ -78,17 +90,21 @@ class SupabaseDataManager: ObservableObject {
                         }
 
                         // Update the last authenticated user ID
-                        self?.lastAuthenticatedUserId = userId
+                        self.lastAuthenticatedUserId = userId
 
                         print("ℹ️ Authentication state changed to authenticated, attempting to fetch data...")
                         // Fetch authenticated user's data (with change detection, won't refetch if not needed)
-                        await self?.fetchUserData()
+                        await self.fetchUserData()
                     }
                 } else {
+                    // Avoid clearing on the initial "not authenticated" emission during session restoration
+                    guard self.wasPreviouslyAuthenticated else { return }
+
                     Task { @MainActor in
                         print("ℹ️ User logged out, clearing data...")
-                        self?.clearData()
-                        self?.lastAuthenticatedUserId = nil
+                        self.clearData()
+                        self.lastAuthenticatedUserId = nil
+                        self.wasPreviouslyAuthenticated = false
                     }
                 }
             }
@@ -163,6 +179,13 @@ class SupabaseDataManager: ObservableObject {
     /// This is the primary method to use for background syncing with change detection
     @MainActor
     func fetchUserDataIfNeeded(force: Bool = false) async {
+        let now = Date()
+        if !force, let last = lastSmartFetchAt, now.timeIntervalSince(last) < 5 {
+            print("ℹ️ Skipping fetchUserDataIfNeeded: last smart fetch ran \(Int(now.timeIntervalSince(last)))s ago")
+            return
+        }
+        lastSmartFetchAt = now
+
         guard let context = managedObjectContext else {
             print("⚠️ CoreData context not available for change detection")
             return

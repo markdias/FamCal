@@ -145,6 +145,16 @@ struct AppSettingsView: View {
     private var secondaryTextColor: Color { theme.textSecondary }
     private var toggleColor: Color { theme.accentGradient?.colors.first ?? theme.accentColor }
 
+    private var expandedMonthViewBinding: Binding<Bool> {
+        Binding(
+            get: { appSettingsManager.expandedMonthView },
+            set: {
+                appSettingsManager.expandedMonthView = $0
+                Task { await appSettingsManager.saveSettings() }
+            }
+        )
+    }
+
     var body: some View {
         NavigationView {
             ZStack {
@@ -364,6 +374,20 @@ struct AppSettingsView: View {
                                 }
                                 .buttonStyle(.plain)
 
+                                Divider().padding(.leading, 16)
+                                
+                                Divider().padding(.leading, 16)
+                                
+                                settingCard(
+                                    title: "Expanded Month View",
+                                    subtitle: "Expand grid and hide event list",
+                                    picker: AnyView(
+                                        Toggle("", isOn: expandedMonthViewBinding)
+                                            .labelsHidden()
+                                            .tint(theme.accentColor)
+                                    )
+                                )
+                                
                                 Divider().padding(.leading, 16)
                                 
                                 settingCard(

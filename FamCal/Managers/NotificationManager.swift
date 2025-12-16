@@ -45,6 +45,8 @@ class NotificationManager: NSObject, ObservableObject {
     private let morningBriefTimeKey = "morningBriefTime"
     private let selectedMembersKey = "selectedMembersForNotifications"
     private let selectedCalendarsKey = "selectedCalendarsForNotifications"
+    private var isSyncingNotifications = false
+    private var lastNotificationSyncDate: Date?
 
     private func log(_ message: String) {
         guard verboseLogging else { return }
@@ -166,7 +168,29 @@ class NotificationManager: NSObject, ObservableObject {
     }
 
     /// Sync notifications for all calendar events that have alerts
+    /// Confined to MainActor because EKEventStore is not thread-safe.
+    @MainActor
     func syncCalendarNotifications() async {
+        let now = Date()
+
+        // Prevent concurrent/duplicate syncs triggered by multiple lifecycle events on app launch
+        if isSyncingNotifications {
+            print("ℹ️ Notification sync already in progress - skipping duplicate call")
+            return
+        }
+
+        if let lastSync = lastNotificationSyncDate, now.timeIntervalSince(lastSync) < 60 {
+            let seconds = Int(now.timeIntervalSince(lastSync))
+            print("ℹ️ Notification sync ran \(seconds)s ago - skipping redundant sync")
+            return
+        }
+
+        isSyncingNotifications = true
+        defer {
+            isSyncingNotifications = false
+            lastNotificationSyncDate = Date()
+        }
+
         guard await ensureNotificationPermission() else {
             print("⚠️ Cannot sync calendar notifications - no permission")
             return
@@ -239,14 +263,12 @@ class NotificationManager: NSObject, ObservableObject {
             let notificationId = "\(event.eventIdentifier ?? "")_\(dateString)"
 
             if existingIdentifiers.contains(notificationId) {
-                print("⏭️ Skipping '\(eventTitle)' on \(event.startDate.formatted(date: .abbreviated, time: .shortened)) - notification already scheduled")
                 skippedCount += 1
                 continue
             }
 
             // Only schedule if event has alarms
             guard let alarms = event.alarms, !alarms.isEmpty else {
-                print("⏭️ Skipping '\(eventTitle)' - no alarms set")
                 skippedCount += 1
                 continue
             }
@@ -560,6 +582,7 @@ class NotificationManager: NSObject, ObservableObject {
         }
     }
 
+    @MainActor
     private func fetchCalendarOwners() -> [String: CalendarOwnerInfo] {
         let context = PersistenceController.shared.container.viewContext
         var lookup: [String: CalendarOwnerInfo] = [:]
@@ -620,6 +643,7 @@ class NotificationManager: NSObject, ObservableObject {
         return lookup
     }
 
+    @MainActor
     func fetchMorningBriefEvents() -> [MorningBriefEvent] {
         let appSettings = AppSettingsManager.shared
 
@@ -831,16 +855,15 @@ class NotificationManager: NSObject, ObservableObject {
 
     // MARK: - Morning Brief
 
+    @MainActor
     func scheduleMorningBrief(withEvents events: [MorningBriefEvent] = []) {
-        Task {
+        Task { @MainActor in
             // Sync with app settings so toggles in UI take effect here
             let appSettings = AppSettingsManager.shared
-            await MainActor.run {
-                notificationsEnabled = appSettings.notificationsEnabled
-                morningBriefEnabled = appSettings.morningBriefEnabled
-                morningBriefTime = TimeComponents(hour: appSettings.morningBriefTimeHour, minute: appSettings.morningBriefTimeMinute)
-                saveSettings()
-            }
+            notificationsEnabled = appSettings.notificationsEnabled
+            morningBriefEnabled = appSettings.morningBriefEnabled
+            morningBriefTime = TimeComponents(hour: appSettings.morningBriefTimeHour, minute: appSettings.morningBriefTimeMinute)
+            saveSettings()
 
             print("📋 scheduleMorningBrief() called")
             print("   notificationsEnabled: \(notificationsEnabled)")

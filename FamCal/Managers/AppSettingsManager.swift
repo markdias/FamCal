@@ -34,6 +34,7 @@ class AppSettingsManager: ObservableObject {
     // Calendar View Display Settings
     @Published var calendarEventsDensityMode: String = AppGroupDefaults.shared.string(forKey: "calendarEventsDensityMode") ?? "detailed"
     @Published var calendarCellLayoutMode: String = AppGroupDefaults.shared.string(forKey: "calendarCellLayoutMode") ?? "dots" // dots, option1, option2, option3, option4
+    @Published var expandedMonthView: Bool = AppGroupDefaults.shared.object(forKey: "expandedMonthView") as? Bool ?? false
 
     // Notification Settings - Initialize from UserDefaults
     @Published var notificationsEnabled: Bool = AppGroupDefaults.shared.object(forKey: "notificationsEnabled") as? Bool ?? false
@@ -81,6 +82,7 @@ class AppSettingsManager: ObservableObject {
         "compactViewStyle",
         "calendarEventsDensityMode",
         "calendarCellLayoutMode",
+        "expandedMonthView",
         "notificationsEnabled",
         "morningBriefEnabled",
         "morningBriefTimeHour",
@@ -276,6 +278,9 @@ class AppSettingsManager: ObservableObject {
         if let value = defaults.string(forKey: "calendarCellLayoutMode") {
             calendarCellLayoutMode = value
         }
+        if defaults.object(forKey: "expandedMonthView") != nil {
+            expandedMonthView = defaults.bool(forKey: "expandedMonthView")
+        }
         if defaults.object(forKey: "notificationsEnabled") != nil {
             notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
         }
@@ -347,6 +352,7 @@ class AppSettingsManager: ObservableObject {
         defaults.set(compactViewStyle, forKey: "compactViewStyle")
         defaults.set(calendarEventsDensityMode, forKey: "calendarEventsDensityMode")
         defaults.set(calendarCellLayoutMode, forKey: "calendarCellLayoutMode")
+        defaults.set(expandedMonthView, forKey: "expandedMonthView")
         defaults.set(notificationsEnabled, forKey: "notificationsEnabled")
         defaults.set(morningBriefEnabled, forKey: "morningBriefEnabled")
         defaults.set(morningBriefTimeHour, forKey: "morningBriefTimeHour")
@@ -492,6 +498,9 @@ class AppSettingsManager: ObservableObject {
         if case .string(let value) = dict["calendarCellLayoutMode"] {
             calendarCellLayoutMode = value
         }
+        if case .bool(let value) = dict["expandedMonthView"] {
+            expandedMonthView = value
+        }
 
         // Notification Settings
         if case .bool(let value) = dict["notificationsEnabled"] {
@@ -597,6 +606,7 @@ class AppSettingsManager: ObservableObject {
         compactViewStyle = "option1"
         calendarEventsDensityMode = "detailed"
         calendarCellLayoutMode = "dots"
+        expandedMonthView = false
 
         notificationsEnabled = false
         morningBriefEnabled = false
@@ -641,6 +651,7 @@ class AppSettingsManager: ObservableObject {
             "compactViewStyle": .string(compactViewStyle),
             "calendarEventsDensityMode": .string(calendarEventsDensityMode),
             "calendarCellLayoutMode": .string(calendarCellLayoutMode),
+            "expandedMonthView": .bool(expandedMonthView),
 
             // Notification Settings
             "notificationsEnabled": .bool(notificationsEnabled),
@@ -719,6 +730,7 @@ class AppSettingsManager: ObservableObject {
                 if let value = cached.calendarCellLayoutMode {
                     calendarCellLayoutMode = value
                 }
+                expandedMonthView = cached.expandedMonthView
                 }
             } catch {
                 print("⚠️ Failed to load compact view settings from CoreData: \(error)")
@@ -745,6 +757,7 @@ class AppSettingsManager: ObservableObject {
                 existing.compactViewStyle = self.compactViewStyle
                 existing.calendarEventsDensityMode = self.calendarEventsDensityMode
                 existing.calendarCellLayoutMode = self.calendarCellLayoutMode
+                existing.expandedMonthView = self.expandedMonthView
                 existing.modifiedAt = Date()
 
                 if existing.id == nil {

@@ -118,6 +118,7 @@
         <attribute name="compactViewStyle" optional="YES" attributeType="String"/>
         <attribute name="calendarEventsDensityMode" optional="YES" attributeType="String"/>
         <attribute name="calendarCellLayoutMode" optional="YES" attributeType="String"/>
+        <attribute name="expandedMonthView" optional="YES" attributeType="Boolean" usesScalarValueType="YES" defaultValue="NO"/>
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
     <entity name="Checklist" representedClassName="Checklist" syncable="YES" codeGenerationType="class">
