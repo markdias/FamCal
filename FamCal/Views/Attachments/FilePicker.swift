@@ -74,7 +74,21 @@ struct FilePicker: UIViewControllerRepresentable {
                 // Start accessing the security-scoped resource
                 if url.startAccessingSecurityScopedResource() {
                     defer { url.stopAccessingSecurityScopedResource() }
-                    onFilePicked(url)
+
+                    // Make a copy to the app's Documents directory while we have access
+                    let fileManager = FileManager.default
+                    let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let destinationURL = documentsURL.appendingPathComponent(url.lastPathComponent)
+
+                    do {
+                        // Remove existing file if it exists
+                        try? fileManager.removeItem(at: destinationURL)
+                        // Copy the file
+                        try fileManager.copyItem(at: url, to: destinationURL)
+                        onFilePicked(destinationURL)
+                    } catch {
+                        print("❌ Error copying file: \(error)")
+                    }
                 }
             }
             dismiss()
