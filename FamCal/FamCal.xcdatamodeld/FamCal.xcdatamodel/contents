@@ -155,6 +155,21 @@
         <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="createdBy" optional="YES" attributeType="String"/>
     </entity>
+    <entity name="Attachment" representedClassName="Attachment" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="String"/>
+        <attribute name="userId" optional="YES" attributeType="String"/>
+        <attribute name="familyId" optional="YES" attributeType="String"/>
+        <attribute name="eventIdentifier" optional="YES" attributeType="String"/>
+        <attribute name="fileName" optional="YES" attributeType="String"/>
+        <attribute name="fileSize" optional="YES" attributeType="Integer 32" usesScalarValueType="YES" defaultValue="0"/>
+        <attribute name="fileType" optional="YES" attributeType="String"/>
+        <attribute name="storagePath" optional="YES" attributeType="String"/>
+        <attribute name="uploadedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="uploadedBy" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="modifiedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    </entity>
     <elements>
         <element name="Item" positionX="-63" positionY="-18" width="128" height="44"/>
         <element name="FamilyMember" positionX="126" positionY="-18" width="128" height="194"/>
@@ -171,5 +186,6 @@
         <element name="Checklist" positionX="936" positionY="-18" width="128" height="149"/>
         <element name="ChecklistItem" positionX="1026" positionY="-18" width="128" height="209"/>
         <element name="Note" positionX="1116" positionY="-18" width="128" height="134"/>
+        <element name="Attachment" positionX="1206" positionY="-18" width="128" height="209"/>
     </elements>
 </model>

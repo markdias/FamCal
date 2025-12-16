@@ -147,6 +147,8 @@ struct FamCalProView: View {
         Feature(title: "Family members", freeValue: "2", proValue: "Unlimited", isBoolean: false),
         Feature(title: "Spotlight events", freeValue: "5", proValue: "15", isBoolean: false),
         Feature(title: "Shared calendars", freeValue: "1", proValue: "Unlimited", isBoolean: false),
+        Feature(title: "Storage", freeValue: "25 MB", proValue: "250 MB", isBoolean: false),
+        Feature(title: "Attachments", freeValue: "—", proValue: "✓", isBoolean: true),
         Feature(title: "Themes", freeValue: "—", proValue: "✓", isBoolean: true),
         Feature(title: "Widgets", freeValue: "—", proValue: "✓", isBoolean: true),
         Feature(title: "Saved places", freeValue: "—", proValue: "✓", isBoolean: true),

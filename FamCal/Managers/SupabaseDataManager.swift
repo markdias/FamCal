@@ -21,6 +21,7 @@ class SupabaseDataManager: ObservableObject {
     @MainActor @Published var drivers: [DriverDTO] = []
     @MainActor @Published var savedAddresses: [SavedAddressDTO] = []
     @MainActor @Published var memberLinkedEmails: [UUID: String] = [:]
+    @MainActor @Published var eventAttachments: [String: [AttachmentViewModel]] = [:]
     @MainActor @Published var isLoading = false
     @MainActor @Published var errorMessage: String?
 
@@ -2080,5 +2081,180 @@ class SupabaseDataManager: ObservableObject {
         } catch {
             print("❌ Error fetching items for diagnostics: \(error)")
         }
+    }
+
+    // MARK: - Event Attachments
+
+    /// Fetch attachments for a specific event
+    @MainActor
+    func fetchEventAttachments(eventIdentifier: String) async {
+        guard let familyId = appSettingsManager.familyId else {
+            print("⚠️ No family ID available for fetching attachments")
+            return
+        }
+
+        do {
+            let attachmentDTOs = try await supabaseManager.getEventAttachments(
+                eventIdentifier: eventIdentifier,
+                familyId: familyId
+            )
+
+            let userId = authManager.userId
+            let viewModels = attachmentDTOs.map { dto in
+                AttachmentViewModel(from: dto, canDelete: dto.user_id == userId)
+            }
+
+            self.eventAttachments[eventIdentifier] = viewModels
+            print("✅ Fetched \(viewModels.count) attachments for event: \(eventIdentifier)")
+        } catch {
+            print("⚠️ Error fetching attachments: \(error)")
+        }
+    }
+
+    /// Upload attachment to Supabase
+    @MainActor
+    func uploadAttachment(
+        fileURL: URL,
+        eventIdentifier: String,
+        fileName: String
+    ) async throws -> AttachmentViewModel {
+        guard let familyId = appSettingsManager.familyId else {
+            throw AttachmentError.validationError("No family ID available")
+        }
+
+        guard let userId = authManager.userId else {
+            throw AttachmentError.unauthorized
+        }
+
+        // Validate file
+        let fileResult = AttachmentFileTypeValidator.isValidFile(at: fileURL)
+        guard case .success = fileResult else {
+            if case .failure(let error) = fileResult {
+                throw error
+            }
+            throw AttachmentError.invalidFileType
+        }
+
+        // Check file size
+        let fileSize: Int
+        do {
+            let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            fileSize = fileAttributes[.size] as? Int ?? 0
+        } catch {
+            throw AttachmentError.validationError("Could not determine file size")
+        }
+
+        // Check quota
+        let quota = appSettingsManager.getStorageQuota()
+        if !quota.canUpload(fileSize: fileSize) {
+            throw AttachmentError.quotaExceeded(
+                used: quota.usedBytes,
+                limit: quota.limitBytes
+            )
+        }
+
+        // Determine MIME type
+        let mimeType = AttachmentFileTypeValidator.mimeTypeForExtension(fileURL.pathExtension)
+            ?? "application/octet-stream"
+
+        // Upload file to storage
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let storagePath = "\(familyId)/\(eventIdentifier)/\(userId)_\(timestamp)_\(fileName)"
+
+        do {
+            let fileData = try Data(contentsOf: fileURL)
+            try await supabaseManager.uploadFileToStorage(
+                fileData: fileData,
+                storagePath: storagePath
+            )
+        } catch {
+            throw AttachmentError.uploadFailed(error.localizedDescription)
+        }
+
+        // Save metadata to database
+        do {
+            try await supabaseManager.uploadAttachmentMetadata(
+                userId: userId,
+                familyId: familyId,
+                eventIdentifier: eventIdentifier,
+                fileName: fileName,
+                fileSize: fileSize,
+                fileMimeType: mimeType,
+                storagePath: storagePath
+            )
+        } catch {
+            // If metadata save fails, delete the uploaded file
+            _ = try? await supabaseManager.deleteFileFromStorage(storagePath: storagePath)
+            throw AttachmentError.uploadFailed("Failed to save attachment metadata")
+        }
+
+        // Update local cache and storage usage
+        appSettingsManager.updateAttachmentStorageUsed(
+            newValue: appSettingsManager.attachmentStorageUsed + fileSize
+        )
+
+        // Create and cache view model
+        let response = AttachmentResponseDTO(
+            id: UUID().uuidString,
+            user_id: userId,
+            family_id: familyId,
+            event_identifier: eventIdentifier,
+            file_name: fileName,
+            file_size: fileSize,
+            file_type: mimeType,
+            storage_path: storagePath,
+            uploaded_at: ISO8601DateFormatter().string(from: Date()),
+            uploaded_by: userId,
+            created_at: ISO8601DateFormatter().string(from: Date()),
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
+
+        let viewModel = AttachmentViewModel(from: response, canDelete: true)
+
+        if self.eventAttachments[eventIdentifier] == nil {
+            self.eventAttachments[eventIdentifier] = []
+        }
+        self.eventAttachments[eventIdentifier]?.insert(viewModel, at: 0)
+
+        print("✅ Attachment uploaded successfully: \(fileName)")
+        return viewModel
+    }
+
+    /// Delete attachment from Supabase
+    @MainActor
+    func deleteAttachment(attachmentId: String, eventIdentifier: String) async throws {
+        do {
+            try await supabaseManager.deleteAttachment(attachmentId: attachmentId)
+
+            // Remove from cache
+            self.eventAttachments[eventIdentifier]?.removeAll { $0.id == attachmentId }
+
+            print("✅ Attachment deleted: \(attachmentId)")
+        } catch {
+            throw error
+        }
+    }
+
+    /// Download attachment file data
+    @MainActor
+    func downloadAttachment(storagePath: String) async throws -> Data {
+        do {
+            let data = try await supabaseManager.downloadFileFromStorage(storagePath: storagePath)
+            return data
+        } catch {
+            throw AttachmentError.downloadFailed(error.localizedDescription)
+        }
+    }
+
+    /// Get attachments for an event (from cache if available)
+    @MainActor
+    func getEventAttachments(_ eventIdentifier: String) -> [AttachmentViewModel] {
+        return eventAttachments[eventIdentifier] ?? []
+    }
+
+    /// Clear attachment cache
+    @MainActor
+    func clearAttachmentCache() {
+        eventAttachments.removeAll()
     }
 }

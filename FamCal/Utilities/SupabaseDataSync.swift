@@ -643,4 +643,117 @@ class SupabaseDataSync {
             return String(name.prefix(2)).uppercased()
         }
     }
+
+    // MARK: - Event Attachments Sync
+
+    /// Sync attachments to Core Data for offline availability
+    func syncAttachmentsFromSupabase(
+        supabaseAttachments: [AttachmentResponseDTO],
+        eventIdentifier: String,
+        to context: NSManagedObjectContext
+    ) {
+        do {
+            // Build set of Supabase attachment IDs for quick lookup
+            let supabaseIds = Set(supabaseAttachments.map { $0.id })
+
+            // Fetch existing attachments for this event
+            let fetchRequest: NSFetchRequest<Attachment> = Attachment.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventIdentifier)
+            let existingAttachments = try context.fetch(fetchRequest)
+
+            // Delete attachments no longer in Supabase
+            for existingAttachment in existingAttachments {
+                if let attachmentId = existingAttachment.id, !supabaseIds.contains(attachmentId) {
+                    context.delete(existingAttachment)
+                }
+            }
+
+            // Create or update attachments from Supabase
+            for supabaseDTO in supabaseAttachments {
+                let fetchRequest: NSFetchRequest<Attachment> = Attachment.fetchRequest()
+                fetchRequest.predicate = NSPredicate(format: "id == %@", supabaseDTO.id)
+                let matches = try context.fetch(fetchRequest)
+
+                let attachment: Attachment
+                if let existing = matches.first {
+                    attachment = existing
+                } else {
+                    attachment = Attachment(context: context)
+                    attachment.id = supabaseDTO.id
+                }
+
+                // Update all fields
+                attachment.userId = supabaseDTO.user_id
+                attachment.familyId = supabaseDTO.family_id
+                attachment.eventIdentifier = supabaseDTO.event_identifier
+                attachment.fileName = supabaseDTO.file_name
+                attachment.fileSize = Int32(supabaseDTO.file_size)
+                attachment.fileType = supabaseDTO.file_type
+                attachment.storagePath = supabaseDTO.storage_path
+                attachment.uploadedBy = supabaseDTO.uploaded_by
+                attachment.uploadedAt = ISO8601DateFormatter().date(from: supabaseDTO.uploaded_at) ?? Date()
+                attachment.createdAt = ISO8601DateFormatter().date(from: supabaseDTO.created_at) ?? Date()
+                attachment.updatedAt = ISO8601DateFormatter().date(from: supabaseDTO.updated_at) ?? Date()
+                attachment.modifiedAt = Date()
+            }
+
+            try context.save()
+            print("✅ Synced \(supabaseAttachments.count) attachments for event: \(eventIdentifier)")
+        } catch {
+            print("❌ Error syncing attachments to Core Data: \(error)")
+        }
+    }
+
+    /// Fetch cached attachments from Core Data
+    func fetchAttachmentsFromCache(
+        eventIdentifier: String,
+        from context: NSManagedObjectContext
+    ) -> [Attachment]? {
+        do {
+            let fetchRequest: NSFetchRequest<Attachment> = Attachment.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "eventIdentifier == %@", eventIdentifier)
+            fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Attachment.uploadedAt, ascending: false)]
+
+            let attachments = try context.fetch(fetchRequest)
+            return attachments.isEmpty ? nil : attachments
+        } catch {
+            print("❌ Error fetching attachments from Core Data: \(error)")
+            return nil
+        }
+    }
+
+    /// Delete attachment from Core Data cache
+    func deleteAttachmentFromCache(
+        attachmentId: String,
+        from context: NSManagedObjectContext
+    ) {
+        do {
+            let fetchRequest: NSFetchRequest<Attachment> = Attachment.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", attachmentId)
+            let attachments = try context.fetch(fetchRequest)
+
+            for attachment in attachments {
+                context.delete(attachment)
+            }
+
+            try context.save()
+            print("✅ Attachment deleted from Core Data cache: \(attachmentId)")
+        } catch {
+            print("❌ Error deleting attachment from Core Data: \(error)")
+        }
+    }
+
+    /// Clear all attachment cache for offline cleanup
+    func clearAttachmentCache(from context: NSManagedObjectContext) {
+        do {
+            let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Attachment.fetchRequest()
+            let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+
+            try context.execute(deleteRequest)
+            try context.save()
+            print("✅ Attachment cache cleared")
+        } catch {
+            print("❌ Error clearing attachment cache: \(error)")
+        }
+    }
 }

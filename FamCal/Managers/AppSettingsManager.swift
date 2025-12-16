@@ -64,6 +64,10 @@ class AppSettingsManager: ObservableObject {
     @Published var hasCompletedFamilySetup: Bool = UserDefaults.standard.bool(forKey: "hasCompletedFamilySetup")
     @Published var familyId: String? = UserDefaults.standard.string(forKey: "com.famcal.familyId")
 
+    // Storage Quota - Attachment storage limits
+    @Published var attachmentStorageUsed: Int = 0
+    @Published var attachmentStorageLimit: Int = 0
+
     let supabaseManager: SupabaseManager
     let authManager: SupabaseAuthManager
     private let settingKeys: Set<String> = [
@@ -144,6 +148,19 @@ class AppSettingsManager: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in
                 self?.startAutoRefreshTimer()
+            }
+            .store(in: &cancellables)
+
+        // Initialize storage limit based on pro status and sync when it changes
+        attachmentStorageLimit = isProUser ? 250 * 1024 * 1024 : 25 * 1024 * 1024
+        $isProUser
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isProUser in
+                guard let self else { return }
+                let newLimit = isProUser ? 250 * 1024 * 1024 : 25 * 1024 * 1024
+                self.attachmentStorageLimit = newLimit
+                self.persistAttachmentLimits()
             }
             .store(in: &cancellables)
     }
@@ -781,5 +798,68 @@ class AppSettingsManager: ObservableObject {
 
     var maxSharedCalendarsAllowed: Int {
         isProUser ? Int.max : 1
+    }
+
+    // MARK: - Storage Quota Management
+
+    /// Get current storage quota for the user
+    func getStorageQuota() -> StorageQuota {
+        return StorageQuota(usedBytes: attachmentStorageUsed, limitBytes: attachmentStorageLimit)
+    }
+
+    /// Update attachment storage used from Supabase
+    @MainActor
+    func updateAttachmentStorageUsed(newValue: Int) {
+        self.attachmentStorageUsed = newValue
+    }
+
+    /// Refresh attachment storage usage from Supabase
+    @MainActor
+    func refreshAttachmentStorageUsage() async {
+        guard let userId = authManager.userId else { return }
+
+        do {
+            let storageUsed = try await supabaseManager.getAttachmentStorageUsed(userId: userId)
+            self.attachmentStorageUsed = storageUsed
+            print("✅ Attachment storage usage updated: \(AttachmentViewModel.formatFileSize(storageUsed))")
+        } catch {
+            print("⚠️ Failed to refresh attachment storage usage: \(error)")
+        }
+    }
+
+    /// Check if file can be uploaded based on storage quota
+    func canUploadFile(fileSize: Int) -> Bool {
+        let quota = getStorageQuota()
+        return quota.canUpload(fileSize: fileSize)
+    }
+
+    /// Get remaining storage space in bytes
+    var remainingStorageBytes: Int {
+        getStorageQuota().availableBytes
+    }
+
+    /// Get storage usage percentage (0-100)
+    var storageUsagePercentage: Double {
+        getStorageQuota().percentageUsed * 100
+    }
+
+    /// Check if storage quota is exceeded
+    var isStorageQuotaExceeded: Bool {
+        getStorageQuota().isExceeded
+    }
+
+    private func persistAttachmentLimits() {
+        UserDefaults.standard.set(attachmentStorageLimit, forKey: "attachmentStorageLimit")
+        UserDefaults.standard.set(attachmentStorageUsed, forKey: "attachmentStorageUsed")
+    }
+
+    /// Load stored attachment limits from UserDefaults
+    func loadAttachmentLimits() {
+        if let limit = UserDefaults.standard.value(forKey: "attachmentStorageLimit") as? Int {
+            attachmentStorageLimit = limit
+        }
+        if let used = UserDefaults.standard.value(forKey: "attachmentStorageUsed") as? Int {
+            attachmentStorageUsed = used
+        }
     }
 }

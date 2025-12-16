@@ -914,19 +914,24 @@ struct EventDetailView: View {
         }
     }
 
+    private var eventDetailsContent: some View {
+        VStack(spacing: 14) {
+            titleCard
+            quickActionsCard
+            checklistSection
+            AttachmentsCard(eventIdentifier: event.id)
+            linkedCalendarsCompact
+            mapSection
+            deleteButton
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 14) {
-                    titleCard
-                    quickActionsCard
-                    checklistSection
-                    linkedCalendarsCompact
-                    mapSection
-                    deleteButton
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                eventDetailsContent
             }
             .background(Color(.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)

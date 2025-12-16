@@ -2232,6 +2232,175 @@ class SupabaseManager: @unchecked Sendable {
 
         print("✅ Note deleted from Supabase")
     }
+
+    // MARK: - Event Attachments
+
+    /// Upload attachment metadata to Supabase database
+    func uploadAttachmentMetadata(
+        userId: String,
+        familyId: String,
+        eventIdentifier: String,
+        fileName: String,
+        fileSize: Int,
+        fileMimeType: String,
+        storagePath: String
+    ) async throws {
+        let dto = AttachmentUploadDTO(
+            user_id: userId,
+            family_id: familyId,
+            event_identifier: eventIdentifier,
+            file_name: fileName,
+            file_size: fileSize,
+            file_type: fileMimeType,
+            storage_path: storagePath,
+            uploaded_by: userId
+        )
+
+        let token = await MainActor.run { authManager.accessToken }
+        let (_, statusCode) = try await makeRequest(
+            "POST",
+            path: "rest/v1/event_attachments",
+            body: dto,
+            userToken: token
+        )
+
+        guard statusCode == 201 else {
+            throw AttachmentError.uploadFailed("HTTP \(statusCode)")
+        }
+
+        print("✅ Attachment metadata saved to Supabase: \(fileName)")
+    }
+
+    /// Get all attachments for a specific event
+    func getEventAttachments(eventIdentifier: String, familyId: String) async throws -> [AttachmentResponseDTO] {
+        let token = await MainActor.run { authManager.accessToken }
+        let queryItems = [
+            URLQueryItem(name: "event_identifier", value: "eq.\(eventIdentifier)"),
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "order", value: "uploaded_at.desc")
+        ]
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/event_attachments",
+            queryItems: queryItems,
+            userToken: token
+        )
+
+        guard statusCode == 200 else {
+            throw AttachmentError.downloadFailed("HTTP \(statusCode)")
+        }
+
+        let decoder = JSONDecoder()
+        let attachments = try decoder.decode([AttachmentResponseDTO].self, from: data)
+        return attachments
+    }
+
+    /// Delete attachment from Supabase database and storage
+    func deleteAttachment(attachmentId: String) async throws {
+        let token = await MainActor.run { authManager.accessToken }
+        let (_, statusCode) = try await makeRequest(
+            "DELETE",
+            path: "rest/v1/event_attachments?id=eq.\(attachmentId)",
+            userToken: token
+        )
+
+        guard statusCode == 204 else {
+            throw AttachmentError.deleteFailed("HTTP \(statusCode)")
+        }
+
+        print("✅ Attachment deleted from Supabase: \(attachmentId)")
+    }
+
+    /// Upload file data to Supabase Storage
+    func uploadFileToStorage(
+        fileData: Data,
+        storagePath: String
+    ) async throws {
+        let token = await MainActor.run { authManager.accessToken }
+        var request = URLRequest(url: supabaseURL.appendingPathComponent("storage/v1/object/event-attachments/\(storagePath)"))
+        request.httpMethod = "POST"
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token ?? "")", forHTTPHeaderField: "Authorization")
+        request.httpBody = fileData
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AttachmentError.uploadFailed("Invalid response")
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AttachmentError.uploadFailed("HTTP \(httpResponse.statusCode)")
+        }
+
+        print("✅ File uploaded to storage: \(storagePath)")
+    }
+
+    /// Download file from Supabase Storage
+    func downloadFileFromStorage(storagePath: String) async throws -> Data {
+        let token = await MainActor.run { authManager.accessToken }
+        var request = URLRequest(url: supabaseURL.appendingPathComponent("storage/v1/object/event-attachments/\(storagePath)"))
+        request.httpMethod = "GET"
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        if let token = token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AttachmentError.downloadFailed("Invalid response")
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AttachmentError.downloadFailed("HTTP \(httpResponse.statusCode)")
+        }
+
+        print("✅ File downloaded from storage: \(storagePath)")
+        return data
+    }
+
+    /// Delete file from Supabase Storage
+    func deleteFileFromStorage(storagePath: String) async throws {
+        let token = await MainActor.run { authManager.accessToken }
+        var request = URLRequest(url: supabaseURL.appendingPathComponent("storage/v1/object/event-attachments/\(storagePath)"))
+        request.httpMethod = "DELETE"
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        if let token = token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AttachmentError.deleteFailed("Invalid response")
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw AttachmentError.deleteFailed("HTTP \(httpResponse.statusCode)")
+        }
+
+        print("✅ File deleted from storage: \(storagePath)")
+    }
+
+    /// Get attachment storage used by user from Supabase function
+    func getAttachmentStorageUsed(userId: String) async throws -> Int {
+        let token = await MainActor.run { authManager.accessToken }
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/rpc/get_attachment_storage_used?p_user_id=\(userId)",
+            userToken: token
+        )
+
+        guard statusCode == 200 else {
+            throw AttachmentError.storageError("HTTP \(statusCode)")
+        }
+
+        let decoder = JSONDecoder()
+        let storageUsed = try decoder.decode(Int.self, from: data)
+        return storageUsed
+    }
 }
 
 // MARK: - Data Transfer Objects
