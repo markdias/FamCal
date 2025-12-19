@@ -1,4 +1,6 @@
 import SwiftUI
+import QuickLook
+import UIKit
 
 /// Main card component for displaying and managing event attachments
 struct AttachmentsCard: View {
@@ -15,6 +17,8 @@ struct AttachmentsCard: View {
     @State private var uploadError: AttachmentError?
     @State private var showUploadError = false
     @State private var isLoadingAttachments = false
+    @State private var shareURL: URL?
+    @State private var showShareSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +49,7 @@ struct AttachmentsCard: View {
                         // Upload Button
                         if appSettings.isProUser {
                             Button(action: {
+                                print("ℹ️ Showing file picker for event \(eventIdentifier)")
                                 showFilePicker = true
                             }) {
                                 Image(systemName: "plus.circle.fill")
@@ -104,11 +109,6 @@ struct AttachmentsCard: View {
                 handleFilePicked(url)
             }
         }
-        .sheet(isPresented: $showPreview) {
-            if let previewURL = previewURL {
-                AttachmentPreviewView(fileURL: previewURL)
-            }
-        }
         .alert("Upload Error", isPresented: $showUploadError, actions: {
             Button("OK", role: .cancel) {}
         }, message: {
@@ -116,22 +116,41 @@ struct AttachmentsCard: View {
                 Text(error.errorDescription ?? "Unknown error occurred")
             }
         })
+        .sheet(isPresented: $showShareSheet) {
+            if let shareURL = shareURL {
+                ShareSheet(activityItems: [shareURL])
+            }
+        }
+        .background(
+            AttachmentQuickLookPresenter(
+                isPresented: $showPreview,
+                fileURL: previewURL,
+                onDismiss: {
+                    showPreview = false
+                }
+            )
+            .allowsHitTesting(false)
+            .frame(width: 0, height: 0)
+        )
     }
 
     // MARK: - Methods
 
     private func loadAttachments() {
         isLoadingAttachments = true
+        print("ℹ️ Loading attachments for event \(eventIdentifier)")
         Task {
             await dataManager.fetchEventAttachments(eventIdentifier: eventIdentifier)
             await MainActor.run {
                 attachments = dataManager.getEventAttachments(eventIdentifier)
                 isLoadingAttachments = false
+                print("ℹ️ Attachments loaded for event \(eventIdentifier). Count: \(attachments.count)")
             }
         }
     }
 
     private func handleFilePicked(_ url: URL) {
+        print("ℹ️ File picked for upload: \(url.lastPathComponent) at \(url.path)")
         isUploading = true
 
         Task {
@@ -154,12 +173,14 @@ struct AttachmentsCard: View {
                     uploadError = error
                     showUploadError = true
                     isUploading = false
+                    print("❌ Attachment upload failed with AttachmentError: \(error.localizedDescription)")
                 }
             } catch {
                 await MainActor.run {
                     uploadError = .uploadFailed(error.localizedDescription)
                     showUploadError = true
                     isUploading = false
+                    print("❌ Attachment upload failed with unknown error: \(error.localizedDescription)")
                 }
             }
         }
@@ -169,15 +190,22 @@ struct AttachmentsCard: View {
         Task {
             do {
                 let data = try await dataManager.downloadAttachment(storagePath: attachment.storagePath)
+                print("ℹ️ Downloaded attachment data for \(attachment.fileName). Size: \(data.count) bytes")
+                if data.isEmpty {
+                    throw AttachmentError.downloadFailed("Empty file data received")
+                }
 
                 // Save to temporary location for preview
                 let tempURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent(attachment.fileName)
                 try data.write(to: tempURL)
 
+                let exists = FileManager.default.fileExists(atPath: tempURL.path)
+                print("ℹ️ Temp file for download exists: \(exists) at \(tempURL.path)")
+
                 await MainActor.run {
-                    previewURL = tempURL
-                    showPreview = true
+                    shareURL = tempURL
+                    showShareSheet = true
                 }
             } catch let error as AttachmentError {
                 await MainActor.run {
@@ -197,11 +225,22 @@ struct AttachmentsCard: View {
         Task {
             do {
                 let data = try await dataManager.downloadAttachment(storagePath: attachment.storagePath)
+                print("ℹ️ Preview download data for \(attachment.fileName). Size: \(data.count) bytes")
+                if data.isEmpty {
+                    throw AttachmentError.downloadFailed("Empty file data received")
+                }
 
                 // Save to temporary location for preview
                 let tempURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent(attachment.fileName)
                 try data.write(to: tempURL)
+
+                let exists = FileManager.default.fileExists(atPath: tempURL.path)
+                print("ℹ️ Temp file for preview exists: \(exists) at \(tempURL.path)")
+
+                guard QLPreviewController.canPreview(tempURL as QLPreviewItem) else {
+                    throw AttachmentError.downloadFailed("Cannot preview this file type")
+                }
 
                 await MainActor.run {
                     previewURL = tempURL
@@ -226,6 +265,7 @@ struct AttachmentsCard: View {
             do {
                 try await dataManager.deleteAttachment(
                     attachmentId: attachment.id,
+                    storagePath: attachment.storagePath,
                     eventIdentifier: eventIdentifier
                 )
 
@@ -338,6 +378,20 @@ struct EmptyAttachmentsView: View {
         }
         .padding(.vertical, 24)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// Share sheet for saving or sharing downloaded files
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // no-op
     }
 }
 

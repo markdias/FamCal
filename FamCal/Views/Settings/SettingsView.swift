@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var showingPersonalCalendars = false
     @State private var showingSavedPlaces = false
     @State private var showingDrivers = false
+    @State private var showingFamilyAttachments = false
     @State private var showingHelp = false
     @State private var showingOnboarding = false
     @State private var onboardingCompletedInSettings = false
@@ -152,33 +153,7 @@ struct SettingsView: View {
                                         SettingsRowView(iconName: "paintpalette", title: "Themes", showChevron: true)
                                     }
                                 } else {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "paintpalette")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(theme.accentColor)
-                                            .frame(width: 24, height: 24)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Themes")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Premium color themes")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Text("Pro")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(theme.accentColor)
-                                            .clipShape(Capsule())
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    proRow(icon: "paintpalette", title: "Themes", subtitle: "Premium color themes")
                                 }
                                 Divider().padding(.leading, 56)
 
@@ -187,33 +162,7 @@ struct SettingsView: View {
                                         SettingsRowView(iconName: "mappin.circle", title: "Saved Places", showChevron: true)
                                     }
                                 } else {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "mappin.circle")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(theme.accentColor)
-                                            .frame(width: 24, height: 24)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Saved Places")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Store favorite places")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Text("Pro")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(theme.accentColor)
-                                            .clipShape(Capsule())
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    proRow(icon: "mappin.circle", title: "Saved Places", subtitle: "Store favorite places")
                                 }
                                 Divider().padding(.leading, 56)
 
@@ -222,33 +171,7 @@ struct SettingsView: View {
                                         SettingsRowView(iconName: "car.fill", title: "Drivers", showChevron: true)
                                     }
                                 } else {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "car.fill")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(theme.accentColor)
-                                            .frame(width: 24, height: 24)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Drivers")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Pickup planning")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Text("Pro")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(theme.accentColor)
-                                            .clipShape(Capsule())
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                    proRow(icon: "car.fill", title: "Drivers", subtitle: "Pickup planning")
                                 }
                                 Divider().padding(.leading, 56)
 
@@ -257,38 +180,21 @@ struct SettingsView: View {
                                         SettingsRowView(iconName: "sparkles", title: "Widgets", showChevron: true)
                                     }
                                 } else {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "square.grid.2x2")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(theme.accentColor)
-                                            .frame(width: 24, height: 24)
+                                    proRow(icon: "square.grid.2x2", title: "Widgets", subtitle: "Add home widgets")
+                                }
+                                Divider().padding(.leading, 56)
 
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Widgets")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Add home widgets")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Text("Pro")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(theme.accentColor)
-                                            .clipShape(Capsule())
+                                if appSettingsManager.isProUser {
+                                    Button(action: { showingFamilyAttachments = true }) {
+                                        SettingsRowView(iconName: "paperclip.circle", title: "Attachments", showChevron: true)
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
+                                } else {
+                                    proRow(icon: "paperclip.circle", title: "Attachments", subtitle: "View all family attachments")
                                 }
                             }
                             .padding(.vertical, 8)
                         }
-                        
+
                         // More Section
                         VStack(alignment: .leading, spacing: 8) {
                             Text("More")
@@ -327,6 +233,18 @@ struct SettingsView: View {
                                 .padding(.horizontal, 16)
 
                             settingsContainer {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: "info.circle")
+                                        .font(.system(size: 16, weight: .semibold))
+                                        .foregroundColor(.orange)
+                                    Text("Tools below affect only this device. Use them for QA or demos—changes won't sync to other users.")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(secondaryTextColor)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+
                                 HStack(spacing: 16) {
                                     Image(systemName: "bolt.fill")
                                         .font(.system(size: 20))
@@ -353,71 +271,27 @@ struct SettingsView: View {
 
                                 Divider().padding(.leading, 56)
 
-                                Button(action: {
+                                testOnlyRow(
+                                    icon: "play.circle",
+                                    iconColor: theme.accentColor,
+                                    title: "Run Startup Workflow",
+                                    subtitle: "Replay the onboarding experience",
+                                    badge: ("Demo", theme.accentColor.opacity(0.2), theme.accentColor)
+                                ) {
                                     onboardingCompletedInSettings = false
                                     showingOnboarding = true
-                                }) {
-                                    SettingsRowView(iconName: "play.circle", title: "Run Startup Workflow")
                                 }
 
                                 Divider().padding(.leading, 56)
 
-                                Button(action: {
+                                testOnlyRow(
+                                    icon: "trash.fill",
+                                    iconColor: .red,
+                                    title: "Clear All Data",
+                                    subtitle: "Delete local cache and resync everything",
+                                    badge: ("Danger", Color.red.opacity(0.1), .red)
+                                ) {
                                     clearCoreDataAndSync()
-                                }) {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "trash.fill")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(.red)
-                                            .frame(width: 24, height: 24)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Clear All Data")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Delete local data and sync from Supabase")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
-                                }
-
-                                Divider().padding(.leading, 56)
-
-                                Button(action: {
-                                    SupabaseDataManager.shared.diagnosticCheckChecklistItems()
-                                }) {
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "stethoscope")
-                                            .font(.system(size: 20))
-                                            .foregroundColor(.blue)
-                                            .frame(width: 24, height: 24)
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Checklist Diagnostics")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(primaryTextColor)
-                                            Text("Check item-checklist relationships")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(secondaryTextColor)
-                                        }
-
-                                        Spacer()
-
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(secondaryTextColor)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
                                 }
                             }
                             .padding(.vertical, 8)
@@ -536,6 +410,15 @@ struct SettingsView: View {
                 WidgetSettingsView()
                     .environmentObject(appSettingsManager)
                     .environmentObject(themeManager)
+                    .environmentObject(dataManager)
+            }
+        }
+        .sheet(isPresented: $showingFamilyAttachments) {
+            NavigationView {
+                FamilyAttachmentsView()
+                    .environmentObject(appSettingsManager)
+                    .environmentObject(themeManager)
+                    .environmentObject(dataManager)
             }
         }
         .sheet(isPresented: $showingHelp) {
@@ -577,6 +460,83 @@ struct SettingsView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(theme.prefersDarkInterface ? 0.4 : 0.06), radius: theme.prefersDarkInterface ? 14 : 6, x: 0, y: theme.prefersDarkInterface ? 8 : 3)
         .padding(.horizontal, 16)
+    }
+
+    private func proRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(theme.accentColor)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(primaryTextColor)
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundColor(secondaryTextColor)
+            }
+
+            Spacer()
+
+            Text("Pro")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(theme.accentColor)
+                .clipShape(Capsule())
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func testOnlyRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        subtitle: String,
+        badge: (text: String, background: Color, foreground: Color)? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(iconColor)
+                    .frame(width: 24, height: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(primaryTextColor)
+                    Text(subtitle)
+                        .font(.system(size: 13))
+                        .foregroundColor(secondaryTextColor)
+                }
+
+                Spacer()
+
+                if let badge {
+                    Text(badge.text.uppercased())
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(badge.foreground)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(badge.background)
+                        )
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(secondaryTextColor)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
     }
     
     private func getDisplayName() -> String {

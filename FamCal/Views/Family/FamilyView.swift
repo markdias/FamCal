@@ -1339,8 +1339,9 @@ struct FamilyView: View {
                 currentTime = Date()
                 await dataManager.fetchUserDataIfNeeded()
                 // Refresh silently in background (no loading state flash)
+                // Let fingerprint check determine if reload is needed
                 if shouldRefreshEventsOnTimer() {
-                    loadNextEvents(showLoadingState: false, force: true)
+                    loadNextEvents(showLoadingState: false, force: false)
                 }
             }
         }
@@ -1430,7 +1431,10 @@ struct FamilyView: View {
             populateMissingCalendarIDs()
 
             // Clean up stale FamilyEvent records BEFORE loading to prevent rogue events
-            await cleanupStaleEvents()
+            // Skip if no family events exist to improve performance
+            if !familyEvents.isEmpty {
+                await cleanupStaleEvents()
+            }
 
             guard !familyMembers.isEmpty else {
                 memberEvents = []
@@ -1510,8 +1514,12 @@ struct FamilyView: View {
                 guard !calendarIDs.isEmpty else { continue }
 
                 // Fetch events for this member
-                let startDate = Calendar.current.date(byAdding: .day, value: -appSettingsManager.eventsPastDays, to: Date()) ?? Date()
-                let endDate = Calendar.current.date(byAdding: .day, value: appSettingsManager.eventsFutureDays, to: Date()) ?? Date()
+                // Use a narrower initial range for better performance - we only need enough events to display
+                // Start from a few days ago to catch in-progress multi-day events
+                let startDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+                // End 90 days in future - covers most upcoming needs while staying performant
+                // (Users can pull-to-refresh for a full sync if needed)
+                let endDate = Calendar.current.date(byAdding: .day, value: 90, to: Date()) ?? Date()
 
                 let upcomingEvents = await CalendarManager.shared.fetchEventsAsync(
                     for: Array(calendarIDs),
@@ -2014,7 +2022,8 @@ struct FamilyView: View {
         dataChangeDebounceTimer?.invalidate()
         dataChangeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
             eventStoreHasPendingChanges = true
-            loadNextEvents(showLoadingState: false, force: true)
+            // Let fingerprint check determine if reload is needed (don't force)
+            loadNextEvents(showLoadingState: false, force: false)
         }
     }
 

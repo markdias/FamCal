@@ -2244,7 +2244,7 @@ class SupabaseManager: @unchecked Sendable {
         fileSize: Int,
         fileMimeType: String,
         storagePath: String
-    ) async throws {
+    ) async throws -> AttachmentResponseDTO {
         let dto = AttachmentUploadDTO(
             user_id: userId,
             family_id: familyId,
@@ -2257,18 +2257,46 @@ class SupabaseManager: @unchecked Sendable {
         )
 
         let token = await MainActor.run { authManager.accessToken }
-        let (_, statusCode) = try await makeRequest(
+        let extraHeaders = ["Prefer": "return=representation"]
+        let (data, statusCode) = try await makeRequest(
             "POST",
             path: "rest/v1/event_attachments",
             body: dto,
-            userToken: token
+            userToken: token,
+            extraHeaders: extraHeaders
         )
 
         guard statusCode == 201 else {
+            print("❌ Attachment metadata save failed with status \(statusCode) for \(fileName)")
             throw AttachmentError.uploadFailed("HTTP \(statusCode)")
         }
 
-        print("✅ Attachment metadata saved to Supabase: \(fileName)")
+        do {
+            let decoded = try JSONDecoder().decode([AttachmentResponseDTO].self, from: data)
+            if let attachment = decoded.first {
+                print("✅ Attachment metadata saved to Supabase with id \(attachment.id)")
+                return attachment
+            }
+            print("⚠️ Attachment metadata saved but response empty, returning DTO fallback")
+        } catch {
+            print("⚠️ Attachment metadata saved but could not decode response: \(error.localizedDescription)")
+        }
+
+        // Fallback if decode fails
+        return AttachmentResponseDTO(
+            id: UUID().uuidString,
+            user_id: userId,
+            family_id: familyId,
+            event_identifier: eventIdentifier,
+            file_name: fileName,
+            file_size: fileSize,
+            file_type: fileMimeType,
+            storage_path: storagePath,
+            uploaded_at: ISO8601DateFormatter().string(from: Date()),
+            uploaded_by: userId,
+            created_at: ISO8601DateFormatter().string(from: Date()),
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
     }
 
     /// Get all attachments for a specific event
@@ -2288,6 +2316,7 @@ class SupabaseManager: @unchecked Sendable {
         )
 
         guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getEventAttachments")
             throw AttachmentError.downloadFailed("HTTP \(statusCode)")
         }
 
@@ -2296,17 +2325,69 @@ class SupabaseManager: @unchecked Sendable {
         return attachments
     }
 
-    /// Delete attachment from Supabase database and storage
-    func deleteAttachment(attachmentId: String) async throws {
+    /// Get all attachments for a family (ordered by uploaded_at desc)
+    func getFamilyAttachments(familyId: String) async throws -> [AttachmentResponseDTO] {
         let token = await MainActor.run { authManager.accessToken }
-        let (_, statusCode) = try await makeRequest(
-            "DELETE",
-            path: "rest/v1/event_attachments?id=eq.\(attachmentId)",
+        let queryItems = [
+            URLQueryItem(name: "family_id", value: "eq.\(familyId)"),
+            URLQueryItem(name: "order", value: "uploaded_at.desc")
+        ]
+
+        let (data, statusCode) = try await makeRequest(
+            "GET",
+            path: "rest/v1/event_attachments",
+            queryItems: queryItems,
             userToken: token
         )
 
-        guard statusCode == 204 else {
+        guard statusCode == 200 else {
+            logErrorResponse(data, statusCode: statusCode, operation: "getFamilyAttachments")
+            throw AttachmentError.downloadFailed("HTTP \(statusCode)")
+        }
+
+        let decoder = JSONDecoder()
+        return try decoder.decode([AttachmentResponseDTO].self, from: data)
+    }
+
+    /// Delete attachment from Supabase database and optionally its storage object
+    func deleteAttachment(attachmentId: String, storagePath: String? = nil) async throws {
+        let token = await MainActor.run { authManager.accessToken }
+        let queryItems = [URLQueryItem(name: "id", value: "eq.\(attachmentId)")]
+        let preferHeaders = ["Prefer": "return=representation"]
+        let (data, statusCode) = try await makeRequest(
+            "DELETE",
+            path: "rest/v1/event_attachments",
+            queryItems: queryItems,
+            userToken: token,
+            extraHeaders: preferHeaders
+        )
+
+        // Treat 404 as already-deleted (idempotent delete)
+        if statusCode == 404 {
+            print("ℹ️ Attachment \(attachmentId) already deleted (404), treating as success")
+        } else if statusCode == 403 {
+            logErrorResponse(data, statusCode: statusCode, operation: "deleteAttachment")
+            throw AttachmentError.deleteFailed("HTTP 403 (forbidden) for attachment \(attachmentId)")
+        } else if statusCode != 204 && statusCode != 200 {
+            logErrorResponse(data, statusCode: statusCode, operation: "deleteAttachment")
             throw AttachmentError.deleteFailed("HTTP \(statusCode)")
+        }
+
+        if !data.isEmpty {
+            if let decoded = try? JSONDecoder().decode([AttachmentResponseDTO].self, from: data) {
+                print("✅ Deleted \(decoded.count) attachment rows via Supabase for id \(attachmentId)")
+            } else if let errorString = String(data: data, encoding: .utf8) {
+                print("ℹ️ Delete returned body: \(errorString)")
+            }
+        }
+
+        // Delete storage object if provided
+        if let storagePath = storagePath {
+            do {
+                try await deleteFileFromStorage(storagePath: storagePath)
+            } catch {
+                print("⚠️ Deleted metadata but failed to delete storage object \(storagePath): \(error.localizedDescription)")
+            }
         }
 
         print("✅ Attachment deleted from Supabase: \(attachmentId)")
@@ -2322,15 +2403,24 @@ class SupabaseManager: @unchecked Sendable {
         request.httpMethod = "POST"
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(token ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.httpBody = fileData
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AttachmentError.uploadFailed("Invalid response")
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("❌ Storage upload failed for \(storagePath). HTTP \(httpResponse.statusCode): \(errorString)")
+                if httpResponse.statusCode == 403 && errorString.lowercased().contains("row-level security") {
+                    print("ℹ️ RLS hint: ensure storage path starts with the profile family_id and second segment matches user_id. Current path: \(storagePath)")
+                }
+            } else {
+                print("❌ Storage upload failed for \(storagePath) with status \(httpResponse.statusCode)")
+            }
             throw AttachmentError.uploadFailed("HTTP \(httpResponse.statusCode)")
         }
 
@@ -2354,6 +2444,11 @@ class SupabaseManager: @unchecked Sendable {
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("❌ Storage download failed for \(storagePath). HTTP \(httpResponse.statusCode): \(errorString)")
+            } else {
+                print("❌ Storage download failed for \(storagePath). HTTP \(httpResponse.statusCode)")
+            }
             throw AttachmentError.downloadFailed("HTTP \(httpResponse.statusCode)")
         }
 
@@ -2378,6 +2473,7 @@ class SupabaseManager: @unchecked Sendable {
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
+            print("❌ Storage delete failed for \(storagePath) with status \(httpResponse.statusCode)")
             throw AttachmentError.deleteFailed("HTTP \(httpResponse.statusCode)")
         }
 

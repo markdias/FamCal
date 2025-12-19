@@ -3,6 +3,7 @@ import SwiftUI
 /// Displays a single attachment row with file info and action buttons
 struct AttachmentRow: View {
     let attachment: AttachmentViewModel
+    var context: String? = nil
     let onDownload: () -> Void
     let onPreview: () -> Void
     let onDelete: () -> Void
@@ -39,6 +40,13 @@ struct AttachmentRow: View {
                         Text(attachment.uploadedAt.formatted(date: .abbreviated, time: .shortened))
                             .font(.system(.caption, design: .default))
                             .foregroundStyle(.secondary)
+                    }
+
+                    if let context = context, !context.isEmpty {
+                        Text(context)
+                            .font(.system(.caption, design: .default))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
 
@@ -119,6 +127,7 @@ struct AttachmentRow: View {
                 ),
                 canDelete: true
             ),
+            context: "Event: Trip planning",
             onDownload: {},
             onPreview: {},
             onDelete: {}

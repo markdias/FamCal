@@ -35,6 +35,7 @@ struct AttachmentResponseDTO: Codable, Identifiable {
 /// View model for displaying attachment information in UI
 struct AttachmentViewModel: Identifiable {
     let id: String
+    let eventIdentifier: String
     let fileName: String
     let fileSize: Int
     let fileSizeFormatted: String
@@ -46,6 +47,7 @@ struct AttachmentViewModel: Identifiable {
 
     init(from dto: AttachmentResponseDTO, canDelete: Bool = false) {
         self.id = dto.id
+        self.eventIdentifier = dto.event_identifier
         self.fileName = dto.file_name
         self.fileSize = dto.file_size
         self.fileSizeFormatted = Self.formatFileSize(dto.file_size)
@@ -66,25 +68,25 @@ struct AttachmentViewModel: Identifiable {
 
     /// Get icon name based on file type
     var iconName: String {
-        guard let fileType = fileType?.lowercased() else { return "doc" }
+        guard let fileType = fileType?.lowercased() else { return "doc.text" }
 
         switch fileType {
         case "application/pdf":
-            return "doc.pdf"
+            return "doc.richtext"
         case "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             return "doc.text"
         case "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
             return "tablecells"
         case "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-            return "play.square"
+            return "play.rectangle"
         case "application/vnd.apple.pages", "text/plain", "text/rtf":
             return "doc.text"
         case "application/vnd.apple.numbers":
             return "tablecells"
         case "application/vnd.apple.keynote":
-            return "play.square"
+            return "play.rectangle"
         default:
-            return "doc"
+            return "doc.text"
         }
     }
 }

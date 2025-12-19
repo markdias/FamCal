@@ -28,15 +28,15 @@ struct MainTabView: View {
         }
     }
 
-    @State private var activeView: ActiveView = .events
-    @State private var startCalendarInDayMode: Bool = false
+    @State private var activeView: ActiveView = MainTabView.initialActiveView()
+    @State private var startCalendarInDayMode: Bool = MainTabView.initialStartInDayMode()
     @State private var showingSettings = false
     @State private var showingAddEvent = false
     @State private var showingSearch = false
     @State private var showingChecklists = false
     @State private var addEventInitialDate: Date? = nil
     @State private var calendarSelectedDate: Date = Date()
-    @State private var calendarDisplayMode: CalendarView.CalendarDisplayMode = .month
+    @State private var calendarDisplayMode: CalendarView.CalendarDisplayMode = MainTabView.initialCalendarDisplayMode()
     @State private var calendarTodayTrigger = UUID()
     @State private var showingEventDetail = false
     @State private var eventToShow: UpcomingCalendarEvent?
@@ -150,15 +150,7 @@ struct MainTabView: View {
             handleOpenEventDetail(notification)
         }
         .onChange(of: appSettingsManager.defaultHomeScreenRawValue) { _, newValue in
-            let screen = DefaultHomeScreen(rawValue: newValue) ?? .family
-            startCalendarInDayMode = screen == .calendarDay
-            let targetView = MainTabView.activeView(for: screen)
-            if activeView != targetView {
-                activeView = targetView
-            }
-            if targetView == .calendar {
-                calendarDisplayMode = startCalendarInDayMode ? .day : .month
-            }
+            applyDefaultHomeScreen(screenRawValue: newValue, animated: true)
         }
     }
 
@@ -308,6 +300,37 @@ struct MainTabView: View {
             }
         }()
         switchToView(next)
+    }
+
+    private func applyDefaultHomeScreen(screenRawValue: String, animated: Bool) {
+        let screen = DefaultHomeScreen(rawValue: screenRawValue) ?? .family
+        startCalendarInDayMode = screen == .calendarDay
+        let targetView = MainTabView.activeView(for: screen)
+        if animated {
+            switchToView(targetView)
+        } else {
+            activeView = targetView
+        }
+        if targetView == .calendar {
+            calendarDisplayMode = startCalendarInDayMode ? .day : .month
+        }
+    }
+
+    private static func initialHomeScreen() -> DefaultHomeScreen {
+        let raw = AppSettingsManager.shared.defaultHomeScreenRawValue
+        return DefaultHomeScreen(rawValue: raw) ?? .family
+    }
+
+    private static func initialActiveView() -> ActiveView {
+        activeView(for: initialHomeScreen())
+    }
+
+    private static func initialStartInDayMode() -> Bool {
+        initialHomeScreen() == .calendarDay
+    }
+
+    private static func initialCalendarDisplayMode() -> CalendarView.CalendarDisplayMode {
+        initialStartInDayMode() ? .day : .month
     }
 
     private func toggleCalendarDisplayMode() {

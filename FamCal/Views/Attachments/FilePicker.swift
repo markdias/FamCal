@@ -70,31 +70,41 @@ struct FilePicker: UIViewControllerRepresentable {
         }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            print("ℹ️ Document picker returned URLs: \(urls)")
             if let url = urls.first {
                 // Start accessing the security-scoped resource
-                if url.startAccessingSecurityScopedResource() {
-                    defer { url.stopAccessingSecurityScopedResource() }
-
-                    // Make a copy to the app's Documents directory while we have access
-                    let fileManager = FileManager.default
-                    let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                    let destinationURL = documentsURL.appendingPathComponent(url.lastPathComponent)
-
-                    do {
-                        // Remove existing file if it exists
-                        try? fileManager.removeItem(at: destinationURL)
-                        // Copy the file
-                        try fileManager.copyItem(at: url, to: destinationURL)
-                        onFilePicked(destinationURL)
-                    } catch {
-                        print("❌ Error copying file: \(error)")
+                let hasAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if hasAccess {
+                        url.stopAccessingSecurityScopedResource()
                     }
+                }
+
+                if !hasAccess {
+                    print("⚠️ startAccessingSecurityScopedResource returned false for \(url) — attempting copy anyway")
+                }
+
+                // Make a copy to the app's Documents directory while we have access (or attempt if access wasn't granted)
+                let fileManager = FileManager.default
+                let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let destinationURL = documentsURL.appendingPathComponent(url.lastPathComponent)
+
+                do {
+                    // Remove existing file if it exists
+                    try? fileManager.removeItem(at: destinationURL)
+                    // Copy the file
+                    try fileManager.copyItem(at: url, to: destinationURL)
+                    print("✅ Copied selected file to sandbox: \(destinationURL.path)")
+                    onFilePicked(destinationURL)
+                } catch {
+                    print("❌ Error copying file: \(error.localizedDescription)")
                 }
             }
             dismiss()
         }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            print("ℹ️ Document picker was cancelled")
             dismiss()
         }
     }

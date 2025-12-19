@@ -94,6 +94,11 @@ struct CalendarView: View {
     @State private var tapDelayTimerMonth: Timer?
     @State private var dataChangeDebounceTimer: Timer?
     @State private var showingExpandedDayDetails = false
+
+    // Swipe gesture state for smooth month transitions
+    @State private var dragOffset: CGFloat = 0
+    @State private var isSwipingMonth = false
+
     private var externalDisplayMode: Binding<CalendarDisplayMode>?
     private var todayTrigger: Binding<UUID>?
 
@@ -245,11 +250,7 @@ struct CalendarView: View {
         .sheet(isPresented: $showingExpandedDayDetails) {
             expandedDayDetailsSheet
         }
-        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in
-            print("🔔 CalendarView: Received EKEventStoreChanged")
-            loadEvents()
-            loadAvailableCalendars()
-        }
+        // Removed duplicate EKEventStoreChanged listener (already handled at line 201-202)
         .onChange(of: calendarDisplayMode) { _, newValue in
             externalDisplayMode?.wrappedValue = newValue
         }
@@ -526,100 +527,126 @@ struct CalendarView: View {
     @ViewBuilder
     private var monthView: some View {
         if isExpandedMonth {
-            // Expanded view - with GeometryReader for dynamic sizing
+            // Expanded view - full screen carousel
             GeometryReader { geometry in
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(spacing: 0) {
-                        // Day headers (Mon ... Sun)
-                        HStack(spacing: 0) {
-                            ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
-                                Text(day)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(secondaryTextColor)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 4)
-                            }
-                        }
-                        .padding(.bottom, 2)
+                let screenWidth = geometry.size.width
 
-                        // Calendar days
-                        let availableHeight = geometry.size.height - 28
-                        let cellFixedRows = 6.0
-                        let cellHeight = (availableHeight / cellFixedRows) - 4
+                ZStack {
+                    // Carousel of months: previous, current, next
+                    HStack(alignment: .top, spacing: 0) {
+                        // Previous month
+                        monthGridView(for: getMonthOffset(by: -1), width: screenWidth, geometry: geometry, showEventDetails: false)
+                            .frame(width: screenWidth, alignment: .top)
 
-                        LazyVGrid(columns: columns, spacing: 4) {
-                            ForEach(getDaysInMonth(), id: \.self) { date in
-                                calendarDayCell(for: date, fixedHeight: cellHeight)
-                            }
-                        }
+                        // Current month
+                        monthGridView(for: currentMonth, width: screenWidth, geometry: geometry, showEventDetails: false)
+                            .frame(width: screenWidth, alignment: .top)
+
+                        // Next month
+                        monthGridView(for: getMonthOffset(by: 1), width: screenWidth, geometry: geometry, showEventDetails: false)
+                            .frame(width: screenWidth, alignment: .top)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(theme.cardBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(theme.cardStroke, lineWidth: 1)
-                    )
-                    .gesture(
+                    .offset(x: -screenWidth + dragOffset)
+                    .animation(isSwipingMonth ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: dragOffset)
+                    .simultaneousGesture(
                         DragGesture()
+                            .onChanged { value in
+                                // Only handle horizontal swipes
+                                if abs(value.translation.width) > abs(value.translation.height) {
+                                    isSwipingMonth = true
+                                    dragOffset = value.translation.width
+                                }
+                            }
                             .onEnded { value in
-                                if value.translation.width > 50 {
-                                    previousMonth()
-                                } else if value.translation.width < -50 {
-                                    nextMonth()
+                                // Only handle horizontal swipes
+                                if abs(value.translation.width) > abs(value.translation.height) {
+                                    let threshold: CGFloat = screenWidth * 0.3
+
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        if value.translation.width > threshold {
+                                            previousMonth()
+                                        } else if value.translation.width < -threshold {
+                                            nextMonth()
+                                        }
+                                        dragOffset = 0
+                                        isSwipingMonth = false
+                                    }
+                                } else {
+                                    dragOffset = 0
+                                    isSwipingMonth = false
                                 }
                             }
                     )
                 }
-            }
-        } else {
-            // Standard view - original layout (no GeometryReader)
-            VStack {
-                VStack(spacing: 8) {
-                    // Day headers (Mon ... Sun)
-                    HStack(spacing: 0) {
-                        ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
-                            Text(day)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(secondaryTextColor)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                        }
-                    }
-                    .padding(.bottom, 4)
-
-                    // Calendar days - constrained height for scrolling
-                    LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(getDaysInMonth(), id: \.self) { date in
-                            calendarDayCell(for: date, fixedHeight: 70)
-                        }
-                    }
-                }
-                .padding(.horizontal, 0)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(theme.cardBackground)
-                )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(theme.cardStroke, lineWidth: 1)
                 )
-                .gesture(
-                    DragGesture()
-                        .onEnded { value in
-                            if value.translation.width > 50 {
-                                previousMonth()
-                            } else if value.translation.width < -50 {
-                                nextMonth()
-                            }
+            }
+        } else {
+            // Standard view - carousel with event details
+            VStack(spacing: 16) {
+                // Calendar carousel with fixed height container
+                ZStack {
+                    GeometryReader { geometry in
+                        let screenWidth = geometry.size.width
+
+                        // Carousel of months: previous, current, next
+                        HStack(alignment: .top, spacing: 0) {
+                            // Previous month
+                            monthGridView(for: getMonthOffset(by: -1), width: screenWidth, geometry: geometry, showEventDetails: false)
+                                .frame(width: screenWidth, alignment: .top)
+
+                            // Current month
+                            monthGridView(for: currentMonth, width: screenWidth, geometry: geometry, showEventDetails: false)
+                                .frame(width: screenWidth, alignment: .top)
+
+                            // Next month
+                            monthGridView(for: getMonthOffset(by: 1), width: screenWidth, geometry: geometry, showEventDetails: false)
+                                .frame(width: screenWidth, alignment: .top)
                         }
+                        .offset(x: -screenWidth + dragOffset)
+                        .animation(isSwipingMonth ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: dragOffset)
+                        .simultaneousGesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    // Only handle horizontal swipes
+                                    if abs(value.translation.width) > abs(value.translation.height) {
+                                        isSwipingMonth = true
+                                        dragOffset = value.translation.width
+                                    }
+                                }
+                                .onEnded { value in
+                                    // Only handle horizontal swipes
+                                    if abs(value.translation.width) > abs(value.translation.height) {
+                                        let threshold: CGFloat = screenWidth * 0.3
+
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            if value.translation.width > threshold {
+                                                previousMonth()
+                                            } else if value.translation.width < -threshold {
+                                                nextMonth()
+                                            }
+                                            dragOffset = 0
+                                            isSwipingMonth = false
+                                        }
+                                    } else {
+                                        dragOffset = 0
+                                        isSwipingMonth = false
+                                    }
+                                }
+                        )
+                    }
+                }
+                .frame(height: 540)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(theme.cardStroke, lineWidth: 1)
                 )
 
-                // Selected day details
+                // Event details underneath the carousel
                 if let events = dayEvents[formatDateKey(selectedDate)], !events.isEmpty {
                     dayDetailsView(for: events)
                         .padding(.horizontal, 16)
@@ -628,6 +655,67 @@ struct CalendarView: View {
                         .padding(.horizontal, 16)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func monthGridView(for month: Date, width: CGFloat, geometry: GeometryProxy, showEventDetails: Bool) -> some View {
+        if isExpandedMonth {
+            // Expanded view - with scrolling
+            VStack(spacing: 0) {
+                // Day headers (Mon ... Sun)
+                HStack(spacing: 0) {
+                    ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
+                        Text(day)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                }
+                .padding(.bottom, 2)
+
+                // Calendar days
+                let availableHeight = geometry.size.height - 28
+                let cellFixedRows = 6.0
+                let cellHeight = (availableHeight / cellFixedRows) - 4
+
+                LazyVGrid(columns: columns, spacing: 4) {
+                    ForEach(getDaysInMonth(for: month), id: \.self) { date in
+                        calendarDayCell(for: date, fixedHeight: cellHeight)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(theme.cardBackground)
+        } else {
+            // Standard view - original layout
+            VStack(spacing: 8) {
+                // Day headers (Mon ... Sun)
+                HStack(spacing: 0) {
+                    ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { day in
+                        Text(day)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(secondaryTextColor)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                }
+                .padding(.bottom, 4)
+
+                // Calendar days - constrained height for scrolling
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(getDaysInMonth(for: month), id: \.self) { date in
+                        calendarDayCell(for: date, fixedHeight: 70)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .background(theme.cardBackground)
         }
     }
 
@@ -1558,6 +1646,49 @@ struct CalendarView: View {
         return days
     }
 
+    private func getDaysInMonth(for month: Date) -> [Date] {
+        let range = calendar.range(of: .day, in: .month, for: month)!
+        let numDays = range.count
+
+        // Get the first day of the month
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: month)
+        components.day = 1
+        let firstOfMonth = calendar.date(from: components)!
+
+        let weekday = calendar.component(.weekday, from: firstOfMonth)
+        let firstWeekday = (weekday + 5) % 7 // shift so Monday = 0
+
+        var days: [Date] = []
+
+        // Add empty dates from previous month
+        if firstWeekday > 0 {
+            for i in 0..<firstWeekday {
+                let date = calendar.date(byAdding: .day, value: -(firstWeekday - i), to: firstOfMonth)!
+                days.append(date)
+            }
+        }
+
+        // Add days of current month
+        for day in 1...numDays {
+            let date = calendar.date(byAdding: .day, value: day - 1, to: firstOfMonth)!
+            days.append(date)
+        }
+
+        // Add empty dates from next month
+        let remainingDays = 42 - days.count // 6 rows x 7 days
+        let lastDayOfMonth = calendar.date(byAdding: .day, value: numDays - 1, to: firstOfMonth)!
+        for day in 1...remainingDays {
+            let date = calendar.date(byAdding: .day, value: day, to: lastDayOfMonth)!
+            days.append(date)
+        }
+
+        return days
+    }
+
+    private func getMonthOffset(by offset: Int) -> Date {
+        return calendar.date(byAdding: .month, value: offset, to: currentMonth) ?? currentMonth
+    }
+
     private func formatDateKey(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -1569,6 +1700,7 @@ struct CalendarView: View {
             if let newMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth) {
                 currentMonth = newMonth
                 updateSelectedDateForMonth(newMonth)
+                dragOffset = 0
             }
         }
     }
@@ -1578,6 +1710,7 @@ struct CalendarView: View {
             if let newMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) {
                 currentMonth = newMonth
                 updateSelectedDateForMonth(newMonth)
+                dragOffset = 0
             }
         }
     }
@@ -1663,9 +1796,9 @@ struct CalendarView: View {
         // Calculate the settings window for filtering
         let settingsStartDate = calendar.date(byAdding: .day, value: -appSettingsManager.eventsPastDays, to: now) ?? now
         let settingsEndDate = calendar.date(byAdding: .day, value: appSettingsManager.eventsFutureDays, to: now) ?? now
-        // Fetch events for the entire month
-        let startDate = startOfMonth
-        let endDate = endOfMonth
+        // Optimize: Intersect month range with settings window to avoid fetching events we'll filter out
+        let startDate = max(startOfMonth, settingsStartDate)
+        let endDate = min(endOfMonth, settingsEndDate)
 
         let localCalendars = eventStore.calendars(for: .event)
         let calendarById = Dictionary(uniqueKeysWithValues: localCalendars.map { ($0.calendarIdentifier, $0) })

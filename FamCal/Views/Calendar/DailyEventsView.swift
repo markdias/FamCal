@@ -38,7 +38,7 @@ struct DailyEventsView: View {
 
     private let timeColumnWidth: CGFloat = 60
     private let hourHeight: CGFloat = 60
-    private let overlappingEventSpacing: CGFloat = 4
+    private let overlapRevealSpacing: CGFloat = 14 // Controls how much overlapping events peek out
     private let memberColumnSpacing: CGFloat = 8
     private let allDayTitleLineHeight: CGFloat = UIFont.systemFont(ofSize: 13, weight: .semibold).lineHeight
     private let allDayRowHeight: CGFloat = UIFont.systemFont(ofSize: 13, weight: .semibold).lineHeight * 2 + 8
@@ -529,6 +529,7 @@ struct DailyEventsView: View {
                     eventCell(for: layout.event, isTapped: tappedEvent == layout.event, isSelected: selectedEventIds.contains(layout.event.eventIdentifier))
                         .frame(width: layout.width, height: layout.height)
                         .offset(x: layout.x, y: layout.y)
+                        .zIndex(Double(layout.layerIndex))
                         .onTapGesture {
                             handleEventTap(event: layout.event)
                         }
@@ -826,15 +827,26 @@ struct DailyEventsView: View {
         }
 
         let totalColumns = max(columns.count, 1)
-        let columnWidth = (contentWidth - CGFloat(max(0, totalColumns - 1)) * overlappingEventSpacing) / CGFloat(totalColumns)
+        let revealSpacing = totalColumns > 1 ? min(overlapRevealSpacing, contentWidth / CGFloat(totalColumns)) : 0
+        let width = max(0, contentWidth - CGFloat(max(0, totalColumns - 1)) * revealSpacing)
 
         for (columnIndex, column) in columns.enumerated() {
+            let xPosition = xOffset + CGFloat(columnIndex) * revealSpacing
+
             for event in column {
                 let yPosition = yOffset(for: event.startDate)
                 let height = max(15, yOffset(for: event.endDate) - yPosition)
-                let xPosition = xOffset + CGFloat(columnIndex) * (columnWidth + overlappingEventSpacing)
 
-                layouts.append(EventLayout(event: event, x: xPosition, y: yPosition, width: columnWidth, height: height))
+                layouts.append(
+                    EventLayout(
+                        event: event,
+                        x: xPosition,
+                        y: yPosition,
+                        width: width,
+                        height: height,
+                        layerIndex: columnIndex
+                    )
+                )
             }
         }
 
@@ -881,6 +893,7 @@ struct EventLayout: Identifiable {
     let y: CGFloat
     let width: CGFloat
     let height: CGFloat
+    let layerIndex: Int
 }
 
 extension DayEventItem: Equatable {
