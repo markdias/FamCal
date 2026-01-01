@@ -1,0 +1,29 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "production": {}
+  },
+  "submit": {
+    "production": {}
+  },
+  "ios": {
+    "simulator": true,
+    "bundleIdentifier": "com.famcal.app"
+  },
+  "android": {
+    "simulator": true,
+    "package": "com.famcal.app"
+  }
+}

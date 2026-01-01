@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+build/
+dist/
+*.apk
+*.aab
+*.apks
+*.ipa
+
+# Native
+*.xcworkspace
+Pods/
+Podfile.lock
+/.apple-env
+ios/Pods/
+ios/Podfile.lock
+android/.gradle/
+android/build/
+
+# Expo
+.expo/
+expo.env/
+expo-plugins/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+~*
+
+# IDE
+.idea/
+.vscode/
+*.xcodeproj/
+*.xcworkspace/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Cache
+.cache/
+metro.config.cache
+tsconfig.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+*.orig
+*.bak
